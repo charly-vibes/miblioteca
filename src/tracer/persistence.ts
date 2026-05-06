@@ -2,6 +2,7 @@ import { openDB } from 'idb'
 import type { DBSchema, IDBPDatabase } from 'idb'
 import type { CaptureRecord, PreviewFrame } from './capture'
 import type { TracerBulletScan, TracerBulletSession } from './storage'
+import type { ImuTrace } from '../sensors/imuTrace'
 
 export interface ShelfwalkDB extends DBSchema {
   records: {
@@ -27,7 +28,7 @@ export interface ShelfwalkDB extends DBSchema {
   }
   traces: {
     key: string
-    value: unknown
+    value: ImuTrace
   }
   previewFrames: {
     key: string
@@ -146,11 +147,11 @@ export function getAllRecords(db: ShelfwalkDatabase): Promise<CaptureRecord[]> {
   return db.getAll('records')
 }
 
-export function getTrace(db: ShelfwalkDatabase, sessionId: string): Promise<unknown> {
+export function getTrace(db: ShelfwalkDatabase, sessionId: string): Promise<ImuTrace | undefined> {
   return db.get('traces', sessionId)
 }
 
-export function putTrace(db: ShelfwalkDatabase, sessionId: string, trace: unknown): Promise<string> {
+export function putTrace(db: ShelfwalkDatabase, sessionId: string, trace: ImuTrace): Promise<string> {
   return db.put('traces', trace, sessionId)
 }
 

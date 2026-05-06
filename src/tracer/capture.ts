@@ -64,6 +64,22 @@ export type CaptureRecord = {
   uploadAttempts: number
 }
 
+export type PreviewFrame = {
+  timestamp: number
+  orientation?: {
+    alpha: number
+    beta: number
+    gamma: number
+    absolute: boolean
+  }
+  linearAcceleration?: {
+    x: number | null
+    y: number | null
+    z: number | null
+  }
+  tiltDegrees?: number
+}
+
 export type CaptureRecordInput = {
   sessionId: string
   scanId: string

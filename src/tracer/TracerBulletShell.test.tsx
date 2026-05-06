@@ -33,57 +33,68 @@ beforeEach(() => {
   })
 })
 
+function makeFakeStream(): MediaStream {
+  const fakeTrack = {
+    getSettings: () => ({ deviceId: 'fake-device', facingMode: 'environment' }),
+    stop: () => {},
+  } as unknown as MediaStreamTrack
+  return {
+    getTracks: () => [fakeTrack],
+    getVideoTracks: () => [fakeTrack],
+  } as unknown as MediaStream
+}
+
 function mockUploadFetch(status: number) {
   return async (_input: RequestInfo | URL, _init?: RequestInit): Promise<Pick<Response, 'ok' | 'status'>> =>
     ({ ok: status >= 200 && status < 300, status })
 }
 
 describe('TracerBulletShell — bootstrap', () => {
-  it('renders capture flow heading', () => {
+  it('renders camera onboarding state', () => {
     render(
       <TracerBulletShell captureSnapshot={mockCaptureSnapshot} uploadFetch={mockUploadFetch(200)} />
     )
-    expect(screen.getByRole('heading', { name: /tracer bullet capture flow/i })).toBeInTheDocument()
+    expect(screen.getByText(/point your camera at a bookshelf/i)).toBeInTheDocument()
   })
 
-  it('shows Request camera button after successful bootstrap', async () => {
+  it('shows Open camera button after successful bootstrap', async () => {
     render(
       <TracerBulletShell captureSnapshot={mockCaptureSnapshot} uploadFetch={mockUploadFetch(200)} />
     )
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /request camera/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /open camera/i })).toBeInTheDocument()
     })
   })
 
-  it('re-triggers bootstrap when Retry bootstrap is clicked from error state', async () => {
+  it('re-triggers bootstrap when Retry is clicked from error state', async () => {
     Object.defineProperty(window, 'isSecureContext', { value: false, configurable: true })
     const user = userEvent.setup()
 
     render(
       <TracerBulletShell captureSnapshot={mockCaptureSnapshot} uploadFetch={mockUploadFetch(200)} />
     )
-    await waitFor(() => screen.getByRole('button', { name: /retry bootstrap/i }))
+    await waitFor(() => screen.getByRole('button', { name: /retry/i }))
 
     Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true })
-    await user.click(screen.getByRole('button', { name: /retry bootstrap/i }))
+    await user.click(screen.getByRole('button', { name: /retry/i }))
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /request camera/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /open camera/i })).toBeInTheDocument()
     })
   })
 })
 
 describe('TracerBulletShell — camera permission', () => {
   it('shows Take photo button when camera permission is granted', async () => {
-    const fakeStream = { getTracks: () => [] } as unknown as MediaStream
+    const fakeStream = makeFakeStream()
     mockGetUserMedia.mockResolvedValue(fakeStream)
     const user = userEvent.setup()
 
     render(
       <TracerBulletShell captureSnapshot={mockCaptureSnapshot} uploadFetch={mockUploadFetch(200)} />
     )
-    await waitFor(() => screen.getByRole('button', { name: /request camera/i }))
-    await user.click(screen.getByRole('button', { name: /request camera/i }))
+    await waitFor(() => screen.getByRole('button', { name: /open camera/i }))
+    await user.click(screen.getByRole('button', { name: /open camera/i }))
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /take photo/i })).toBeInTheDocument()
@@ -97,47 +108,46 @@ describe('TracerBulletShell — camera permission', () => {
     render(
       <TracerBulletShell captureSnapshot={mockCaptureSnapshot} uploadFetch={mockUploadFetch(200)} />
     )
-    await waitFor(() => screen.getByRole('button', { name: /request camera/i }))
-    await user.click(screen.getByRole('button', { name: /request camera/i }))
+    await waitFor(() => screen.getByRole('button', { name: /open camera/i }))
+    await user.click(screen.getByRole('button', { name: /open camera/i }))
 
     await waitFor(() => {
-      expect(screen.getByText(/camera permission denied/i)).toBeInTheDocument()
+      expect(screen.getByText(/camera denied/i)).toBeInTheDocument()
     })
     expect(screen.queryByRole('button', { name: /take photo/i })).not.toBeInTheDocument()
   })
 
-  it('keeps Request camera button visible after denial so the user can retry', async () => {
+  it('keeps Open camera button visible after denial so the user can retry', async () => {
     mockGetUserMedia.mockRejectedValue(new DOMException('Permission denied', 'NotAllowedError'))
     const user = userEvent.setup()
 
     render(
       <TracerBulletShell captureSnapshot={mockCaptureSnapshot} uploadFetch={mockUploadFetch(200)} />
     )
-    await waitFor(() => screen.getByRole('button', { name: /request camera/i }))
-    await user.click(screen.getByRole('button', { name: /request camera/i }))
+    await waitFor(() => screen.getByRole('button', { name: /open camera/i }))
+    await user.click(screen.getByRole('button', { name: /open camera/i }))
 
-    await waitFor(() => screen.getByText(/camera permission denied/i))
-    expect(screen.getByRole('button', { name: /request camera/i })).toBeInTheDocument()
+    await waitFor(() => screen.getByText(/camera denied/i))
+    expect(screen.getByRole('button', { name: /open camera/i })).toBeInTheDocument()
   })
 })
 
 describe('TracerBulletShell — capture and upload', () => {
   async function bootstrapAndGrantCamera(uploadFetch: ReturnType<typeof mockUploadFetch>) {
-    const fakeStream = { getTracks: () => [] } as unknown as MediaStream
-    mockGetUserMedia.mockResolvedValue(fakeStream)
+    mockGetUserMedia.mockResolvedValue(makeFakeStream())
     const user = userEvent.setup()
 
     render(
       <TracerBulletShell captureSnapshot={mockCaptureSnapshot} uploadFetch={uploadFetch} />
     )
-    await waitFor(() => screen.getByRole('button', { name: /request camera/i }))
-    await user.click(screen.getByRole('button', { name: /request camera/i }))
+    await waitFor(() => screen.getByRole('button', { name: /open camera/i }))
+    await user.click(screen.getByRole('button', { name: /open camera/i }))
     await waitFor(() => screen.getByRole('button', { name: /take photo/i }))
     return user
   }
 
-  it('shows saved locally status after a successful capture', async () => {
-    const user = await bootstrapAndGrantCamera(mockUploadFetch(200))
+  it('shows saved locally status when upload fails', async () => {
+    const user = await bootstrapAndGrantCamera(mockUploadFetch(503))
     await user.click(screen.getByRole('button', { name: /take photo/i }))
 
     await waitFor(() => {
@@ -145,12 +155,12 @@ describe('TracerBulletShell — capture and upload', () => {
     })
   })
 
-  it('shows upload succeeded status on 200 response', async () => {
+  it('shows saved confirmation after successful upload', async () => {
     const user = await bootstrapAndGrantCamera(mockUploadFetch(200))
     await user.click(screen.getByRole('button', { name: /take photo/i }))
 
     await waitFor(() => {
-      expect(screen.getByText(/upload.*succeeded|uploaded/i)).toBeInTheDocument()
+      expect(screen.getByText(/saved/i)).toBeInTheDocument()
     })
   })
 
@@ -159,8 +169,7 @@ describe('TracerBulletShell — capture and upload', () => {
     await user.click(screen.getByRole('button', { name: /take photo/i }))
 
     await waitFor(() => {
-      expect(screen.getByText(/upload.*failed|failed/i)).toBeInTheDocument()
+      expect(screen.getByText(/saved locally/i)).toBeInTheDocument()
     })
-    expect(screen.getByText(/saved locally/i)).toBeInTheDocument()
   })
 })

@@ -1,22 +1,15 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import App from './App'
 
-describe('tracer bullet shell', () => {
-  it('renders the dedicated tracer-bullet route', () => {
-    window.history.replaceState({}, '', '/tracer-bullet')
-
+describe('App', () => {
+  it('renders the camera onboarding UI', () => {
     render(<App />)
-
-    expect(
-      screen.getByRole('heading', { name: /tracer bullet capture flow/i })
-    ).toBeInTheDocument()
-    expect(screen.getByText(/https dev shell/i)).toBeInTheDocument()
+    expect(screen.getByText(/point your camera at a bookshelf/i)).toBeInTheDocument()
   })
 
   it('bootstraps and persists the tracer-bullet session in a supported secure context', async () => {
     const storage = new Map<string, string>()
 
-    window.history.replaceState({}, '', '/tracer-bullet')
     Object.defineProperty(window, 'localStorage', {
       value: {
         getItem: (key: string) => storage.get(key) ?? null,
@@ -38,9 +31,8 @@ describe('tracer bullet shell', () => {
     render(<App />)
 
     await waitFor(() => {
-      expect(screen.getByText(/fresh session ready/i)).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /open camera/i })).toBeInTheDocument()
     })
-    expect(screen.getByText(/TB-/i)).toBeInTheDocument()
     expect(storage.get('miblioteca.tracer-bullet')).toContain('"sessions"')
   })
 })

@@ -44,7 +44,11 @@ Before saying "done", run this checklist:
 
 ### Autonomous Loop
 
-One task per session. The resume loop:
+> **Research/design phases:** multiple `wai add research` or `wai add design`
+> calls per session are expected and correct — "one task" applies to implementation phases
+> where you're writing code, not to phases where you're accumulating knowledge.
+
+One task per session (implementation phases). The resume loop:
 
 1. `wai prime` — orient (shows ⚡ RESUMING if mid-task)
 2. Work on the single task

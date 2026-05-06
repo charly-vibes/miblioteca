@@ -9,6 +9,11 @@ the Generic Sensor API for IMU data, and IndexedDB + Service Worker for offline
 storage and background sync. Multiple users can collaborate on a single scan
 session via a shared join token.
 
+## Implementation Status
+
+Pre-implementation. Research phase only. No application code exists yet.
+The tech stack and patterns below are the agreed-upon target, not current reality.
+
 ## Tech Stack
 
 - **Vite + TypeScript + React** — build toolchain and UI framework
@@ -98,7 +103,7 @@ client's job is only to produce clean, well-timestamped data.
   a click handler, never on mount or after an async gap
 - **Web NFC is Android Chrome only** — treat as nice-to-have, never the only join path
 
-## External Dependencies
+## Backend API Contracts (out of scope for capture client — must implement)
 
 - `POST /api/scan` — create scan, returns `serverTimeMs` for clock anchoring
 - `POST /api/scan/join` — join with `shortCode + joinToken + clientTimeMs`, returns

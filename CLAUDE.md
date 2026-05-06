@@ -1,3 +1,6 @@
+# mibilioteca
+TypeScript PWA for bookshelf spine capture (capture side only).
+
 <!-- OPENSPEC:START -->
 # OpenSpec Instructions
 
@@ -37,11 +40,20 @@ Detected workflow tools:
 > **When beginning research or creating a ticket**: run `wai search "<topic>"` to check for existing patterns before writing new content.
 > **Ro5**: The Rule of 5 skill is installed. Run `/ro5` after key phase transitions — implement, research, design — for iterative quality review.
 
+## First Time Here?
+
+Run `just setup` to install deps and set up mkcert HTTPS certificates.
+Then follow the Quick Start below.
+
 ## Quick Start
 
-1. `wai sync` — ensure agent tools are projected
-2. `wai status` — see active projects, phase, and suggestions
-3. `bd ready` — find available work items
+1. `wai status` — see active projects, phase, and suggestions
+2. `bd ready` — find available work items
+3. `wai sync` — re-project skills if `.claude/commands/` looks stale
+
+Do not advance the wai phase (`wai phase next`) without at least one completed
+artifact for the current phase. Research phase needs `wai add research` entries;
+design phase needs `wai add design` entries.
 
 When context reaches ~40%: stop and tell the user — responses degrade past
 this point. Recommend `wai close` then `/clear` to resume cleanly.
@@ -101,7 +113,7 @@ bd close <id>         # Complete work
 4. **PUSH TO REMOTE** - This is MANDATORY:
    ```bash
    git pull --rebase
-   bd dolt push
+   bd dolt push  # skip if no dolt remote configured (data preserved in git)
    git push
    git status  # MUST show "up to date with origin"
    ```

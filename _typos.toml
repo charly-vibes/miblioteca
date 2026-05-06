@@ -1,0 +1,16 @@
+[default]
+extend-ignore-identifiers-re = [
+  # sensor quaternion components are intentional single letters
+  "qx", "qy", "qz", "qw",
+  # IMU field abbreviations
+  "ax", "ay", "az", "gx", "gy", "gz",
+  "grx", "gry", "grz",
+]
+
+[files]
+extend-exclude = [
+  "dist/",
+  ".wai/",
+  ".beads/",
+  "node_modules/",
+]

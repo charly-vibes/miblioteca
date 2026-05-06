@@ -9,4 +9,5 @@
 # projections:
 #   - target: claude-code
 
-projections: []
+projections:
+  - target: claude-code

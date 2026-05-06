@@ -40,6 +40,13 @@ install:
 clean:
     rm -rf dist
 
+# First-time setup (install deps + mkcert for HTTPS)
+setup:
+    npm install
+    mkcert -install
+    mkcert localhost
+
 # Show project status
 status:
     wai status
+    bd ready

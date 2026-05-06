@@ -3,7 +3,7 @@ plugins = []
 [project]
 name = "mibilioteca"
 version = "2026.4.8"
-description = ""
+description = "TypeScript PWA for bookshelf spine capture"
 tool_commit = "c2bfba9"
 
 [llm]

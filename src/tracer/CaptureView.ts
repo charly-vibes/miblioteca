@@ -1,4 +1,5 @@
 import { initCamera } from '../camera/cameraInit'
+import { requestUploadSync } from '../pwa/syncRegistration'
 import { bootstrapTracerBullet, type BootstrapResult } from './bootstrap'
 import { createCaptureRecord } from './capture'
 import { createMockScanFetch } from './mockScanApi'
@@ -216,6 +217,7 @@ export class CaptureView {
         fetch: this.opts.uploadFetch ?? (async () => new Response(null, { status: 200 })),
         db,
       })
+      if (uploadState !== 'uploaded') void requestUploadSync()
       this.setCaptureState({
         kind: 'done',
         savedLocally: true,

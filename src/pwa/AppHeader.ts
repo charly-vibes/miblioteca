@@ -1,5 +1,6 @@
 import { createInstallPrompt } from './installPrompt'
 import { createOnlineStatus } from './onlineStatus'
+import { requestUploadSync } from './syncRegistration'
 
 export function mountAppHeader(container: HTMLElement): () => void {
   const header = document.createElement('header')
@@ -23,6 +24,7 @@ export function mountAppHeader(container: HTMLElement): () => void {
     offlineBadge.innerHTML = online
       ? ''
       : '<span class="app-header__offline">Offline — uploads queued</span>'
+    if (online) void requestUploadSync()
   }
 
   function updateInstall() {

@@ -112,4 +112,5 @@ client's job is only to produce clean, well-timestamped data.
 - `POST /api/upload` — multipart: one image Blob + sidecar JSON
 - `POST /api/upload/trace` — per-session IMU trace Blob
 - `POST /api/upload/preview` — preview frames (when enabled)
-- **dolt** — local database backend for `bd` issue tracker (port 13627)
+
+See `openspec/specs/api-contracts.md` for full error codes, payload sizes, and idempotency details.

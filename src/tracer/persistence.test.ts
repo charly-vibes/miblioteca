@@ -1,7 +1,22 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { openShelfwalkDb, saveCapture, loadCaptureRecord, loadBlob, loadThumbnail } from './persistence'
+import {
+  openShelfwalkDb,
+  saveCapture,
+  loadCaptureRecord,
+  loadBlob,
+  loadThumbnail,
+  putRecord,
+  getRecordsByUploadState,
+  putBlob,
+  putThumbnail,
+  getScan,
+  putScan,
+  getSession,
+  putSession,
+} from './persistence'
 import type { ShelfwalkDatabase } from './persistence'
 import { createCaptureRecord } from './capture'
+import type { CaptureRecord } from './capture'
 
 const DEPS = {
   now: () => 1746500000000,
@@ -135,6 +150,46 @@ describe('loadCaptureRecord', () => {
   })
 })
 
+describe('putRecord / getRecordsByUploadState', () => {
+  it('round-trips a record through the records store', async () => {
+    const record = makeRecord()
+    await putRecord(db, record)
+    const loaded = await loadCaptureRecord(db, record.recordId)
+    expect(loaded).toMatchObject({ recordId: 'rec-test-1', uploadState: 'pending' })
+  })
+
+  it('queries pending records via the by-uploadState index', async () => {
+    const makeRecordWithId = (id: string, uploadState: CaptureRecord['uploadState']) =>
+      ({ ...makeRecord(), recordId: id, uploadState })
+
+    await putRecord(db, makeRecordWithId('r1', 'pending'))
+    await putRecord(db, makeRecordWithId('r2', 'uploaded'))
+    await putRecord(db, makeRecordWithId('r3', 'pending'))
+
+    const pending = await getRecordsByUploadState(db, 'pending')
+    expect(pending.map((r) => r.recordId).sort()).toEqual(['r1', 'r3'])
+  })
+
+  it('returns empty array when no records match the given uploadState', async () => {
+    const result = await getRecordsByUploadState(db, 'rejected')
+    expect(result).toEqual([])
+  })
+})
+
+describe('putBlob / putThumbnail', () => {
+  it('puts and loads a blob individually', async () => {
+    await putBlob(db, 'blob-1', new Blob(['data']))
+    const loaded = await loadBlob(db, 'blob-1')
+    expect(loaded).toBeDefined()
+  })
+
+  it('puts and loads a thumbnail individually', async () => {
+    await putThumbnail(db, 'thumb-1', new Blob(['thumb']))
+    const loaded = await loadThumbnail(db, 'thumb-1')
+    expect(loaded).toBeDefined()
+  })
+})
+
 describe('loadBlob', () => {
   it('returns undefined for an unknown id', async () => {
     const result = await loadBlob(db, 'does-not-exist')
@@ -145,6 +200,41 @@ describe('loadBlob', () => {
 describe('loadThumbnail', () => {
   it('returns undefined for an unknown id', async () => {
     const result = await loadThumbnail(db, 'does-not-exist')
+    expect(result).toBeUndefined()
+  })
+})
+
+describe('getScan / putScan', () => {
+  it('round-trips a scan through the scans store', async () => {
+    const scan = { id: 'scan-abc', shortCode: 'AB-12', joinToken: 'tok-1', createdAt: '2026-05-06T00:00:00Z' }
+    await putScan(db, scan)
+    const loaded = await getScan(db, 'scan-abc')
+    expect(loaded).toEqual(scan)
+  })
+
+  it('returns undefined for an unknown scan id', async () => {
+    const result = await getScan(db, 'no-such-scan')
+    expect(result).toBeUndefined()
+  })
+})
+
+describe('getSession / putSession', () => {
+  it('round-trips a session through the sessions store', async () => {
+    const session = {
+      id: 'sess-xyz',
+      scanId: 'scan-abc',
+      userId: 'user-1',
+      startedAt: '2026-05-06T00:00:00Z',
+      clockOffsetMs: 42,
+      status: 'active' as const,
+    }
+    await putSession(db, session)
+    const loaded = await getSession(db, 'sess-xyz')
+    expect(loaded).toEqual(session)
+  })
+
+  it('returns undefined for an unknown session id', async () => {
+    const result = await getSession(db, 'no-such-session')
     expect(result).toBeUndefined()
   })
 })

@@ -82,12 +82,60 @@ export function loadCaptureRecord(
   return db.get('records', recordId)
 }
 
+export function putRecord(db: ShelfwalkDatabase, record: CaptureRecord): Promise<string> {
+  return db.put('records', record, record.recordId)
+}
+
+export function getRecordsByUploadState(
+  db: ShelfwalkDatabase,
+  state: CaptureRecord['uploadState']
+): Promise<CaptureRecord[]> {
+  return db.getAllFromIndex('records', 'by-uploadState', state)
+}
+
 export function loadBlob(db: ShelfwalkDatabase, recordId: string): Promise<Blob | undefined> {
   return db.get('blobs', recordId)
 }
 
+export function putBlob(db: ShelfwalkDatabase, recordId: string, blob: Blob): Promise<string> {
+  return db.put('blobs', blob, recordId)
+}
+
 export function loadThumbnail(db: ShelfwalkDatabase, recordId: string): Promise<Blob | undefined> {
   return db.get('thumbnails', recordId)
+}
+
+export function putThumbnail(
+  db: ShelfwalkDatabase,
+  recordId: string,
+  blob: Blob
+): Promise<string> {
+  return db.put('thumbnails', blob, recordId)
+}
+
+export function getScan(
+  db: ShelfwalkDatabase,
+  scanId: string
+): Promise<TracerBulletScan | undefined> {
+  return db.get('scans', scanId)
+}
+
+export function putScan(db: ShelfwalkDatabase, scan: TracerBulletScan): Promise<string> {
+  return db.put('scans', scan, scan.id)
+}
+
+export function getSession(
+  db: ShelfwalkDatabase,
+  sessionId: string
+): Promise<TracerBulletSession | undefined> {
+  return db.get('sessions', sessionId)
+}
+
+export function putSession(
+  db: ShelfwalkDatabase,
+  session: TracerBulletSession
+): Promise<string> {
+  return db.put('sessions', session, session.id)
 }
 
 export async function updateUploadState(

@@ -1,12 +1,12 @@
+import { readFileSync } from 'node:fs'
 import { defineConfig } from 'vitest/config'
-import basicSsl from '@vitejs/plugin-basic-ssl'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { loadDevHttpsConfig } from './src/dev/https'
 
-export default defineConfig({
+export default defineConfig(({ command, mode }) => ({
   plugins: [
     react(),
-    basicSsl(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
@@ -15,13 +15,23 @@ export default defineConfig({
         short_name: 'miblioteca',
         theme_color: '#101418',
         background_color: '#101418',
-        display: 'standalone'
+        display: 'standalone',
+        icons: [
+          {
+            src: 'favicon.svg',
+            sizes: 'any',
+            type: 'image/svg+xml'
+          }
+        ]
       }
     })
   ],
   server: {
     host: '0.0.0.0',
-    https: {},
+    https:
+      command === 'serve' && mode !== 'test'
+        ? loadDevHttpsConfig((path) => readFileSync(path, 'utf8'))
+        : undefined,
     port: 4173
   },
   test: {
@@ -29,4 +39,4 @@ export default defineConfig({
     globals: true,
     setupFiles: './src/test/setup.ts'
   }
-})
+}))

@@ -1,0 +1,85 @@
+:root {
+  color: #f5f7fa;
+  background: #101418;
+  font-family: Inter, system-ui, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: radial-gradient(circle at top, #1e293b, #101418 55%);
+}
+
+button,
+.link-button {
+  border: 0;
+  border-radius: 999px;
+  padding: 0.9rem 1.25rem;
+  background: #7dd3fc;
+  color: #082f49;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.shell {
+  width: min(100%, 52rem);
+  margin: 0 auto;
+  padding: 4rem 1.5rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.75rem;
+  color: #7dd3fc;
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(2.25rem, 6vw, 4rem);
+}
+
+.lede {
+  max-width: 42rem;
+  margin: 1rem 0 2rem;
+  color: #cbd5e1;
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 1rem;
+  margin: 0 0 2rem;
+}
+
+.status-grid div {
+  padding: 1rem;
+  border: 1px solid #334155;
+  border-radius: 1rem;
+  background: rgba(15, 23, 42, 0.6);
+}
+
+.status-grid dt {
+  color: #94a3b8;
+  font-size: 0.875rem;
+}
+
+.status-grid dd {
+  margin: 0.35rem 0 0;
+  font-weight: 600;
+}

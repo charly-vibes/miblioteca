@@ -131,6 +131,21 @@ describe('uploadCapture — request shape', () => {
 })
 
 describe('uploadCapture — state transitions', () => {
+  it('marks record uploading before the network request to guard concurrent drains', async () => {
+    const record = makeRecord()
+    const imageBlob = new Blob(['img'])
+    const thumbnailBlob = new Blob(['thumb'])
+    await saveCapture(db, { record, imageBlob, thumbnailBlob })
+
+    const fetch = async (): Promise<Response> => {
+      const persisted = await loadCaptureRecord(db, record.recordId)
+      expect(persisted?.uploadState).toBe('uploading')
+      return new Response(null, { status: 200 })
+    }
+
+    await expect(uploadCapture(record, imageBlob, thumbnailBlob, { fetch, db })).resolves.toMatchObject({ uploadState: 'uploaded' })
+  })
+
   it('updates uploadState to uploaded on 200 response', async () => {
     const record = makeRecord()
     const imageBlob = new Blob(['img'])

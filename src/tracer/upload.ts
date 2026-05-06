@@ -1,5 +1,5 @@
 import type { CaptureRecord } from './capture'
-import { updateUploadProgress } from './persistence'
+import { claimUploadRecord, updateUploadProgress } from './persistence'
 import type { ShelfwalkDatabase } from './persistence'
 import { classifyStatus, nextUploadState } from './uploadFsm'
 
@@ -23,16 +23,21 @@ export async function uploadCapture(
     throw new Error(`uploadCapture: invalid entry state '${record.uploadState}' — only pending/failed allowed`)
   }
 
+  const claimed = await claimUploadRecord(deps.db, record.recordId)
+  if (!claimed) {
+    throw new Error(`uploadCapture: record no longer uploadable: ${record.recordId}`)
+  }
+
   const body = new FormData()
-  body.append('record', JSON.stringify(stripForUpload(record)))
+  body.append('record', JSON.stringify(stripForUpload(claimed.record)))
   body.append('image', imageBlob)
   body.append('thumbnail', thumbnailBlob)
 
-  const attemptCount = record.uploadAttempts + 1
+  const attemptCount = claimed.uploadAttempts
 
-  // Pickup transition: pending/failed → uploading (done implicitly by uploadCapture)
-  const pickupEvent = record.uploadState === 'failed' ? { kind: 'retry' as const } : { kind: 'pickup' as const }
-  const uploadingState = nextUploadState(record.uploadState, pickupEvent)
+  // Pickup transition: pending/failed → uploading (persisted before the network request)
+  const pickupEvent = claimed.record.uploadState === 'failed' ? { kind: 'retry' as const } : { kind: 'pickup' as const }
+  const uploadingState = nextUploadState(claimed.record.uploadState, pickupEvent)
 
   let outcome: Parameters<typeof nextUploadState>[1] & { kind: 'response' }
   try {

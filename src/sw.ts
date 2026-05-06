@@ -1,12 +1,6 @@
 import { precacheAndRoute } from 'workbox-precaching'
-import {
-  getRecordsByUploadState,
-  loadBlob,
-  loadThumbnail,
-  openShelfwalkDb,
-  updateUploadState,
-} from './tracer/persistence'
-import { uploadCapture } from './tracer/upload'
+import { openShelfwalkDb } from './tracer/persistence'
+import { drainUploadQueue } from './tracer/uploadQueue'
 
 declare const self: ServiceWorkerGlobalScope
 
@@ -19,37 +13,19 @@ interface SyncEvent extends ExtendableEvent {
 self.addEventListener('sync', (event) => {
   const e = event as unknown as SyncEvent
   if (e.tag === 'upload-pending') {
-    e.waitUntil(drainUploadQueue())
+    e.waitUntil(drainServiceWorkerUploadQueue())
   }
 })
 
-async function drainUploadQueue(): Promise<void> {
+async function drainServiceWorkerUploadQueue(): Promise<void> {
   const db = await openShelfwalkDb()
-
-  // Records stuck as 'uploading' from a previous crashed session — reset so they retry
-  const stuck = await getRecordsByUploadState(db, 'uploading')
-  for (const r of stuck) {
-    await updateUploadState(db, r.recordId, 'failed')
-  }
-
-  const toUpload = [
-    ...(await getRecordsByUploadState(db, 'pending')),
-    ...(await getRecordsByUploadState(db, 'failed')),
-  ]
-
-  for (const record of toUpload) {
-    const imageBlob = await loadBlob(db, record.recordId)
-    const thumbnailBlob = await loadThumbnail(db, record.recordId)
-    if (!imageBlob || !thumbnailBlob) continue
-    try {
-      await uploadCapture(record, imageBlob, thumbnailBlob, {
-        fetch: (input, init) => globalThis.fetch(input, init),
-        db,
-      })
-    } catch {
+  await drainUploadQueue({
+    db,
+    fetch: (input, init) => globalThis.fetch(input, init),
+    onRecordError: (record) => {
       console.warn('[sw] upload failed for', record.recordId, '— will retry on next sync')
-    }
-  }
+    },
+  })
 
   const clients = await self.clients.matchAll({ type: 'window' })
   for (const client of clients) {

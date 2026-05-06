@@ -198,6 +198,28 @@ export async function updateUploadState(
   await tx.done
 }
 
+export type ClaimedUploadRecord = {
+  record: CaptureRecord
+  uploadAttempts: number
+}
+
+export async function claimUploadRecord(
+  db: ShelfwalkDatabase,
+  recordId: string
+): Promise<ClaimedUploadRecord | undefined> {
+  const tx = db.transaction('records', 'readwrite')
+  const record = await tx.store.get(recordId)
+  if (!record || (record.uploadState !== 'pending' && record.uploadState !== 'failed')) {
+    await tx.done
+    return undefined
+  }
+
+  const uploadAttempts = record.uploadAttempts + 1
+  tx.store.put({ ...record, uploadState: 'uploading', uploadAttempts }, recordId)
+  await tx.done
+  return { record, uploadAttempts }
+}
+
 export async function updateUploadProgress(
   db: ShelfwalkDatabase,
   recordId: string,

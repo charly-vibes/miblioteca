@@ -63,6 +63,28 @@ export function loadThumbnail(db: IDBDatabase, recordId: string): Promise<Blob |
   return idbGet<Blob>(db, 'thumbnails', recordId)
 }
 
+export function updateUploadState(
+  db: IDBDatabase,
+  recordId: string,
+  uploadState: CaptureRecord['uploadState']
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('records', 'readwrite')
+    const getReq = tx.objectStore('records').get(recordId)
+
+    getReq.onsuccess = () => {
+      const record = getReq.result as CaptureRecord | undefined
+      if (record) {
+        tx.objectStore('records').put({ ...record, uploadState }, recordId)
+      }
+    }
+
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+    tx.onabort = () => reject(new Error('updateUploadState transaction aborted'))
+  })
+}
+
 function idbGet<T>(db: IDBDatabase, storeName: string, key: string): Promise<T | undefined> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(storeName, 'readonly')

@@ -1,6 +1,5 @@
 import { readFileSync } from 'node:fs'
 import { defineConfig } from 'vitest/config'
-import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import { loadDevHttpsConfig } from './src/dev/https'
 
@@ -10,7 +9,6 @@ const base = isProd ? '/miblioteca/' : '/'
 export default defineConfig(({ command, mode }) => ({
   base,
   plugins: [
-    react(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'icon-192.png', 'icon-512.png'],

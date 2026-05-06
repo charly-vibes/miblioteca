@@ -1,8 +1,8 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { screen } from '@testing-library/dom'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import TracerBulletShell from './TracerBulletShell'
-import type { CaptureSnapshotResult } from './TracerBulletShell'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { CaptureView } from './CaptureView'
+import type { CaptureSnapshotResult } from './CaptureView'
 
 const MOCK_SNAPSHOT: CaptureSnapshotResult = {
   imageBlob: new Blob(['img'], { type: 'image/jpeg' }),
@@ -19,6 +19,7 @@ const mockLocalStorage = {
 }
 
 let mockGetUserMedia: ReturnType<typeof vi.fn>
+let container: HTMLDivElement
 
 beforeEach(() => {
   storage.clear()
@@ -31,6 +32,13 @@ beforeEach(() => {
     value: { getUserMedia: mockGetUserMedia },
     configurable: true,
   })
+
+  container = document.createElement('div')
+  document.body.appendChild(container)
+})
+
+afterEach(() => {
+  container.remove()
 })
 
 function makeFakeStream(): MediaStream {
@@ -49,19 +57,15 @@ function mockUploadFetch(status: number) {
     ({ ok: status >= 200 && status < 300, status })
 }
 
-describe('TracerBulletShell — bootstrap', () => {
+describe('CaptureView — bootstrap', () => {
   it('renders camera onboarding state', () => {
-    render(
-      <TracerBulletShell captureSnapshot={mockCaptureSnapshot} uploadFetch={mockUploadFetch(200)} />
-    )
+    new CaptureView(container, { captureSnapshot: mockCaptureSnapshot, uploadFetch: mockUploadFetch(200) })
     expect(screen.getByText(/point your camera at a bookshelf/i)).toBeInTheDocument()
   })
 
   it('shows Open camera button after successful bootstrap', async () => {
-    render(
-      <TracerBulletShell captureSnapshot={mockCaptureSnapshot} uploadFetch={mockUploadFetch(200)} />
-    )
-    await waitFor(() => {
+    new CaptureView(container, { captureSnapshot: mockCaptureSnapshot, uploadFetch: mockUploadFetch(200) })
+    await vi.waitFor(() => {
       expect(screen.getByRole('button', { name: /open camera/i })).toBeInTheDocument()
     })
   })
@@ -70,33 +74,29 @@ describe('TracerBulletShell — bootstrap', () => {
     Object.defineProperty(window, 'isSecureContext', { value: false, configurable: true })
     const user = userEvent.setup()
 
-    render(
-      <TracerBulletShell captureSnapshot={mockCaptureSnapshot} uploadFetch={mockUploadFetch(200)} />
-    )
-    await waitFor(() => screen.getByRole('button', { name: /retry/i }))
+    new CaptureView(container, { captureSnapshot: mockCaptureSnapshot, uploadFetch: mockUploadFetch(200) })
+    await vi.waitFor(() => screen.getByRole('button', { name: /retry/i }))
 
     Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true })
     await user.click(screen.getByRole('button', { name: /retry/i }))
 
-    await waitFor(() => {
+    await vi.waitFor(() => {
       expect(screen.getByRole('button', { name: /open camera/i })).toBeInTheDocument()
     })
   })
 })
 
-describe('TracerBulletShell — camera permission', () => {
+describe('CaptureView — camera permission', () => {
   it('shows Take photo button when camera permission is granted', async () => {
     const fakeStream = makeFakeStream()
     mockGetUserMedia.mockResolvedValue(fakeStream)
     const user = userEvent.setup()
 
-    render(
-      <TracerBulletShell captureSnapshot={mockCaptureSnapshot} uploadFetch={mockUploadFetch(200)} />
-    )
-    await waitFor(() => screen.getByRole('button', { name: /open camera/i }))
+    new CaptureView(container, { captureSnapshot: mockCaptureSnapshot, uploadFetch: mockUploadFetch(200) })
+    await vi.waitFor(() => screen.getByRole('button', { name: /open camera/i }))
     await user.click(screen.getByRole('button', { name: /open camera/i }))
 
-    await waitFor(() => {
+    await vi.waitFor(() => {
       expect(screen.getByRole('button', { name: /take photo/i })).toBeInTheDocument()
     })
   })
@@ -105,13 +105,11 @@ describe('TracerBulletShell — camera permission', () => {
     mockGetUserMedia.mockRejectedValue(new DOMException('Permission denied', 'NotAllowedError'))
     const user = userEvent.setup()
 
-    render(
-      <TracerBulletShell captureSnapshot={mockCaptureSnapshot} uploadFetch={mockUploadFetch(200)} />
-    )
-    await waitFor(() => screen.getByRole('button', { name: /open camera/i }))
+    new CaptureView(container, { captureSnapshot: mockCaptureSnapshot, uploadFetch: mockUploadFetch(200) })
+    await vi.waitFor(() => screen.getByRole('button', { name: /open camera/i }))
     await user.click(screen.getByRole('button', { name: /open camera/i }))
 
-    await waitFor(() => {
+    await vi.waitFor(() => {
       expect(screen.getByText(/camera denied/i)).toBeInTheDocument()
     })
     expect(screen.queryByRole('button', { name: /take photo/i })).not.toBeInTheDocument()
@@ -121,28 +119,24 @@ describe('TracerBulletShell — camera permission', () => {
     mockGetUserMedia.mockRejectedValue(new DOMException('Permission denied', 'NotAllowedError'))
     const user = userEvent.setup()
 
-    render(
-      <TracerBulletShell captureSnapshot={mockCaptureSnapshot} uploadFetch={mockUploadFetch(200)} />
-    )
-    await waitFor(() => screen.getByRole('button', { name: /open camera/i }))
+    new CaptureView(container, { captureSnapshot: mockCaptureSnapshot, uploadFetch: mockUploadFetch(200) })
+    await vi.waitFor(() => screen.getByRole('button', { name: /open camera/i }))
     await user.click(screen.getByRole('button', { name: /open camera/i }))
 
-    await waitFor(() => screen.getByText(/camera denied/i))
+    await vi.waitFor(() => screen.getByText(/camera denied/i))
     expect(screen.getByRole('button', { name: /open camera/i })).toBeInTheDocument()
   })
 })
 
-describe('TracerBulletShell — capture and upload', () => {
+describe('CaptureView — capture and upload', () => {
   async function bootstrapAndGrantCamera(uploadFetch: ReturnType<typeof mockUploadFetch>) {
     mockGetUserMedia.mockResolvedValue(makeFakeStream())
     const user = userEvent.setup()
 
-    render(
-      <TracerBulletShell captureSnapshot={mockCaptureSnapshot} uploadFetch={uploadFetch} />
-    )
-    await waitFor(() => screen.getByRole('button', { name: /open camera/i }))
+    new CaptureView(container, { captureSnapshot: mockCaptureSnapshot, uploadFetch })
+    await vi.waitFor(() => screen.getByRole('button', { name: /open camera/i }))
     await user.click(screen.getByRole('button', { name: /open camera/i }))
-    await waitFor(() => screen.getByRole('button', { name: /take photo/i }))
+    await vi.waitFor(() => screen.getByRole('button', { name: /take photo/i }))
     return user
   }
 
@@ -150,7 +144,7 @@ describe('TracerBulletShell — capture and upload', () => {
     const user = await bootstrapAndGrantCamera(mockUploadFetch(503))
     await user.click(screen.getByRole('button', { name: /take photo/i }))
 
-    await waitFor(() => {
+    await vi.waitFor(() => {
       expect(screen.getByText(/saved locally/i)).toBeInTheDocument()
     })
   })
@@ -159,7 +153,7 @@ describe('TracerBulletShell — capture and upload', () => {
     const user = await bootstrapAndGrantCamera(mockUploadFetch(200))
     await user.click(screen.getByRole('button', { name: /take photo/i }))
 
-    await waitFor(() => {
+    await vi.waitFor(() => {
       expect(screen.getByText(/saved/i)).toBeInTheDocument()
     })
   })
@@ -168,7 +162,7 @@ describe('TracerBulletShell — capture and upload', () => {
     const user = await bootstrapAndGrantCamera(mockUploadFetch(503))
     await user.click(screen.getByRole('button', { name: /take photo/i }))
 
-    await waitFor(() => {
+    await vi.waitFor(() => {
       expect(screen.getByText(/saved locally/i)).toBeInTheDocument()
     })
   })

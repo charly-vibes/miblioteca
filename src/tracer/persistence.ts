@@ -138,6 +138,44 @@ export function putSession(
   return db.put('sessions', session, session.id)
 }
 
+export function getTrace(db: ShelfwalkDatabase, sessionId: string): Promise<unknown> {
+  return db.get('traces', sessionId)
+}
+
+export function putTrace(db: ShelfwalkDatabase, sessionId: string, trace: unknown): Promise<string> {
+  return db.put('traces', trace, sessionId)
+}
+
+export function getPreviewFrame(
+  db: ShelfwalkDatabase,
+  frameId: string
+): Promise<PreviewFrame | undefined> {
+  return db.get('previewFrames', frameId)
+}
+
+export function putPreviewFrame(
+  db: ShelfwalkDatabase,
+  frameId: string,
+  frame: PreviewFrame
+): Promise<string> {
+  return db.put('previewFrames', frame, frameId)
+}
+
+export function getPreviewBlob(
+  db: ShelfwalkDatabase,
+  frameId: string
+): Promise<Blob | undefined> {
+  return db.get('previewBlobs', frameId)
+}
+
+export function putPreviewBlob(
+  db: ShelfwalkDatabase,
+  frameId: string,
+  blob: Blob
+): Promise<string> {
+  return db.put('previewBlobs', blob, frameId)
+}
+
 export async function updateUploadState(
   db: ShelfwalkDatabase,
   recordId: string,

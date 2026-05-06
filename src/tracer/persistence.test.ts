@@ -13,6 +13,12 @@ import {
   putScan,
   getSession,
   putSession,
+  getTrace,
+  putTrace,
+  getPreviewFrame,
+  putPreviewFrame,
+  getPreviewBlob,
+  putPreviewBlob,
 } from './persistence'
 import type { ShelfwalkDatabase } from './persistence'
 import { createCaptureRecord } from './capture'
@@ -215,6 +221,44 @@ describe('getScan / putScan', () => {
   it('returns undefined for an unknown scan id', async () => {
     const result = await getScan(db, 'no-such-scan')
     expect(result).toBeUndefined()
+  })
+})
+
+describe('getTrace / putTrace', () => {
+  it('stores and retrieves a trace by sessionId', async () => {
+    const traceData = { samples: [{ t: 0, ax: 0.1 }] }
+    await putTrace(db, 'sess-trace-1', traceData)
+    const loaded = await getTrace(db, 'sess-trace-1')
+    expect(loaded).toEqual(traceData)
+  })
+
+  it('returns undefined for an unknown sessionId', async () => {
+    expect(await getTrace(db, 'no-such-session')).toBeUndefined()
+  })
+})
+
+describe('getPreviewFrame / putPreviewFrame', () => {
+  it('round-trips a PreviewFrame by frameId', async () => {
+    const frame = { timestamp: 1000, tiltDegrees: 5 }
+    await putPreviewFrame(db, 'frame-1', frame)
+    const loaded = await getPreviewFrame(db, 'frame-1')
+    expect(loaded).toEqual(frame)
+  })
+
+  it('returns undefined for an unknown frameId', async () => {
+    expect(await getPreviewFrame(db, 'no-frame')).toBeUndefined()
+  })
+})
+
+describe('getPreviewBlob / putPreviewBlob', () => {
+  it('stores and retrieves a preview blob by frameId', async () => {
+    await putPreviewBlob(db, 'frame-2', new Blob(['preview']))
+    const loaded = await getPreviewBlob(db, 'frame-2')
+    expect(loaded).toBeDefined()
+  })
+
+  it('returns undefined for an unknown frameId', async () => {
+    expect(await getPreviewBlob(db, 'no-preview-blob')).toBeUndefined()
   })
 })
 

@@ -259,9 +259,11 @@ export default function TracerBulletShell({
         ) : null}
       </dl>
 
-      <button type="button" onClick={() => void startBootstrap()}>
-        Retry bootstrap
-      </button>
+      {bootstrapState.kind === 'error' || bootstrapState.kind === 'idle' ? (
+        <button type="button" onClick={() => void startBootstrap()}>
+          Retry bootstrap
+        </button>
+      ) : null}
 
       {bootstrapState.kind === 'ready' &&
        (cameraState.kind === 'idle' || cameraState.kind === 'denied') ? (

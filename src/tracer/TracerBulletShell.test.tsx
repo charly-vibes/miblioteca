@@ -54,6 +54,23 @@ describe('TracerBulletShell — bootstrap', () => {
       expect(screen.getByRole('button', { name: /request camera/i })).toBeInTheDocument()
     })
   })
+
+  it('re-triggers bootstrap when Retry bootstrap is clicked from error state', async () => {
+    Object.defineProperty(window, 'isSecureContext', { value: false, configurable: true })
+    const user = userEvent.setup()
+
+    render(
+      <TracerBulletShell captureSnapshot={mockCaptureSnapshot} uploadFetch={mockUploadFetch(200)} />
+    )
+    await waitFor(() => screen.getByRole('button', { name: /retry bootstrap/i }))
+
+    Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true })
+    await user.click(screen.getByRole('button', { name: /retry bootstrap/i }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /request camera/i })).toBeInTheDocument()
+    })
+  })
 })
 
 describe('TracerBulletShell — camera permission', () => {

@@ -22,7 +22,6 @@ export type TracerBulletSnapshot = {
 export interface TracerBulletStore {
   read(): TracerBulletSnapshot
   write(snapshot: TracerBulletSnapshot): void
-  snapshot(): TracerBulletSnapshot
 }
 
 export function createInMemoryTracerBulletStore(
@@ -36,9 +35,6 @@ export function createInMemoryTracerBulletStore(
     },
     write(nextSnapshot) {
       snapshot = cloneSnapshot(nextSnapshot)
-    },
-    snapshot() {
-      return cloneSnapshot(snapshot)
     }
   }
 }
@@ -58,9 +54,6 @@ export function createLocalStorageTracerBulletStore(
     },
     write(snapshot) {
       storage.setItem(key, JSON.stringify(snapshot))
-    },
-    snapshot() {
-      return this.read()
     }
   }
 }

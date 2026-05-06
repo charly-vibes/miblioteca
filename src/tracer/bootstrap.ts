@@ -61,6 +61,9 @@ export async function bootstrapTracerBullet({ now, fetch, store }: BootstrapDeps
   }
 
   const payload = await response.json()
+  if (typeof payload.serverTimeMs !== 'number') {
+    throw new Error('Invalid scan response: serverTimeMs is not a number')
+  }
   const createdAt = new Date(clientTimeMs).toISOString()
   const scan: TracerBulletScan = {
     id: payload.scanId,

@@ -42,7 +42,7 @@ describe('bootstrapTracerBullet', () => {
       clockOffsetMs: 350,
       status: 'active'
     })
-    expect(store.snapshot()).toEqual({
+    expect(store.read()).toEqual({
       scans: [result.scan],
       sessions: [result.session]
     })
@@ -102,7 +102,7 @@ describe('bootstrapTracerBullet', () => {
     expect(result.resumed).toBe(true)
     expect(result.scan.id).toBe('scan-2')
     expect(result.session.id).toBe('session-2')
-    expect(store.snapshot()).toEqual({
+    expect(store.read()).toEqual({
       scans: [
         {
           id: 'scan-1',

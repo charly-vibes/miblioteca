@@ -11,27 +11,37 @@ export type CaptureImageDeps = {
   videoHeight: number
   canvasSnapshot: () => Promise<{ blob: Blob; width: number; height: number }>
   createImageBitmap?: (blob: Blob) => Promise<{ width: number; height: number; close(): void }>
+  /** Called with the caught error whenever the ImageCapture path degrades to canvas. */
+  onDegradation?: (reason: unknown) => void
 }
 
 export async function captureImage(deps: CaptureImageDeps): Promise<CaptureImageResult> {
   if (deps.imageCapture) {
     try {
       const blob = await deps.imageCapture.takePhoto()
-      const bitmapFactory = deps.createImageBitmap ?? globalThis.createImageBitmap.bind(globalThis)
-      const bmp = await bitmapFactory(blob)
+      const createBitmap = deps.createImageBitmap ?? globalThis.createImageBitmap?.bind(globalThis)
+      if (!createBitmap) throw new TypeError('createImageBitmap unavailable')
+      const bmp = await createBitmap(blob)
       const { width, height } = bmp
       bmp.close()
       // Chromium re-encodes a video frame when takePhoto is bound to a live preview stream,
       // returning the same resolution as the video track. Only keep the ImageCapture result
-      // if it is meaningfully larger (1.5×) than the live video resolution.
-      if (width > deps.videoWidth * 1.5 || height > deps.videoHeight * 1.5) {
+      // if at least one dimension is meaningfully larger (1.5×) — the re-encode case fails
+      // both axes, and a single axis exceeding the threshold confirms native higher resolution.
+      // Guard against inactive track (videoWidth/Height = 0) which makes the threshold trivially true.
+      if (
+        deps.videoWidth > 0 && deps.videoHeight > 0 &&
+        (width > deps.videoWidth * 1.5 || height > deps.videoHeight * 1.5)
+      ) {
         return { blob, width, height, sourceApi: 'ImageCapture' }
       }
-    } catch {
-      // takePhoto() not supported on this device/browser — degrade to canvas
+    } catch (err) {
+      // ImageCapture path failed — degrade to canvas
+      deps.onDegradation?.(err)
     }
   }
 
+  // canvasSnapshot failures propagate uncaught — there is no further fallback.
   const { blob, width, height } = await deps.canvasSnapshot()
   return { blob, width, height, sourceApi: 'CanvasSnapshot' }
 }

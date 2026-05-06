@@ -1,10 +1,11 @@
 import type { CaptureRecord } from './capture'
 import { updateUploadProgress } from './persistence'
+import type { ShelfwalkDatabase } from './persistence'
 import { classifyStatus, nextUploadState } from './uploadFsm'
 
 export type UploadCaptureDeps = {
   fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Pick<Response, 'ok' | 'status'>>
-  db: IDBDatabase
+  db: ShelfwalkDatabase
 }
 
 type UploadResult = {

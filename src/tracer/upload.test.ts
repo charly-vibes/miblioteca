@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { uploadCapture } from './upload'
 import { openShelfwalkDb, saveCapture, loadCaptureRecord } from './persistence'
+import type { ShelfwalkDatabase } from './persistence'
 import { createCaptureRecord } from './capture'
 import type { CaptureRecord } from './capture'
 
@@ -28,11 +29,11 @@ function makeRecord() {
   )
 }
 
-let db: IDBDatabase
+let db: ShelfwalkDatabase
 
 beforeEach(async () => {
   const dbName = `shelfwalk-upload-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
-  db = await openShelfwalkDb(indexedDB, dbName)
+  db = await openShelfwalkDb(dbName)
 })
 
 // Capture the last request the mock fetch received so tests can inspect it

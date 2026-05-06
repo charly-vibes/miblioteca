@@ -1,30 +1,63 @@
-import type { CaptureRecord } from './capture'
+import { openDB } from 'idb'
+import type { DBSchema, IDBPDatabase } from 'idb'
+import type { CaptureRecord, PreviewFrame } from './capture'
+import type { TracerBulletScan, TracerBulletSession } from './storage'
 
-const DB_VERSION = 1
+export interface ShelfwalkDB extends DBSchema {
+  records: {
+    key: string
+    value: CaptureRecord
+    indexes: { 'by-uploadState': CaptureRecord['uploadState'] }
+  }
+  blobs: {
+    key: string
+    value: Blob
+  }
+  thumbnails: {
+    key: string
+    value: Blob
+  }
+  scans: {
+    key: string
+    value: TracerBulletScan
+  }
+  sessions: {
+    key: string
+    value: TracerBulletSession
+  }
+  traces: {
+    key: string
+    value: unknown
+  }
+  previewFrames: {
+    key: string
+    value: PreviewFrame
+  }
+  previewBlobs: {
+    key: string
+    value: Blob
+  }
+}
 
-const STORES = ['blobs', 'records', 'scans', 'sessions', 'traces', 'thumbnails'] as const
+export type ShelfwalkDatabase = IDBPDatabase<ShelfwalkDB>
 
-export function openShelfwalkDb(
-  idbFactory: IDBFactory = indexedDB,
-  dbName = 'shelfwalk'
-): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = idbFactory.open(dbName, DB_VERSION)
-
-    request.onupgradeneeded = () => {
-      const db = request.result
-      for (const store of STORES) {
-        if (!db.objectStoreNames.contains(store)) {
-          const os = db.createObjectStore(store)
-          if (store === 'records') {
-            os.createIndex('by-uploadState', 'uploadState', { unique: false })
-          }
-        }
+export function openShelfwalkDb(name = 'shelfwalk'): Promise<ShelfwalkDatabase> {
+  return openDB<ShelfwalkDB>(name, 2, {
+    upgrade(db, oldVersion) {
+      if (oldVersion < 1) {
+        const records = db.createObjectStore('records')
+        records.createIndex('by-uploadState', 'uploadState')
+        db.createObjectStore('blobs')
+        db.createObjectStore('thumbnails')
+        db.createObjectStore('scans')
+        db.createObjectStore('sessions')
+        db.createObjectStore('traces')
       }
-    }
-
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error)
+      if (oldVersion < 2) {
+        db.createObjectStore('previewFrames')
+        db.createObjectStore('previewBlobs')
+      }
+    },
   })
 }
 
@@ -34,87 +67,54 @@ export type SaveCaptureInput = {
   thumbnailBlob: Blob
 }
 
-export function saveCapture(db: IDBDatabase, input: SaveCaptureInput): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(['records', 'blobs', 'thumbnails'], 'readwrite')
-
-    tx.objectStore('records').put(input.record, input.record.recordId)
-    tx.objectStore('blobs').put(input.imageBlob, input.record.recordId)
-    tx.objectStore('thumbnails').put(input.thumbnailBlob, input.record.recordId)
-
-    tx.oncomplete = () => resolve()
-    tx.onerror = () => reject(tx.error)
-    tx.onabort = () => reject(new Error('saveCapture transaction aborted'))
-  })
+export async function saveCapture(db: ShelfwalkDatabase, input: SaveCaptureInput): Promise<void> {
+  const tx = db.transaction(['records', 'blobs', 'thumbnails'], 'readwrite')
+  tx.objectStore('records').put(input.record, input.record.recordId)
+  tx.objectStore('blobs').put(input.imageBlob, input.record.recordId)
+  tx.objectStore('thumbnails').put(input.thumbnailBlob, input.record.recordId)
+  await tx.done
 }
 
 export function loadCaptureRecord(
-  db: IDBDatabase,
+  db: ShelfwalkDatabase,
   recordId: string
 ): Promise<CaptureRecord | undefined> {
-  return idbGet<CaptureRecord>(db, 'records', recordId)
+  return db.get('records', recordId)
 }
 
-export function loadBlob(db: IDBDatabase, recordId: string): Promise<Blob | undefined> {
-  return idbGet<Blob>(db, 'blobs', recordId)
+export function loadBlob(db: ShelfwalkDatabase, recordId: string): Promise<Blob | undefined> {
+  return db.get('blobs', recordId)
 }
 
-export function loadThumbnail(db: IDBDatabase, recordId: string): Promise<Blob | undefined> {
-  return idbGet<Blob>(db, 'thumbnails', recordId)
+export function loadThumbnail(db: ShelfwalkDatabase, recordId: string): Promise<Blob | undefined> {
+  return db.get('thumbnails', recordId)
 }
 
-export function updateUploadState(
-  db: IDBDatabase,
+export async function updateUploadState(
+  db: ShelfwalkDatabase,
   recordId: string,
   uploadState: CaptureRecord['uploadState']
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction('records', 'readwrite')
-    const getReq = tx.objectStore('records').get(recordId)
-
-    getReq.onsuccess = () => {
-      const record = getReq.result as CaptureRecord | undefined
-      if (record) {
-        tx.objectStore('records').put({ ...record, uploadState }, recordId)
-      }
-    }
-
-    tx.oncomplete = () => resolve()
-    tx.onerror = () => reject(tx.error)
-    tx.onabort = () => reject(new Error('updateUploadState transaction aborted'))
-  })
+  const tx = db.transaction('records', 'readwrite')
+  const record = await tx.store.get(recordId)
+  if (record) {
+    tx.store.put({ ...record, uploadState }, recordId)
+  }
+  await tx.done
 }
 
-export function updateUploadProgress(
-  db: IDBDatabase,
+export async function updateUploadProgress(
+  db: ShelfwalkDatabase,
   recordId: string,
   uploadState: CaptureRecord['uploadState'],
   uploadAttempts: number
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction('records', 'readwrite')
-    const getReq = tx.objectStore('records').get(recordId)
-
-    getReq.onsuccess = () => {
-      const record = getReq.result as CaptureRecord | undefined
-      if (!record) {
-        tx.abort()
-        return
-      }
-      tx.objectStore('records').put({ ...record, uploadState, uploadAttempts }, recordId)
-    }
-
-    tx.oncomplete = () => resolve()
-    tx.onerror = () => reject(tx.error)
-    tx.onabort = () => reject(new Error(`updateUploadProgress: record not found: ${recordId}`))
-  })
-}
-
-function idbGet<T>(db: IDBDatabase, storeName: string, key: string): Promise<T | undefined> {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(storeName, 'readonly')
-    const req = tx.objectStore(storeName).get(key)
-    req.onsuccess = () => resolve(req.result as T | undefined)
-    req.onerror = () => reject(req.error)
-  })
+  const tx = db.transaction('records', 'readwrite')
+  const record = await tx.store.get(recordId)
+  if (!record) {
+    tx.abort()
+    throw new Error(`updateUploadProgress: record not found: ${recordId}`)
+  }
+  tx.store.put({ ...record, uploadState, uploadAttempts }, recordId)
+  await tx.done
 }

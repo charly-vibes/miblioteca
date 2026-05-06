@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { openShelfwalkDb, saveCapture, loadCaptureRecord, loadBlob, loadThumbnail } from './persistence'
+import type { ShelfwalkDatabase } from './persistence'
 import { createCaptureRecord } from './capture'
 
 const DEPS = {
@@ -32,12 +33,12 @@ function makeRecord() {
   )
 }
 
-let db: IDBDatabase
+let db: ShelfwalkDatabase
 let dbName: string
 
 beforeEach(async () => {
   dbName = `shelfwalk-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
-  db = await openShelfwalkDb(indexedDB, dbName)
+  db = await openShelfwalkDb(dbName)
 })
 
 describe('saveCapture', () => {
@@ -62,16 +63,13 @@ describe('saveCapture', () => {
   it('leaves no data when the save transaction is aborted', async () => {
     const record = makeRecord()
 
-    // Simulate abort: open a transaction, write partially, then abort
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(['records', 'blobs', 'thumbnails'], 'readwrite')
-      tx.objectStore('records').put(record, record.recordId)
-      tx.objectStore('blobs').put(new Blob(['orphan']), record.recordId)
-      tx.abort()
-      tx.oncomplete = () => reject(new Error('expected abort'))
-      tx.onabort = () => resolve()
-      tx.onerror = () => resolve()
-    })
+    // Simulate abort: open a transaction, write partially, then abort.
+    // idb wraps put() calls in promises that reject on abort — suppress those rejections.
+    const tx = db.transaction(['records', 'blobs', 'thumbnails'], 'readwrite')
+    tx.objectStore('records').put(record, record.recordId).catch(() => undefined)
+    tx.objectStore('blobs').put(new Blob(['orphan']), record.recordId).catch(() => undefined)
+    tx.abort()
+    await tx.done.catch(() => undefined)
 
     const savedRecord = await loadCaptureRecord(db, record.recordId)
     const savedBlob = await loadBlob(db, record.recordId)
@@ -85,6 +83,48 @@ describe('openShelfwalkDb', () => {
   it('records store has a queryable by-uploadState index', () => {
     const tx = db.transaction('records', 'readonly')
     expect(() => tx.objectStore('records').index('by-uploadState')).not.toThrow()
+  })
+
+  it('creates all v1 stores (blobs, records, scans, sessions, traces, thumbnails)', () => {
+    const storeNames = Array.from(db.objectStoreNames)
+    expect(storeNames).toContain('blobs')
+    expect(storeNames).toContain('records')
+    expect(storeNames).toContain('scans')
+    expect(storeNames).toContain('sessions')
+    expect(storeNames).toContain('traces')
+    expect(storeNames).toContain('thumbnails')
+  })
+
+  it('creates v2 stores (previewFrames, previewBlobs)', () => {
+    const storeNames = Array.from(db.objectStoreNames)
+    expect(storeNames).toContain('previewFrames')
+    expect(storeNames).toContain('previewBlobs')
+  })
+
+  it('migrates a v1 database to v2 by adding previewFrames and previewBlobs', async () => {
+    const migrateName = `migrate-test-${Date.now()}`
+
+    // Open at version 1 (no previewFrames/previewBlobs)
+    const v1db = await import('idb').then(({ openDB }) =>
+      openDB(migrateName, 1, {
+        upgrade(db) {
+          db.createObjectStore('records')
+          db.createObjectStore('blobs')
+          db.createObjectStore('thumbnails')
+          db.createObjectStore('scans')
+          db.createObjectStore('sessions')
+          db.createObjectStore('traces')
+        },
+      })
+    )
+    v1db.close()
+
+    // Reopen at version 2 (our openShelfwalkDb) — should add previewFrames and previewBlobs
+    const v2db = await openShelfwalkDb(migrateName)
+    const storeNames = Array.from(v2db.objectStoreNames)
+    expect(storeNames).toContain('previewFrames')
+    expect(storeNames).toContain('previewBlobs')
+    v2db.close()
   })
 })
 

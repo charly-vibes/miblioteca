@@ -4,7 +4,11 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import { loadDevHttpsConfig } from './src/dev/https'
 
+const isProd = process.env.NODE_ENV === 'production'
+const base = isProd ? '/miblioteca/' : '/'
+
 export default defineConfig(({ command, mode }) => ({
+  base,
   plugins: [
     react(),
     VitePWA({
@@ -13,6 +17,7 @@ export default defineConfig(({ command, mode }) => ({
       manifest: {
         name: 'miblioteca',
         short_name: 'miblioteca',
+        start_url: base,
         theme_color: '#101418',
         background_color: '#101418',
         display: 'standalone',

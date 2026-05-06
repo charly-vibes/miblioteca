@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { initCamera } from '../camera/cameraInit'
 import { bootstrapTracerBullet, type BootstrapResult } from './bootstrap'
 import { createCaptureRecord } from './capture'
 import { createMockScanFetch } from './mockScanApi'
@@ -36,34 +37,6 @@ type CaptureState =
   | { kind: 'done'; savedLocally: true; uploadState: 'uploaded' | 'failed' }
   | { kind: 'error'; message: string }
 
-const tracerBulletPath = '/tracer-bullet'
-
-async function defaultCaptureSnapshot(): Promise<CaptureSnapshotResult> {
-  const canvas = document.createElement('canvas')
-  canvas.width = 640
-  canvas.height = 480
-  const ctx = canvas.getContext('2d')
-  if (ctx) {
-    ctx.fillStyle = '#888'
-    ctx.fillRect(0, 0, 640, 480)
-  }
-
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (!blob) {
-        reject(new Error('Canvas capture returned null blob'))
-        return
-      }
-      resolve({
-        imageBlob: blob,
-        thumbnailBlob: blob,
-        width: 640,
-        height: 480,
-      })
-    }, 'image/jpeg')
-  })
-}
-
 async function defaultUploadFetch(
   _input: RequestInfo | URL,
   _init?: RequestInit
@@ -72,14 +45,13 @@ async function defaultUploadFetch(
 }
 
 export default function TracerBulletShell({
-  captureSnapshot = defaultCaptureSnapshot,
+  captureSnapshot,
   uploadFetch = defaultUploadFetch,
 }: TracerBulletShellProps) {
   const [bootstrapState, setBootstrapState] = useState<BootstrapState>({ kind: 'idle' })
   const [cameraState, setCameraState] = useState<CameraState>({ kind: 'idle' })
   const [captureState, setCaptureState] = useState<CaptureState>({ kind: 'idle' })
 
-  const secureContextLabel = window.isSecureContext ? 'secure context ready' : 'secure context required'
   const hasCameraSupport =
     typeof navigator !== 'undefined' && typeof navigator.mediaDevices?.getUserMedia === 'function'
 
@@ -87,6 +59,7 @@ export default function TracerBulletShell({
   const mockFetch = useMemo(() => createMockScanFetch(() => Date.now()), [])
 
   const captureIndexRef = useRef(0)
+  const videoRef = useRef<HTMLVideoElement>(null)
 
   useEffect(() => {
     return () => {
@@ -97,17 +70,23 @@ export default function TracerBulletShell({
   }, [cameraState])
 
   useEffect(() => {
+    if (cameraState.kind === 'granted' && videoRef.current) {
+      videoRef.current.srcObject = cameraState.stream
+    }
+  }, [cameraState])
+
+  useEffect(() => {
     if (!window.isSecureContext) {
       setBootstrapState({
         kind: 'error',
-        message: 'Secure context required. Run the dev server over HTTPS before continuing.',
+        message: 'Secure context required. Use HTTPS.',
       })
       return
     }
     if (!hasCameraSupport) {
       setBootstrapState({
         kind: 'error',
-        message: 'Camera access is unavailable in this browser.',
+        message: 'Camera unavailable in this browser.',
       })
       return
     }
@@ -122,17 +101,34 @@ export default function TracerBulletShell({
     } catch (error) {
       setBootstrapState({
         kind: 'error',
-        message: error instanceof Error ? error.message : 'Tracer bullet bootstrap failed.',
+        message: error instanceof Error ? error.message : 'Bootstrap failed.',
       })
     }
   }
 
+  async function captureFromLiveVideo(): Promise<CaptureSnapshotResult> {
+    const video = videoRef.current
+    if (!video || !video.videoWidth) throw new Error('Video not ready')
+    const canvas = document.createElement('canvas')
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('Canvas 2D context unavailable')
+    ctx.drawImage(video, 0, 0)
+    return new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (!blob) { reject(new Error('Canvas capture returned null blob')); return }
+        resolve({ imageBlob: blob, thumbnailBlob: blob, width: canvas.width, height: canvas.height })
+      }, 'image/jpeg', 0.92)
+    })
+  }
+
   async function requestCamera() {
     setCameraState({ kind: 'requesting' })
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true })
-      setCameraState({ kind: 'granted', stream })
-    } catch {
+    const result = await initCamera({ getUserMedia: (c) => navigator.mediaDevices.getUserMedia(c) })
+    if (result.ok) {
+      setCameraState({ kind: 'granted', stream: result.stream })
+    } else {
       setCameraState({ kind: 'denied' })
     }
   }
@@ -143,7 +139,7 @@ export default function TracerBulletShell({
 
     try {
       const { session, scan } = bootstrapState.result
-      const snapshot = await captureSnapshot()
+      const snapshot = await (captureSnapshot ?? captureFromLiveVideo)()
 
       const db = await openShelfwalkDb()
       const record = createCaptureRecord(
@@ -172,7 +168,8 @@ export default function TracerBulletShell({
         db,
       })
 
-      setCaptureState({ kind: 'done', savedLocally: true, uploadState })
+      const displayState = uploadState === 'uploaded' ? 'uploaded' : 'failed'
+      setCaptureState({ kind: 'done', savedLocally: true, uploadState: displayState })
     } catch (error) {
       setCaptureState({
         kind: 'error',
@@ -181,102 +178,62 @@ export default function TracerBulletShell({
     }
   }
 
-  const bootstrapLabel =
-    bootstrapState.kind === 'loading'
-      ? 'Starting mock scan handshake…'
-      : bootstrapState.kind === 'ready'
-        ? bootstrapState.result.resumed
-          ? 'Resumed session ready'
-          : 'Fresh session ready'
-        : bootstrapState.kind === 'error'
-          ? bootstrapState.message
-          : 'Ready for mock scan bootstrap'
+  const statusText = (() => {
+    if (bootstrapState.kind === 'error') return bootstrapState.message
+    if (bootstrapState.kind === 'loading') return 'Starting…'
+    if (cameraState.kind === 'denied') return 'Camera denied — check browser settings'
+    if (captureState.kind === 'capturing') return 'Capturing…'
+    if (captureState.kind === 'done')
+      return captureState.uploadState === 'uploaded' ? 'Saved ✓' : 'Saved locally'
+    if (captureState.kind === 'error') return captureState.message
+    if (cameraState.kind === 'granted') return 'Ready'
+    if (cameraState.kind === 'requesting') return 'Opening camera…'
+    return 'Tap to open camera'
+  })()
+
+  const cameraReady = cameraState.kind === 'granted'
 
   return (
-    <main className="shell">
-      <p className="eyebrow">HTTPS dev shell</p>
-      <h1>Tracer bullet capture flow</h1>
-      <p className="lede">
-        This route is the narrow end-to-end shell for the first capture, persistence, and upload slice.
-      </p>
-
-      <dl className="status-grid">
-        <div>
-          <dt>Route</dt>
-          <dd>{tracerBulletPath}</dd>
-        </div>
-        <div>
-          <dt>Context</dt>
-          <dd>{secureContextLabel}</dd>
-        </div>
-        <div>
-          <dt>Bootstrap</dt>
-          <dd>{bootstrapLabel}</dd>
-        </div>
-        {bootstrapState.kind === 'ready' ? (
-          <>
-            <div>
-              <dt>Scan</dt>
-              <dd>{bootstrapState.result.scan.shortCode}</dd>
-            </div>
-            <div>
-              <dt>Session</dt>
-              <dd>{bootstrapState.result.session.id}</dd>
-            </div>
-          </>
-        ) : null}
-
-        {cameraState.kind === 'denied' ? (
-          <div>
-            <dt>Camera</dt>
-            <dd>Camera permission denied. Grant camera access in browser settings and retry.</dd>
+    <div className="camera-app">
+      <div className="camera-viewfinder">
+        {cameraReady ? (
+          <video ref={videoRef} autoPlay playsInline muted className="camera-video" />
+        ) : (
+          <div className="camera-onboarding">
+            <svg className="camera-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
+              <circle cx="12" cy="13" r="3" />
+            </svg>
+            <p className="camera-onboarding-title">miblioteca</p>
+            <p className="camera-onboarding-sub">Point your camera at a bookshelf</p>
           </div>
-        ) : cameraState.kind === 'granted' ? (
-          <div>
-            <dt>Camera</dt>
-            <dd>Camera ready</dd>
-          </div>
-        ) : null}
+        )}
+      </div>
 
-        {captureState.kind === 'done' ? (
-          <>
-            <div>
-              <dt>Save</dt>
-              <dd>Saved locally</dd>
-            </div>
-            <div>
-              <dt>Upload</dt>
-              <dd>
-                {captureState.uploadState === 'uploaded' ? 'Upload succeeded' : 'Upload failed'}
-              </dd>
-            </div>
-          </>
-        ) : captureState.kind === 'error' ? (
-          <div>
-            <dt>Capture</dt>
-            <dd>{captureState.message}</dd>
-          </div>
-        ) : null}
-      </dl>
-
-      {bootstrapState.kind === 'error' || bootstrapState.kind === 'idle' ? (
-        <button type="button" onClick={() => void startBootstrap()}>
-          Retry bootstrap
-        </button>
-      ) : null}
-
-      {bootstrapState.kind === 'ready' &&
-       (cameraState.kind === 'idle' || cameraState.kind === 'denied') ? (
-        <button type="button" onClick={() => void requestCamera()}>
-          Request camera access
-        </button>
-      ) : null}
-
-      {cameraState.kind === 'granted' && captureState.kind !== 'capturing' ? (
-        <button type="button" onClick={() => void takePhoto()}>
-          Take photo
-        </button>
-      ) : null}
-    </main>
+      <div className="camera-controls">
+        {cameraReady ? (
+          <button
+            type="button"
+            className="shutter-btn"
+            onClick={() => void takePhoto()}
+            disabled={captureState.kind === 'capturing'}
+            aria-label="Take photo"
+          />
+        ) : bootstrapState.kind === 'ready' || bootstrapState.kind === 'loading' ? (
+          <button
+            type="button"
+            onClick={() => void requestCamera()}
+            disabled={cameraState.kind === 'requesting' || bootstrapState.kind === 'loading'}
+          >
+            {cameraState.kind === 'requesting' ? 'Opening…' : 'Open camera'}
+          </button>
+        ) : (
+          <button type="button" onClick={() => void startBootstrap()}>
+            Retry
+          </button>
+        )}
+        <p className="camera-status">{statusText}</p>
+      </div>
+    </div>
   )
 }

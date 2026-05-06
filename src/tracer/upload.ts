@@ -46,7 +46,7 @@ export async function uploadCapture(
   return { uploadState: nextState, uploadAttempts: attemptCount }
 }
 
-type StrippedRecord = Omit<CaptureRecord, 'uploadState' | 'uploadAttempts'> & {
+type StrippedRecord = Omit<CaptureRecord, 'uploadState' | 'uploadAttempts' | 'image'> & {
   image: Omit<CaptureRecord['image'], 'blobRef' | 'thumbnailBlobRef'>
 }
 

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { uploadCapture } from './upload'
 import { openShelfwalkDb, saveCapture, loadCaptureRecord } from './persistence'
 import { createCaptureRecord } from './capture'
+import type { CaptureRecord } from './capture'
 
 const DEPS_BASE = {
   now: () => 1746500000000,
@@ -49,12 +50,22 @@ function makeMockFetch(status: number): {
   return { fetch, lastRequest: () => captured }
 }
 
+async function saveAndUpload(
+  record: CaptureRecord,
+  imageBlob: Blob,
+  thumbnailBlob: Blob,
+  fetch: typeof globalThis.fetch
+) {
+  await saveCapture(db, { record, imageBlob, thumbnailBlob })
+  return uploadCapture(record, imageBlob, thumbnailBlob, { fetch, db })
+}
+
 describe('uploadCapture — request shape', () => {
   it('POSTs to /api/upload with Idempotency-Key header', async () => {
     const record = makeRecord()
     const { fetch, lastRequest } = makeMockFetch(200)
 
-    await uploadCapture(record, new Blob(['img']), new Blob(['thumb']), { fetch, db })
+    await saveAndUpload(record, new Blob(['img']), new Blob(['thumb']), fetch)
 
     expect(lastRequest().url).toBe('/api/upload')
     expect(lastRequest().init.method).toBe('POST')
@@ -66,7 +77,7 @@ describe('uploadCapture — request shape', () => {
     const record = makeRecord()
     const { fetch, lastRequest } = makeMockFetch(200)
 
-    await uploadCapture(record, new Blob(['img']), new Blob(['thumb']), { fetch, db })
+    await saveAndUpload(record, new Blob(['img']), new Blob(['thumb']), fetch)
 
     const body = lastRequest().init.body
     expect(body).toBeInstanceOf(FormData)
@@ -80,7 +91,7 @@ describe('uploadCapture — request shape', () => {
     const record = makeRecord()
     const { fetch, lastRequest } = makeMockFetch(200)
 
-    await uploadCapture(record, new Blob(['img']), new Blob(['thumb']), { fetch, db })
+    await saveAndUpload(record, new Blob(['img']), new Blob(['thumb']), fetch)
 
     const body = lastRequest().init.body as FormData
     const serialized = JSON.parse(body.get('record') as string)
@@ -93,7 +104,7 @@ describe('uploadCapture — request shape', () => {
     const record = makeRecord()
     const { fetch, lastRequest } = makeMockFetch(200)
 
-    await uploadCapture(record, new Blob(['img']), new Blob(['thumb']), { fetch, db })
+    await saveAndUpload(record, new Blob(['img']), new Blob(['thumb']), fetch)
 
     const body = lastRequest().init.body as FormData
     const serialized = JSON.parse(body.get('record') as string)

@@ -61,6 +61,7 @@ export type CaptureRecord = {
   }
   exif?: Record<string, unknown>
   uploadState: 'pending' | 'uploading' | 'uploaded' | 'failed' | 'rejected'
+  uploadAttempts: number
 }
 
 export type CaptureRecordInput = {
@@ -133,5 +134,6 @@ export function createCaptureRecord(
     camera: {},
     qualityChecks: { ...(input.qualityChecks ?? DEFAULT_QUALITY_CHECKS) },
     uploadState: 'pending',
+    uploadAttempts: 0,
   }
 }

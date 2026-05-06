@@ -85,6 +85,31 @@ export function updateUploadState(
   })
 }
 
+export function updateUploadProgress(
+  db: IDBDatabase,
+  recordId: string,
+  uploadState: CaptureRecord['uploadState'],
+  uploadAttempts: number
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('records', 'readwrite')
+    const getReq = tx.objectStore('records').get(recordId)
+
+    getReq.onsuccess = () => {
+      const record = getReq.result as CaptureRecord | undefined
+      if (!record) {
+        tx.abort()
+        return
+      }
+      tx.objectStore('records').put({ ...record, uploadState, uploadAttempts }, recordId)
+    }
+
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+    tx.onabort = () => reject(new Error(`updateUploadProgress: record not found: ${recordId}`))
+  })
+}
+
 function idbGet<T>(db: IDBDatabase, storeName: string, key: string): Promise<T | undefined> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(storeName, 'readonly')

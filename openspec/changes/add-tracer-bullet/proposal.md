@@ -5,11 +5,11 @@ The project has research notes and baseline contracts, but no documented first s
 
 ## What Changes
 - Add a `tracer-bullet` capability that defines the minimum end-to-end happy path for the first implementation slice
-- Scope the slice to a single-device flow: start a local scan, enter capture mode, save one capture record and thumbnail in IndexedDB, and enqueue a stub upload attempt
-- Require a development-safe API adapter so the slice can run before the real backend exists
-- Define explicit non-goals so collaboration, IMU quality gates, and background sync remain out of scope for this slice
+- Scope the slice to a single-device flow: call a development-served mock `POST /api/scan` handshake, enter capture mode, save one capture record and thumbnail in IndexedDB, and submit one direct stub upload attempt
+- Require a development-safe API adapter that preserves the documented upload payload shape while acknowledging requests without a production backend
+- Define explicit non-goals so collaboration, IMU quality gates, upload queueing/background sync, and production backend integration remain out of scope for this slice
 
 ## Impact
 - Affected specs: `tracer-bullet`
 - Related baseline references: `openspec/specs/api-contracts.md`, `openspec/specs/data-model.md`
-- Affected code: future app scaffold, local persistence layer, capture flow shell, API adapter boundary, and manual verification docs
+- Affected code: app scaffold, mock scan bootstrap endpoint, capture flow shell, record factory, IndexedDB persistence module, upload adapter boundary, and manual verification docs

@@ -131,11 +131,19 @@ export function getSession(
   return db.get('sessions', sessionId)
 }
 
+export function getAllSessions(db: ShelfwalkDatabase): Promise<TracerBulletSession[]> {
+  return db.getAll('sessions')
+}
+
 export function putSession(
   db: ShelfwalkDatabase,
   session: TracerBulletSession
 ): Promise<string> {
   return db.put('sessions', session, session.id)
+}
+
+export function getAllRecords(db: ShelfwalkDatabase): Promise<CaptureRecord[]> {
+  return db.getAll('records')
 }
 
 export function getTrace(db: ShelfwalkDatabase, sessionId: string): Promise<unknown> {

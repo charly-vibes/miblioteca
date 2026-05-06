@@ -10,6 +10,7 @@ export type TracerBulletSession = {
   scanId: string
   userId: string
   startedAt: string
+  endedAt?: string
   clockOffsetMs: number
   status: 'active' | 'completed'
 }

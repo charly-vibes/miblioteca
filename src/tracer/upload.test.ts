@@ -61,6 +61,21 @@ async function saveAndUpload(
   return uploadCapture(record, imageBlob, thumbnailBlob, { fetch, db })
 }
 
+describe('uploadCapture — re-entry guard', () => {
+  it.each(['uploading', 'uploaded', 'rejected'] as const)(
+    'throws when uploadState is %s',
+    async (state) => {
+      const record = { ...makeRecord(), uploadState: state }
+      await expect(
+        uploadCapture(record, new Blob(['img']), new Blob(['thumb']), {
+          fetch: makeMockFetch(200).fetch,
+          db,
+        })
+      ).rejects.toThrow(`invalid entry state '${state}'`)
+    }
+  )
+})
+
 describe('uploadCapture — request shape', () => {
   it('POSTs to /api/upload with Idempotency-Key header', async () => {
     const record = makeRecord()

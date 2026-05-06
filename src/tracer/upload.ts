@@ -19,6 +19,10 @@ export async function uploadCapture(
   thumbnailBlob: Blob,
   deps: UploadCaptureDeps
 ): Promise<UploadResult> {
+  if (record.uploadState === 'uploading' || record.uploadState === 'uploaded' || record.uploadState === 'rejected') {
+    throw new Error(`uploadCapture: invalid entry state '${record.uploadState}' — only pending/failed allowed`)
+  }
+
   const body = new FormData()
   body.append('record', JSON.stringify(stripForUpload(record)))
   body.append('image', imageBlob)

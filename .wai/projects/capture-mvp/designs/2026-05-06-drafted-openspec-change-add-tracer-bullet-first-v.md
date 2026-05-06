@@ -1,0 +1,1 @@
+Drafted OpenSpec change add-tracer-bullet: first vertical slice proves HTTPS PWA boot, one-device capture persistence, and dev-stub upload boundary while explicitly deferring collaboration and IMU-heavy behaviors.

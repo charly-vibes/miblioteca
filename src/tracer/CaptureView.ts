@@ -4,10 +4,15 @@ import type { StorageBudgetManager, StorageBudgetStatus } from '../pwa/storageBu
 import { requestUploadSync } from '../pwa/syncRegistration'
 import { GhostOverlayCanvas } from '../sensors/ghostOverlayCanvas'
 import type { GyroLike } from '../sensors/ghostOverlayCanvas'
+import type { AccelerometerLike } from '../sensors/imuRecorder'
+import { feedAccel, initialSteadinessState } from '../sensors/steadiness'
+import type { SteadinessState } from '../sensors/steadiness'
 import { bootstrapTracerBullet, type BootstrapResult } from './bootstrap'
 import { createCaptureRecord } from './capture'
 import { createMockScanFetch } from './mockScanApi'
 import { openShelfwalkDb, saveCapture } from './persistence'
+import { qualityWarnings } from './qualityChecks'
+import type { QualityWarning } from './qualityChecks'
 import { createLocalStorageTracerBulletStore } from './storage'
 import { uploadCapture } from './upload'
 
@@ -24,7 +29,12 @@ export type CaptureViewOptions = {
   uploadFetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Pick<Response, 'ok' | 'status'>>
   storageManager?: Partial<StorageBudgetManager>
   gyro?: GyroLike | null
+  accel?: AccelerometerLike | null
   createImageBitmap?: (blob: Blob) => Promise<ImageBitmap>
+  /** Returns a low-res frame for quality checks, or null when unavailable. */
+  getQualityFrame?: () => ImageData | null
+  /** Interval between quality frame polls in ms. Default: 100. */
+  pollIntervalMs?: number
 }
 
 type BootstrapState =
@@ -56,6 +66,9 @@ export class CaptureView {
   private readonly mockFetch
   private readonly opts: CaptureViewOptions
   private ghostOverlay: GhostOverlayCanvas | null = null
+  private steadinessState: SteadinessState = initialSteadinessState()
+  private activeWarnings: QualityWarning[] = []
+  private pollId: ReturnType<typeof setInterval> | null = null
 
   private readonly root: HTMLDivElement
   private readonly viewfinder: HTMLDivElement
@@ -67,6 +80,8 @@ export class CaptureView {
   private readonly shutterBtn: HTMLButtonElement
   private readonly openCameraBtn: HTMLButtonElement
   private readonly retryBtn: HTMLButtonElement
+  private readonly steadinessEl: HTMLDivElement
+  private readonly warningsEl: HTMLDivElement
 
   constructor(container: HTMLElement, opts: CaptureViewOptions = {}) {
     this.opts = opts
@@ -113,8 +128,16 @@ export class CaptureView {
     this.retryBtn.textContent = 'Retry'
     this.retryBtn.addEventListener('click', () => void this.startBootstrap())
 
-    this.controls.append(this.storageWarningEl, this.shutterBtn, this.openCameraBtn, this.retryBtn, this.statusEl)
-    this.viewfinder.append(this.onboarding)
+    this.steadinessEl = this.mk('div', 'steadiness-indicator')
+    this.steadinessEl.setAttribute('role', 'status')
+    this.steadinessEl.setAttribute('aria-label', 'Steadiness')
+    this.steadinessEl.hidden = true
+
+    this.warningsEl = this.mk('div', 'camera-quality-warnings')
+    this.warningsEl.setAttribute('aria-live', 'polite')
+
+    this.controls.append(this.storageWarningEl, this.steadinessEl, this.shutterBtn, this.openCameraBtn, this.retryBtn, this.statusEl)
+    this.viewfinder.append(this.warningsEl, this.onboarding)
     this.root.append(this.viewfinder, this.controls)
     container.append(this.root)
 
@@ -156,14 +179,105 @@ export class CaptureView {
     }
     this.ghostOverlay?.destroy()
     this.ghostOverlay = null
+    this.stopQualityPoll()
+    this.stopAccel()
+
     this.cameraState = s
     if (s.kind === 'granted') {
       this.video.srcObject = s.stream
       if (this.opts.gyro !== undefined) {
         this.ghostOverlay = new GhostOverlayCanvas(this.viewfinder, { gyro: this.opts.gyro ?? null })
       }
+      this.startAccel()
+      this.startQualityPoll()
     }
     this.render()
+  }
+
+  private startAccel() {
+    const accel = this.opts.accel
+    if (!accel) return
+    this.steadinessState = initialSteadinessState()
+    accel.onreading = () => {
+      this.steadinessState = feedAccel(this.steadinessState, {
+        t: accel.timestamp ?? performance.now(),
+        ax: accel.x ?? 0,
+        ay: accel.y ?? 0,
+        az: accel.z ?? 0,
+      })
+      this.render()
+    }
+    accel.onerror = null
+    accel.start()
+  }
+
+  private stopAccel() {
+    const accel = this.opts.accel
+    if (!accel) return
+    accel.onreading = null
+    accel.stop()
+    this.steadinessState = initialSteadinessState()
+  }
+
+  private startQualityPoll() {
+    const { getQualityFrame, pollIntervalMs = 100 } = this.opts
+    if (!getQualityFrame) return
+    const poll = () => {
+      const frame = getQualityFrame()
+      if (frame) {
+        const checks = { laplacianVariance: this.laplacianVarianceOf(frame), overexposedFraction: this.exposureFractionOf(frame, 'over'), underexposedFraction: this.exposureFractionOf(frame, 'under'), steadyAtCapture: this.steadinessState.steady, tiltDegrees: 0 }
+        this.activeWarnings = qualityWarnings(checks)
+      } else {
+        this.activeWarnings = []
+      }
+      this.renderWarnings()
+    }
+    poll()
+    this.pollId = setInterval(poll, pollIntervalMs)
+  }
+
+  private stopQualityPoll() {
+    if (this.pollId !== null) { clearInterval(this.pollId); this.pollId = null }
+    this.activeWarnings = []
+    this.renderWarnings()
+  }
+
+  private laplacianVarianceOf(frame: ImageData): number {
+    const { data, width, height } = frame
+    let sum = 0, n = 0
+    const luma = (i: number) => 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        const idx = (y * width + x) * 4
+        const lap = -4 * luma(idx) + luma(idx - 4) + luma(idx + 4) + luma(((y - 1) * width + x) * 4) + luma(((y + 1) * width + x) * 4)
+        sum += lap * lap; n++
+      }
+    }
+    return n > 0 ? sum / n : 0
+  }
+
+  private exposureFractionOf(frame: ImageData, kind: 'over' | 'under'): number {
+    const { data } = frame
+    const total = data.length / 4
+    if (total === 0) return 0
+    let count = 0
+    for (let i = 0; i < data.length; i += 4) {
+      const luma = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
+      if (kind === 'over' && luma > 250) count++
+      if (kind === 'under' && luma < 5) count++
+    }
+    return count / total
+  }
+
+  private renderWarnings() {
+    this.warningsEl.replaceChildren()
+    for (const w of this.activeWarnings) {
+      const badge = document.createElement('span')
+      badge.className = 'quality-badge'
+      badge.dataset.warning = w
+      badge.textContent = w.charAt(0).toUpperCase() + w.slice(1)
+      this.warningsEl.append(badge)
+    }
   }
 
   private setCaptureState(s: CaptureState) {
@@ -296,16 +410,26 @@ export class CaptureView {
       this.bootstrapState.kind === 'ready' || this.bootstrapState.kind === 'loading'
 
     if (cameraReady) {
-      if (!this.viewfinder.contains(this.video)) this.viewfinder.replaceChildren(this.video)
+      if (!this.viewfinder.contains(this.video)) {
+        this.viewfinder.replaceChildren(this.warningsEl, this.video)
+      }
     } else {
-      if (!this.viewfinder.contains(this.onboarding)) this.viewfinder.replaceChildren(this.onboarding)
+      if (!this.viewfinder.contains(this.onboarding)) {
+        this.viewfinder.replaceChildren(this.warningsEl, this.onboarding)
+      }
     }
 
     this.storageWarningEl.hidden = this.storageBudget.kind === 'ok'
     this.storageWarningEl.textContent = this.storageBudget.kind === 'ok' ? '' : this.storageBudget.message
 
     this.shutterBtn.hidden = !cameraReady
-    this.shutterBtn.disabled = this.captureState.kind === 'capturing' || this.storageBudget.kind === 'blocking'
+    this.shutterBtn.disabled =
+      this.captureState.kind === 'capturing' ||
+      this.storageBudget.kind === 'blocking' ||
+      (this.opts.accel !== undefined && !this.steadinessState.steady)
+
+    this.steadinessEl.hidden = !cameraReady || this.opts.accel === undefined
+    this.steadinessEl.dataset.steady = String(this.steadinessState.steady)
 
     this.openCameraBtn.hidden = cameraReady || !bootstrapActive
     this.openCameraBtn.disabled = this.cameraState.kind === 'requesting' || this.bootstrapState.kind === 'loading'
@@ -322,6 +446,8 @@ export class CaptureView {
       this.cameraState.stream.getTracks().forEach((t) => t.stop())
     }
     this.ghostOverlay?.destroy()
+    this.stopQualityPoll()
+    this.stopAccel()
     this.root.remove()
   }
 }

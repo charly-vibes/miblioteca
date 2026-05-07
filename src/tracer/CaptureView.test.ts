@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CaptureView } from './CaptureView'
 import type { CaptureSnapshotResult } from './CaptureView'
+import type { AccelerometerLike } from '../sensors/imuRecorder'
 
 const MOCK_SNAPSHOT: CaptureSnapshotResult = {
   imageBlob: new Blob(['img'], { type: 'image/jpeg' }),
@@ -135,6 +136,148 @@ describe('CaptureView — camera permission', () => {
     expect(screen.getByRole('button', { name: /open camera/i })).toBeInTheDocument()
   })
 })
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function makeFakeAccel(): AccelerometerLike & {
+  triggerReading(x: number, y: number, z: number, t: number): void
+} {
+  const sensor = {
+    x: 0 as number | null,
+    y: 0 as number | null,
+    z: 0 as number | null,
+    timestamp: 0 as DOMHighResTimeStamp | null,
+    onreading: null as ((ev: Event) => void) | null,
+    onerror: null as ((ev: { error: DOMException }) => void) | null,
+    start: vi.fn(),
+    stop: vi.fn(),
+    triggerReading(x: number, y: number, z: number, t: number) {
+      sensor.x = x; sensor.y = y; sensor.z = z; sensor.timestamp = t
+      sensor.onreading?.(new Event('reading'))
+    },
+  }
+  return sensor
+}
+
+// jsdom lacks ImageData constructor without the 'canvas' package — use a compatible POJO.
+function makeImageDataPojo(width: number, height: number, fill: number): ImageData {
+  const data = new Uint8ClampedArray(width * height * 4).fill(fill)
+  return { data, width, height, colorSpace: 'srgb' } as ImageData
+}
+
+function makeBlurryImageData(): ImageData {
+  // Uniform gray → near-zero laplacian variance → "blurry"
+  return makeImageDataPojo(4, 4, 128)
+}
+
+function makeBrightImageData(): ImageData {
+  // All white → overexposed
+  return makeImageDataPojo(4, 4, 255)
+}
+
+// ── Steadiness gate ───────────────────────────────────────────────────────────
+
+describe('CaptureView — steadiness gate', () => {
+  async function grantCamera() {
+    mockGetUserMedia.mockResolvedValue(makeFakeStream())
+    const user = userEvent.setup()
+    const accel = makeFakeAccel()
+
+    new CaptureView(container, {
+      captureSnapshot: mockCaptureSnapshot,
+      uploadFetch: mockUploadFetch(200),
+      accel,
+    })
+    await vi.waitFor(() => screen.getByRole('button', { name: /open camera/i }))
+    await user.click(screen.getByRole('button', { name: /open camera/i }))
+    await vi.waitFor(() => screen.getByRole('button', { name: /take photo/i }))
+    return { user, accel }
+  }
+
+  it('disables shutter button when accelerometer readings are shaky', async () => {
+    const { accel } = await grantCamera()
+
+    // Two samples 100ms apart with alternating ±3 m/s² on z → variance > 0.5
+    accel.triggerReading(0, 0, 3, 0)
+    accel.triggerReading(0, 0, -3, 100)
+    accel.triggerReading(0, 0, 3, 200)
+
+    await vi.waitFor(() => {
+      expect(screen.getByRole('button', { name: /take photo/i })).toBeDisabled()
+    })
+  })
+
+  it('enables shutter button when device is steady', async () => {
+    const { accel } = await grantCamera()
+
+    // Fill 200ms window with near-constant readings → variance ≈ 0
+    for (let i = 0; i <= 200; i += 50) {
+      accel.triggerReading(0.05, 0.05, 0.05, i)
+    }
+
+    await vi.waitFor(() => {
+      expect(screen.getByRole('button', { name: /take photo/i })).not.toBeDisabled()
+    })
+  })
+
+  it('shows a steadiness indicator when camera is active', async () => {
+    await grantCamera()
+    expect(screen.getByRole('status', { name: /steadiness/i })).toBeInTheDocument()
+  })
+})
+
+// ── Quality warnings ──────────────────────────────────────────────────────────
+
+describe('CaptureView — quality warnings', () => {
+  let activeView: CaptureView | null = null
+
+  afterEach(() => {
+    activeView?.destroy()
+    activeView = null
+  })
+
+  async function grantCameraWithQuality(getQualityFrame: () => ImageData | null) {
+    mockGetUserMedia.mockResolvedValue(makeFakeStream())
+    const user = userEvent.setup()
+
+    activeView = new CaptureView(container, {
+      captureSnapshot: mockCaptureSnapshot,
+      uploadFetch: mockUploadFetch(200),
+      getQualityFrame,
+      pollIntervalMs: 0,  // fire immediately
+    })
+    await vi.waitFor(() => screen.getByRole('button', { name: /open camera/i }))
+    await user.click(screen.getByRole('button', { name: /open camera/i }))
+    await vi.waitFor(() => screen.getByRole('button', { name: /take photo/i }))
+    return user
+  }
+
+  it('shows blur warning when quality frame is uniformly gray', async () => {
+    await grantCameraWithQuality(() => makeBlurryImageData())
+
+    await vi.waitFor(() => {
+      expect(screen.getByText(/blurry/i)).toBeInTheDocument()
+    })
+  })
+
+  it('shows overexposed warning when quality frame is all white', async () => {
+    await grantCameraWithQuality(() => makeBrightImageData())
+
+    await vi.waitFor(() => {
+      expect(screen.getByText(/overexposed/i)).toBeInTheDocument()
+    })
+  })
+
+  it('shows no warnings when quality frame is null', async () => {
+    await grantCameraWithQuality(() => null)
+
+    await vi.waitFor(() => screen.getByRole('button', { name: /take photo/i }))
+    expect(screen.queryByText(/blurry/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/overexposed/i)).not.toBeInTheDocument()
+  })
+})
+
+// ── Capture and upload ────────────────────────────────────────────────────────
 
 describe('CaptureView — capture and upload', () => {
   async function bootstrapAndGrantCamera(uploadFetch: ReturnType<typeof mockUploadFetch>) {

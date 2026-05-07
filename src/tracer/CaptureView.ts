@@ -38,6 +38,8 @@ export type CaptureViewOptions = {
   getQualityFrame?: () => ImageData | null
   /** Interval between quality frame polls in ms. Default: 100. */
   pollIntervalMs?: number
+  /** Called when user taps the back button to return to sessions list. */
+  onBack?: () => void
 }
 
 type BootstrapState =
@@ -85,6 +87,7 @@ export class CaptureView {
   private readonly retryBtn: HTMLButtonElement
   private readonly steadinessEl: HTMLDivElement
   private readonly warningsEl: HTMLDivElement
+  private readonly backBtn: HTMLButtonElement | null
   private bundleExportPanel: BundleExportPanel | null = null
 
   constructor(container: HTMLElement, opts: CaptureViewOptions = {}) {
@@ -140,8 +143,20 @@ export class CaptureView {
     this.warningsEl = this.mk('div', 'camera-quality-warnings')
     this.warningsEl.setAttribute('aria-live', 'polite')
 
+    if (opts.onBack) {
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'camera-back-btn'
+      btn.setAttribute('aria-label', 'Back to sessions')
+      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>'
+      btn.addEventListener('click', opts.onBack)
+      this.backBtn = btn
+    } else {
+      this.backBtn = null
+    }
+
     this.controls.append(this.storageWarningEl, this.steadinessEl, this.shutterBtn, this.openCameraBtn, this.retryBtn, this.statusEl)
-    this.viewfinder.append(this.warningsEl, this.onboarding)
+    this.viewfinder.append(this.warningsEl, this.onboarding, ...(this.backBtn ? [this.backBtn] : []))
     this.root.append(this.viewfinder, this.controls)
     container.append(this.root)
 
@@ -434,13 +449,14 @@ export class CaptureView {
     const bootstrapActive =
       this.bootstrapState.kind === 'ready' || this.bootstrapState.kind === 'loading'
 
+    const overlay = this.backBtn ? [this.backBtn] : []
     if (cameraReady) {
       if (!this.viewfinder.contains(this.video)) {
-        this.viewfinder.replaceChildren(this.warningsEl, this.video)
+        this.viewfinder.replaceChildren(this.warningsEl, this.video, ...overlay)
       }
     } else {
       if (!this.viewfinder.contains(this.onboarding)) {
-        this.viewfinder.replaceChildren(this.warningsEl, this.onboarding)
+        this.viewfinder.replaceChildren(this.warningsEl, this.onboarding, ...overlay)
       }
     }
 

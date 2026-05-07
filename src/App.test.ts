@@ -17,6 +17,9 @@ beforeEach(async () => {
   container = document.createElement('div')
   document.body.append(container)
   db = await openShelfwalkDb(`app-test-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+
+  // Reset to home route
+  window.location.hash = '/'
 })
 
 afterEach(() => {
@@ -24,33 +27,90 @@ afterEach(() => {
   dispose = undefined
   db.close()
   container.remove()
+  window.location.hash = ''
 })
 
 describe('mountMibliotecaApp', () => {
-  it('shows scan management when no active session exists', async () => {
+  it('shows scan management on the home route', async () => {
     dispose = mountMibliotecaApp(container, { openDb: async () => db })
 
     expect(await screen.findByRole('heading', { name: /start a shelf scan/i })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /join a scan/i })).toBeInTheDocument()
   })
 
-  it('resumes the latest active session instead of forcing scan management', async () => {
+  it('shows CaptureView when hash route points to a valid session', async () => {
     await putScan(db, {
-      id: 'scan-resume',
-      shortCode: 'RSUM-234',
-      joinToken: 'resume-token',
+      id: 'scan-nav',
+      shortCode: 'NAV-001',
+      joinToken: 'nav-token',
       createdAt: '2026-05-07T10:00:00.000Z',
     })
     await putSession(db, {
-      id: 'session-resume',
-      scanId: 'scan-resume',
-      userId: 'user-resume',
+      id: 'session-nav',
+      scanId: 'scan-nav',
+      userId: 'user-nav',
+      startedAt: '2026-05-07T10:01:00.000Z',
+      clockOffsetMs: 0,
+      status: 'active',
+    })
+
+    window.location.hash = '/session/session-nav'
+    dispose = mountMibliotecaApp(container, { openDb: async () => db })
+
+    expect(await screen.findByRole('button', { name: /open camera/i })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /start a shelf scan/i })).not.toBeInTheDocument()
+  })
+
+  it('shows back button when navigated to a session', async () => {
+    await putScan(db, {
+      id: 'scan-back',
+      shortCode: 'BCK-001',
+      joinToken: 'back-token',
+      createdAt: '2026-05-07T10:00:00.000Z',
+    })
+    await putSession(db, {
+      id: 'session-back',
+      scanId: 'scan-back',
+      userId: 'user-back',
+      startedAt: '2026-05-07T10:01:00.000Z',
+      clockOffsetMs: 0,
+      status: 'active',
+    })
+
+    window.location.hash = '/session/session-back'
+    dispose = mountMibliotecaApp(container, { openDb: async () => db })
+
+    expect(await screen.findByRole('button', { name: /back to sessions/i })).toBeInTheDocument()
+  })
+
+  it('falls back to home when session ID does not exist in DB', async () => {
+    window.location.hash = '/session/nonexistent-id'
+    dispose = mountMibliotecaApp(container, { openDb: async () => db })
+
+    expect(await screen.findByRole('heading', { name: /start a shelf scan/i })).toBeInTheDocument()
+  })
+
+  it('navigates to CaptureView when hash changes to a session route after mount', async () => {
+    await putScan(db, {
+      id: 'scan-live',
+      shortCode: 'LIVE-01',
+      joinToken: 'live-token',
+      createdAt: '2026-05-07T10:00:00.000Z',
+    })
+    await putSession(db, {
+      id: 'session-live',
+      scanId: 'scan-live',
+      userId: 'user-live',
       startedAt: '2026-05-07T10:01:00.000Z',
       clockOffsetMs: 0,
       status: 'active',
     })
 
     dispose = mountMibliotecaApp(container, { openDb: async () => db })
+    expect(await screen.findByRole('heading', { name: /start a shelf scan/i })).toBeInTheDocument()
+
+    window.location.hash = '/session/session-live'
+    window.dispatchEvent(new HashChangeEvent('hashchange'))
 
     expect(await screen.findByRole('button', { name: /open camera/i })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: /start a shelf scan/i })).not.toBeInTheDocument()

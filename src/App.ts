@@ -2,8 +2,9 @@ import { mountAppHeader } from './pwa/AppHeader'
 import { mountScanManagementView } from './scan/ScanManagementView'
 import { CaptureView } from './tracer/CaptureView'
 import { createMockScanFetch } from './tracer/mockScanApi'
-import { getAllSessions, getScan, openShelfwalkDb, type ShelfwalkDatabase } from './tracer/persistence'
+import { getSession, getScan, openShelfwalkDb, type ShelfwalkDatabase } from './tracer/persistence'
 import type { BootstrapResult } from './tracer/bootstrap'
+import { parseRoute, navigateToSession, navigateHome, type Route } from './router'
 
 export type MibliotecaAppDeps = {
   openDb?: () => Promise<ShelfwalkDatabase>
@@ -20,50 +21,66 @@ export function mountMibliotecaApp(root: HTMLElement, deps: MibliotecaAppDeps = 
   let captureView: CaptureView | null = null
   let unmountScanManagement: (() => void) | null = null
   let disposed = false
+  let generation = 0
 
   const getDb = () => {
     dbPromise ??= openDb()
     return dbPromise
   }
 
+  function teardownCurrentView() {
+    captureView?.destroy()
+    captureView = null
+    unmountScanManagement?.()
+    unmountScanManagement = null
+  }
+
+  async function handleRoute(route: Route) {
+    const gen = ++generation
+    if (disposed) return
+    teardownCurrentView()
+
+    if (route.kind === 'session') {
+      const db = await getDb()
+      if (gen !== generation || disposed) return
+      const bootstrap = await loadBootstrapForSession(db, route.sessionId)
+      if (gen !== generation || disposed) return
+      if (!bootstrap) { navigateHome(); return }
+      captureView = new CaptureView(root, { bootstrapResult: bootstrap, onBack: navigateHome })
+    } else {
+      unmountScanManagement = mountScanManagementView(root, {
+        openDb: getDb,
+        fetch,
+        now,
+        onReady: (result) => {
+          navigateToSession(result.session.id)
+        },
+      })
+    }
+  }
+
   disposers.push(mountAppHeader(root))
 
-  void (async () => {
-    const resumed = await loadActiveBootstrap(await getDb())
-    if (disposed) return
-    if (resumed) {
-      captureView = new CaptureView(root, { bootstrapResult: resumed })
-      return
-    }
+  const onHashChange = () => void handleRoute(parseRoute())
+  window.addEventListener('hashchange', onHashChange)
+  disposers.push(() => window.removeEventListener('hashchange', onHashChange))
 
-    unmountScanManagement = mountScanManagementView(root, {
-      openDb: getDb,
-      fetch,
-      now,
-      onReady: (result) => {
-        unmountScanManagement?.()
-        unmountScanManagement = null
-        captureView = new CaptureView(root, { bootstrapResult: result })
-      },
-    })
-  })()
+  void handleRoute(parseRoute())
 
   return () => {
     disposed = true
-    unmountScanManagement?.()
-    captureView?.destroy()
+    teardownCurrentView()
     for (const dispose of [...disposers].reverse()) dispose()
   }
 }
 
-async function loadActiveBootstrap(db: ShelfwalkDatabase): Promise<BootstrapResult | undefined> {
-  const activeSession = (await getAllSessions(db))
-    .filter((session) => session.status === 'active')
-    .sort((left, right) => right.startedAt.localeCompare(left.startedAt))[0]
-  if (!activeSession) return undefined
-
-  const scan = await getScan(db, activeSession.scanId)
+async function loadBootstrapForSession(
+  db: ShelfwalkDatabase,
+  sessionId: string
+): Promise<BootstrapResult | undefined> {
+  const session = await getSession(db, sessionId)
+  if (!session) return undefined
+  const scan = await getScan(db, session.scanId)
   if (!scan) return undefined
-
-  return { resumed: true, scan, session: activeSession }
+  return { resumed: true, scan, session }
 }

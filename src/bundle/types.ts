@@ -41,9 +41,9 @@ export type SessionBundleDeliveryState =
   | { status: 'aborted' }
 
 export type BundleTransferGuidance =
-  | { level: 'normal'; message: string }
-  | { level: 'warning'; message: string; thresholdBytes: number }
-  | { level: 'recommend-drive-or-usb'; message: string; thresholdBytes: number }
+  | { level: 'normal'; message: string; recompressWarning: string }
+  | { level: 'warning'; message: string; thresholdBytes: number; recompressWarning: string }
+  | { level: 'recommend-drive-or-usb'; message: string; thresholdBytes: number; recompressWarning: string }
 
 export type BundleShareCapability =
   | { status: 'supported' }

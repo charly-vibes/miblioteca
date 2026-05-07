@@ -30,6 +30,7 @@ export class BundleExportPanel {
   private readonly root: HTMLDivElement
   private readonly statusEl: HTMLParagraphElement
   private readonly guidanceEl: HTMLParagraphElement
+  private readonly recompressEl: HTMLParagraphElement
   private readonly exportBtn: HTMLButtonElement
   private readonly cancelBtn: HTMLButtonElement
   private readonly retryBtn: HTMLButtonElement
@@ -51,6 +52,10 @@ export class BundleExportPanel {
     this.guidanceEl.className = 'bundle-export-guidance'
     this.guidanceEl.hidden = true
 
+    this.recompressEl = document.createElement('p')
+    this.recompressEl.className = 'bundle-export-recompress-warning'
+    this.recompressEl.hidden = true
+
     this.exportBtn = this.makeBtn('Export bundle', () => void this.startExport())
     this.cancelBtn = this.makeBtn('Cancel', () => this.cancel())
     this.retryBtn = this.makeBtn('Retry', () => void this.startExport())
@@ -59,7 +64,7 @@ export class BundleExportPanel {
       () => void this.transfer()
     )
 
-    this.root.append(this.statusEl, this.guidanceEl, this.exportBtn, this.cancelBtn, this.retryBtn, this.transferBtn)
+    this.root.append(this.statusEl, this.guidanceEl, this.recompressEl, this.exportBtn, this.cancelBtn, this.retryBtn, this.transferBtn)
     container.append(this.root)
 
     this.render()
@@ -202,8 +207,11 @@ export class BundleExportPanel {
       } else {
         this.guidanceEl.hidden = true
       }
+      this.recompressEl.textContent = guidance.recompressWarning
+      this.recompressEl.hidden = false
     } else {
       this.guidanceEl.hidden = true
+      this.recompressEl.hidden = true
     }
 
     this.root.hidden = isLoading

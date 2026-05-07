@@ -65,6 +65,15 @@ describe('transferGuidance', () => {
     const g = transferGuidance(1000 * MB)
     expect(g.level).toBe('recommend-drive-or-usb')
   })
+
+  it('includes a recompressWarning at every level', () => {
+    for (const bytes of [50 * MB, 200 * MB, 600 * MB]) {
+      const g = transferGuidance(bytes)
+      expect(g).toHaveProperty('recompressWarning')
+      expect(typeof g.recompressWarning).toBe('string')
+      expect(g.recompressWarning.length).toBeGreaterThan(0)
+    }
+  })
 })
 
 describe('shareBundle', () => {

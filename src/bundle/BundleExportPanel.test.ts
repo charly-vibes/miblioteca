@@ -274,6 +274,23 @@ describe('BundleExportPanel — size warnings', () => {
       expect(screen.getByText(/100 mb|email may fail/i)).toBeInTheDocument()
     })
   })
+
+  it('shows recompress warning after any successful export', async () => {
+    await putScan(db, makeScan())
+    await putSession(db, makeSession())
+
+    const assemble = vi.fn().mockResolvedValue({
+      ok: true, blob: makeBlob(), manifest: makeManifest(), filename: 'lib.mbibundle.zip',
+    } satisfies BundleAssemblyResult)
+
+    makePanel({ assemble })
+    await vi.waitFor(() => screen.getByRole('button', { name: /export bundle/i }))
+    await userEvent.click(screen.getByRole('button', { name: /export bundle/i }))
+
+    await vi.waitFor(() => {
+      expect(screen.getByText(/send as a file or document/i)).toBeInTheDocument()
+    })
+  })
 })
 
 describe('BundleExportPanel — destroy', () => {

@@ -2,6 +2,9 @@ import type { BundleShareCapability, BundleTransferGuidance } from './types'
 
 const MB = 1024 * 1024
 
+const RECOMPRESS_WARNING =
+  'To preserve image quality, send as a file or document — not as a photo or media message.'
+
 export function detectShareCapability(): BundleShareCapability {
   if (typeof navigator?.share !== 'function') {
     return { status: 'unsupported', reason: 'web-share-unavailable', fallback: 'download' }
@@ -18,6 +21,7 @@ export function transferGuidance(sizeBytes: number): BundleTransferGuidance {
       level: 'recommend-drive-or-usb',
       message: 'Bundle is large — use Drive, USB, or AirDrop. Email and most chat apps will fail.',
       thresholdBytes: 500 * MB,
+      recompressWarning: RECOMPRESS_WARNING,
     }
   }
   if (sizeBytes >= 100 * MB) {
@@ -25,9 +29,10 @@ export function transferGuidance(sizeBytes: number): BundleTransferGuidance {
       level: 'warning',
       message: 'Bundle exceeds 100 MB — email may fail or be slow. Try Drive or USB for reliability.',
       thresholdBytes: 100 * MB,
+      recompressWarning: RECOMPRESS_WARNING,
     }
   }
-  return { level: 'normal', message: 'Ready to share or download.' }
+  return { level: 'normal', message: 'Ready to share or download.', recompressWarning: RECOMPRESS_WARNING }
 }
 
 export async function shareBundle(blob: Blob, filename: string): Promise<void> {

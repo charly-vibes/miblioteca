@@ -6,7 +6,10 @@ export function laplacianVariance(imageData: ImageData): number {
   const { data, width, height } = imageData
   if (width < 3 || height < 3) return 0
 
-  const responses: number[] = []
+  // Welford's online algorithm — accumulates variance without allocating responses[].
+  let n = 0
+  let mean = 0
+  let m2 = 0
 
   for (let y = 1; y < height - 1; y++) {
     for (let x = 1; x < width - 1; x++) {
@@ -19,15 +22,14 @@ export function laplacianVariance(imageData: ImageData): number {
         luma(x - 1, y) - 4 * luma(x, y) +
         luma(x + 1, y) +
         luma(x, y + 1)
-      responses.push(lap)
+      n++
+      const delta = lap - mean
+      mean += delta / n
+      m2 += delta * (lap - mean)
     }
   }
 
-  const n = responses.length
-  if (n === 0) return 0
-  const mean = responses.reduce((s, v) => s + v, 0) / n
-  const variance = responses.reduce((s, v) => s + (v - mean) ** 2, 0) / n
-  return variance
+  return n === 0 ? 0 : m2 / n
 }
 
 export type MakeThumbnailDeps = {

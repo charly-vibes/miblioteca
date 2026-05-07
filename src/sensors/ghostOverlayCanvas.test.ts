@@ -133,4 +133,23 @@ describe('GhostOverlayCanvas motion gating', () => {
     expect(el.hidden).toBe(true)
     viewfinder.remove()
   })
+
+  it('cancels the RAF loop on the tick immediately after destroy()', () => {
+    const cancelRaf = vi.fn()
+    let rafCallback: FrameRequestCallback | null = null
+    const viewfinder = document.createElement('div')
+    document.body.appendChild(viewfinder)
+    makeCanvas()
+    const overlay = new GhostOverlayCanvas(viewfinder, {
+      gyro: null,
+      requestAnimationFrame: (cb) => { rafCallback = cb; return 42 },
+      cancelAnimationFrame: cancelRaf,
+      now: () => 0,
+    })
+    overlay.destroy()                 // sets destroyed=true, cancels current rafId
+    cancelRaf.mockClear()
+    rafCallback?.(0)                  // simulate the already-scheduled callback firing post-destroy
+    expect(cancelRaf).toHaveBeenCalled()  // the loop self-cancels its newly scheduled id
+    viewfinder.remove()
+  })
 })

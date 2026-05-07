@@ -13,7 +13,7 @@ import { createCaptureRecord } from './capture'
 import { makeThumbnail } from './imageProcessing'
 import { createMockScanFetch } from './mockScanApi'
 import { getAllRecords, loadThumbnail, openShelfwalkDb, saveCapture } from './persistence'
-import { qualityWarnings } from './qualityChecks'
+import { qualityWarnings, THRESHOLDS } from './qualityChecks'
 import type { QualityWarning } from './qualityChecks'
 import { createLocalStorageTracerBulletStore } from './storage'
 import { uploadCapture } from './upload'
@@ -266,7 +266,20 @@ export class CaptureView {
     const poll = () => {
       const frame = getQualityFrame()
       if (frame) {
-        const checks = { laplacianVariance: this.laplacianVarianceOf(frame), overexposedFraction: this.exposureFractionOf(frame, 'over'), underexposedFraction: this.exposureFractionOf(frame, 'under'), steadyAtCapture: this.steadinessState.steady, tiltDegrees: 0 }
+        const lv = this.laplacianVarianceOf(frame)
+        const over = this.exposureFractionOf(frame, 'over')
+        const under = this.exposureFractionOf(frame, 'under')
+        const checks = {
+          laplacianVariance: lv,
+          overexposedFraction: over,
+          underexposedFraction: under,
+          steadyAtCapture: this.steadinessState.steady,
+          tiltDegrees: 0,
+          blurry: lv < THRESHOLDS.blurry,
+          overexposed: over > THRESHOLDS.overexposed,
+          underexposed: under > THRESHOLDS.underexposed,
+          dark: false,
+        }
         this.activeWarnings = qualityWarnings(checks)
       } else {
         this.activeWarnings = []

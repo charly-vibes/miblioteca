@@ -38,9 +38,9 @@ export function runQualityChecks(imageData: ImageData, sensor: QualitySensorStat
 
 export function qualityWarnings(checks: QualityChecks): QualityWarning[] {
   const warnings: QualityWarning[] = []
-  if (checks.laplacianVariance < THRESHOLDS.blurry) warnings.push('blurry')
-  if (checks.overexposedFraction > THRESHOLDS.overexposed) warnings.push('overexposed')
-  if (checks.underexposedFraction > THRESHOLDS.underexposed) warnings.push('underexposed')
+  if (checks.blurry) warnings.push('blurry')
+  if (checks.overexposed) warnings.push('overexposed')
+  if (checks.underexposed) warnings.push('underexposed')
   if (checks.tiltDegrees > THRESHOLDS.tilt) warnings.push('tilted')
   return warnings
 }

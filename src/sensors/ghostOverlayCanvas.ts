@@ -28,6 +28,7 @@ export class GhostOverlayCanvas {
   private rafId = 0
   private currentShiftPx = 0
   private hasSnapshot = false
+  private destroyed = false
   private readonly deps: Required<GhostOverlayCanvasDeps>
 
   constructor(viewfinder: HTMLElement, deps: GhostOverlayCanvasDeps) {
@@ -69,6 +70,10 @@ export class GhostOverlayCanvas {
 
   private rafLoop: FrameRequestCallback = () => {
     this.rafId = this.deps.requestAnimationFrame(this.rafLoop)
+    if (this.destroyed) {
+      this.deps.cancelAnimationFrame(this.rafId)
+      return
+    }
 
     const shouldShow = this.hasSnapshot && this.state.omegaMag <= MOTION_GATE_RAD_S
     if (this.canvas.hidden !== !shouldShow) {
@@ -100,6 +105,7 @@ export class GhostOverlayCanvas {
 
   // Call when the camera session ends or the view unmounts.
   destroy() {
+    this.destroyed = true
     this.deps.cancelAnimationFrame(this.rafId)
     this.deps.gyro?.stop()
     this.canvas.remove()

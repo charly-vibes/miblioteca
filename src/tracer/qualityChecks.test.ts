@@ -141,28 +141,28 @@ describe('qualityWarnings', () => {
     expect(qualityWarnings(base)).toEqual([])
   })
 
-  it('warns blurry when laplacianVariance < threshold', () => {
-    expect(qualityWarnings({ ...base, laplacianVariance: THRESHOLDS.blurry - 1 })).toContain('blurry')
+  it('warns blurry when blurry flag is true', () => {
+    expect(qualityWarnings({ ...base, blurry: true })).toContain('blurry')
   })
 
-  it('does not warn blurry at exactly the threshold', () => {
-    expect(qualityWarnings({ ...base, laplacianVariance: THRESHOLDS.blurry })).not.toContain('blurry')
+  it('does not warn blurry when blurry flag is false', () => {
+    expect(qualityWarnings({ ...base, blurry: false })).not.toContain('blurry')
   })
 
-  it('warns overexposed when fraction > threshold', () => {
-    expect(qualityWarnings({ ...base, overexposedFraction: THRESHOLDS.overexposed + 0.01 })).toContain('overexposed')
+  it('warns overexposed when overexposed flag is true', () => {
+    expect(qualityWarnings({ ...base, overexposed: true })).toContain('overexposed')
   })
 
-  it('does not warn overexposed at exactly the threshold', () => {
-    expect(qualityWarnings({ ...base, overexposedFraction: THRESHOLDS.overexposed })).not.toContain('overexposed')
+  it('does not warn overexposed when overexposed flag is false', () => {
+    expect(qualityWarnings({ ...base, overexposed: false })).not.toContain('overexposed')
   })
 
-  it('warns underexposed when fraction > threshold', () => {
-    expect(qualityWarnings({ ...base, underexposedFraction: THRESHOLDS.underexposed + 0.01 })).toContain('underexposed')
+  it('warns underexposed when underexposed flag is true', () => {
+    expect(qualityWarnings({ ...base, underexposed: true })).toContain('underexposed')
   })
 
-  it('does not warn underexposed at exactly the threshold', () => {
-    expect(qualityWarnings({ ...base, underexposedFraction: THRESHOLDS.underexposed })).not.toContain('underexposed')
+  it('does not warn underexposed when underexposed flag is false', () => {
+    expect(qualityWarnings({ ...base, underexposed: false })).not.toContain('underexposed')
   })
 
   it('warns tilted when tiltDegrees > threshold', () => {
@@ -176,8 +176,8 @@ describe('qualityWarnings', () => {
   it('can return multiple warnings simultaneously', () => {
     const w = qualityWarnings({
       ...base,
-      laplacianVariance: 0,
-      overexposedFraction: 0.1,
+      blurry: true,
+      overexposed: true,
       tiltDegrees: 20,
     })
     expect(w).toContain('blurry')

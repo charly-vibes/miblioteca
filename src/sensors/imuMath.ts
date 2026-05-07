@@ -50,5 +50,6 @@ export function estimateDisplacement(samples: ImuSample[]): number {
     py += vy * dt
   }
 
-  return Math.min(Math.sqrt(px * px + py * py), MAX_DISP_M)
+  const disp = Math.sqrt(px * px + py * py)
+  return Math.min(isFinite(disp) ? disp : 0, MAX_DISP_M)
 }

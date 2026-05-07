@@ -1,5 +1,8 @@
 # Change: Add a tracer-bullet vertical slice
 
+## Description
+A minimum end-to-end vertical slice that proves the app can boot as an HTTPS PWA on Android Chrome, acquire camera permission, capture one photo into a typed `CaptureRecord`, persist the record and blobs atomically in IndexedDB, and complete a stub upload against a development mock — without requiring a real backend. The slice establishes the data path, state machine boundaries, and manual verification baseline for all subsequent feature work.
+
 ## Why
 The project has research notes and baseline contracts, but no documented first slice that proves the app can boot, capture a record, persist it locally, and exercise the upload boundary. A tracer bullet reduces sequencing risk by validating the end-to-end shape before feature work branches into camera quality, collaboration, and sensor-heavy flows.
 

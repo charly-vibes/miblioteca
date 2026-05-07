@@ -1,6 +1,8 @@
 import type { ShelfwalkDatabase } from './persistence'
 import { getAllSessions, getAllRecords, putSession } from './persistence'
 import type { TracerBulletSession } from './storage'
+import { uploadTrace } from './uploadTrace'
+import type { UploadTraceResult } from './uploadTrace'
 
 export function startSession(db: ShelfwalkDatabase, session: TracerBulletSession): Promise<string> {
   if (session.status !== 'active')
@@ -8,11 +10,17 @@ export function startSession(db: ShelfwalkDatabase, session: TracerBulletSession
   return putSession(db, session)
 }
 
+export type EndSessionDeps = {
+  fetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Pick<Response, 'status'>>
+  uploadTraceAfterEnd?: (sessionId: string) => Promise<UploadTraceResult | unknown>
+}
+
 export async function endSession(
   db: ShelfwalkDatabase,
   sessionId: string,
-  endedAt: string
-): Promise<void> {
+  endedAt: string,
+  deps: EndSessionDeps = {}
+): Promise<UploadTraceResult | void> {
   const tx = db.transaction('sessions', 'readwrite')
   const session = await tx.store.get(sessionId)
   if (!session) {
@@ -21,6 +29,9 @@ export async function endSession(
   }
   tx.store.put({ ...session, endedAt, status: 'completed' as const }, sessionId)
   await tx.done
+
+  if (deps.uploadTraceAfterEnd) return deps.uploadTraceAfterEnd(sessionId) as Promise<UploadTraceResult | void>
+  if (deps.fetch) return uploadTrace(sessionId, { db, fetch: deps.fetch })
 }
 
 export async function recoverCrashedSessions(

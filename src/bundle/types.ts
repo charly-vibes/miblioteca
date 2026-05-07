@@ -5,6 +5,8 @@ export type BundleFileLogicalType =
   | 'trace'
   | 'preview-frames'
   | 'manifest'
+  | 'scan-metadata'
+  | 'session-metadata'
 
 export type BundleFileEntry = {
   path: string

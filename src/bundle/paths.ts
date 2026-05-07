@@ -29,6 +29,14 @@ export function sessionPreviewFramePath(sessionId: string): string {
   return `previews/${sessionId}.jsonl`
 }
 
+export function scanMetadataPath(): string {
+  return 'scan.json'
+}
+
+export function sessionMetadataPath(sessionId: string): string {
+  return `sessions/${sessionId}.json`
+}
+
 export function bundleFilename(scanLabel: string, shortCode: string, date: string): string {
   const slug = scanLabel
     .toLowerCase()

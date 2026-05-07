@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { rotateVec } from './imuMath'
+import { rotateVec, estimateDisplacement } from './imuMath'
+import type { ImuSample } from './imuTrace'
 
 describe('rotateVec', () => {
   const identity = { x: 0, y: 0, z: 0, w: 1 }
@@ -54,5 +55,56 @@ describe('rotateVec', () => {
     expect(v.x).toBeCloseTo(0)
     expect(v.y).toBeCloseTo(0)
     expect(v.z).toBeCloseTo(0)
+  })
+})
+
+describe('estimateDisplacement', () => {
+  const identity: Pick<ImuSample, 'qx'|'qy'|'qz'|'qw'|'gx'|'gy'|'gz'> = { qx: 0, qy: 0, qz: 0, qw: 1, gx: 0, gy: 0, gz: 0 }
+  const noGravity: Pick<ImuSample, 'grx'|'gry'|'grz'> = { grx: 0, gry: 0, grz: 0 }
+
+  function s(t: number, ax: number, ay: number, az = 0, grz = 0): ImuSample {
+    return { t, ax, ay, az, ...identity, ...noGravity, grz }
+  }
+
+  it('returns 0 for empty array', () => {
+    expect(estimateDisplacement([])).toBe(0)
+  })
+
+  it('returns 0 for single sample', () => {
+    expect(estimateDisplacement([s(0, 0, 0)])).toBe(0)
+  })
+
+  it('returns near 0 for stationary (gravity fully subtracted)', () => {
+    // Total accel = gravity; gravity sensor = same → linear accel ≈ 0
+    const stationary: ImuSample[] = [
+      { t: 0,   ax: 0, ay: 0, az: 9.81, ...identity, grx: 0, gry: 0, grz: 9.81 },
+      { t: 100, ax: 0, ay: 0, az: 9.81, ...identity, grx: 0, gry: 0, grz: 9.81 },
+      { t: 200, ax: 0, ay: 0, az: 9.81, ...identity, grx: 0, gry: 0, grz: 9.81 },
+    ]
+    expect(estimateDisplacement(stationary)).toBeCloseTo(0, 5)
+  })
+
+  it('caps dt at 50ms for large timestamp gaps', () => {
+    // 10-second gap between samples — without cap would produce huge displacement
+    const samples = [s(0, 2, 0), s(10000, 2, 0)]
+    const result = estimateDisplacement(samples)
+    // With 50ms dt cap: v = 2*0.05 = 0.1 m/s, x = 0.1*0.05 = 0.005 m
+    expect(result).toBeLessThan(0.01)
+  })
+
+  it('skips samples with non-positive dt (out-of-order or duplicate timestamps)', () => {
+    const samples = [s(100, 5, 0), s(50, 5, 0)]  // reversed order
+    expect(estimateDisplacement(samples)).toBe(0)
+  })
+
+  it('caps total displacement at 5 m to guard against runaway from tilt', () => {
+    const samples = Array.from({ length: 200 }, (_, i) => s(i * 100, 100, 0))
+    expect(estimateDisplacement(samples)).toBe(5)
+  })
+
+  it('constant 1 m/s² horizontal acceleration for 1 s → ≈ 0.5 m', () => {
+    // 101 samples × 10ms steps = 1 second total
+    const samples = Array.from({ length: 101 }, (_, i) => s(i * 10, 1, 0))
+    expect(estimateDisplacement(samples)).toBeCloseTo(0.5, 1)
   })
 })

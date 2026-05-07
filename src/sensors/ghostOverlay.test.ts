@@ -11,62 +11,77 @@ describe('initialGhostState', () => {
     expect(state.yawIntegral).toBe(0)
     expect(state.lastT).toBe(-Infinity)
   })
+
+  it('starts with omegaMag of 0', () => {
+    expect(initialGhostState().omegaMag).toBe(0)
+  })
 })
 
 describe('feedGhostGyro', () => {
   it('records first sample time without integrating (no dt known yet)', () => {
     const state = initialGhostState()
-    const next = feedGhostGyro(state, { t: 100, gz: 1.0 })
+    const next = feedGhostGyro(state, { t: 100, gx: 0, gy: 0, gz: 1.0 })
     expect(next.lastT).toBe(100)
     expect(next.yawIntegral).toBe(0)
   })
 
   it('integrates gz * dt on subsequent samples', () => {
     const s0 = initialGhostState()
-    const s1 = feedGhostGyro(s0, { t: 0, gz: 0 })          // first sample
-    const s2 = feedGhostGyro(s1, { t: 1000, gz: 1.0 })     // +1.0 rad/s * 1s = +1.0 rad
+    const s1 = feedGhostGyro(s0, { t: 0, gx: 0, gy: 0, gz: 0 })          // first sample
+    const s2 = feedGhostGyro(s1, { t: 1000, gx: 0, gy: 0, gz: 1.0 })     // +1.0 rad/s * 1s = +1.0 rad
     expect(s2.yawIntegral).toBeCloseTo(1.0)
     expect(s2.lastT).toBe(1000)
   })
 
   it('accumulates across multiple samples', () => {
     let s = initialGhostState()
-    s = feedGhostGyro(s, { t: 0, gz: 0 })
-    s = feedGhostGyro(s, { t: 500, gz: 2.0 })   // 2 rad/s * 0.5s = 1.0 rad
-    s = feedGhostGyro(s, { t: 1000, gz: -1.0 }) // -1 rad/s * 0.5s = -0.5 rad
+    s = feedGhostGyro(s, { t: 0, gx: 0, gy: 0, gz: 0 })
+    s = feedGhostGyro(s, { t: 500, gx: 0, gy: 0, gz: 2.0 })   // 2 rad/s * 0.5s = 1.0 rad
+    s = feedGhostGyro(s, { t: 1000, gx: 0, gy: 0, gz: -1.0 }) // -1 rad/s * 0.5s = -0.5 rad
     expect(s.yawIntegral).toBeCloseTo(0.5)
   })
 
   it('drops out-of-order samples', () => {
     let s = initialGhostState()
-    s = feedGhostGyro(s, { t: 1000, gz: 0 })
-    s = feedGhostGyro(s, { t: 2000, gz: 1.0 })
+    s = feedGhostGyro(s, { t: 1000, gx: 0, gy: 0, gz: 0 })
+    s = feedGhostGyro(s, { t: 2000, gx: 0, gy: 0, gz: 1.0 })
     const before = s
-    const next = feedGhostGyro(s, { t: 500, gz: 99 })  // stale
+    const next = feedGhostGyro(s, { t: 500, gx: 0, gy: 0, gz: 99 })  // stale
     expect(next).toBe(before)
   })
 
   it('ignores non-finite gz values', () => {
     let s = initialGhostState()
-    s = feedGhostGyro(s, { t: 0, gz: 0 })
+    s = feedGhostGyro(s, { t: 0, gx: 0, gy: 0, gz: 0 })
     const before = s
-    const next = feedGhostGyro(s, { t: 1000, gz: NaN })
+    const next = feedGhostGyro(s, { t: 1000, gx: 0, gy: 0, gz: NaN })
     expect(next).toBe(before)
   })
 
   it('ignores non-finite t values', () => {
     const s = initialGhostState()
-    const next = feedGhostGyro(s, { t: NaN, gz: 1 })
+    const next = feedGhostGyro(s, { t: NaN, gx: 0, gy: 0, gz: 1 })
     expect(next).toBe(s)
   })
 
   it('handles equal timestamps without dividing by zero', () => {
     let s = initialGhostState()
-    s = feedGhostGyro(s, { t: 100, gz: 0 })
+    s = feedGhostGyro(s, { t: 100, gx: 0, gy: 0, gz: 0 })
     const before = s
-    const next = feedGhostGyro(s, { t: 100, gz: 999 })  // dt = 0 → integral unchanged
+    const next = feedGhostGyro(s, { t: 100, gx: 0, gy: 0, gz: 999 })  // dt = 0 → integral unchanged
     expect(next.yawIntegral).toBe(before.yawIntegral)
     expect(next.lastT).toBe(100)
+  })
+
+  it('tracks omegaMag from all three axes', () => {
+    // gx=0.3, gy=0.4, gz=0 → |ω| = sqrt(0.09+0.16) = 0.5
+    const s = feedGhostGyro(initialGhostState(), { t: 100, gx: 0.3, gy: 0.4, gz: 0 })
+    expect(s.omegaMag).toBeCloseTo(0.5)
+  })
+
+  it('updates omegaMag even on first sample', () => {
+    const s = feedGhostGyro(initialGhostState(), { t: 100, gx: 0, gy: 0, gz: 1.0 })
+    expect(s.omegaMag).toBeCloseTo(1.0)
   })
 })
 

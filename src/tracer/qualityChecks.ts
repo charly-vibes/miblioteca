@@ -15,6 +15,9 @@ export const THRESHOLDS = {
   overexposed: 0.05,
   underexposed: 0.05,
   tilt: 15,
+  lumaOverexposed: 240,
+  lumaUnderexposed: 15,
+  darkMeanLuma: 50,
 } as const
 
 export function runQualityChecks(imageData: ImageData, sensor: QualitySensorState): QualityChecks {
@@ -29,7 +32,7 @@ export function runQualityChecks(imageData: ImageData, sensor: QualitySensorStat
     blurry: lv < THRESHOLDS.blurry,
     overexposed: overexposed > THRESHOLDS.overexposed,
     underexposed: underexposed > THRESHOLDS.underexposed,
-    dark: meanLuma < 50,
+    dark: meanLuma < THRESHOLDS.darkMeanLuma,
   }
 }
 
@@ -52,8 +55,8 @@ function exposureFractions(imageData: ImageData): { overexposed: number; underex
   for (let i = 0; i < data.length; i += 4) {
     const luma = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
     lumaSum += luma
-    if (luma > 250) over++
-    if (luma < 5) under++
+    if (luma > THRESHOLDS.lumaOverexposed) over++
+    if (luma < THRESHOLDS.lumaUnderexposed) under++
   }
   return { overexposed: over / total, underexposed: under / total, meanLuma: lumaSum / total }
 }

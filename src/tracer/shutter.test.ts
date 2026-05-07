@@ -160,4 +160,21 @@ describe('shutter', () => {
     expect(record.capturedAt).toBe(new Date(9_999_999).toISOString())
     expect(record.capturedAtMonotonic).toBe(77.5)
   })
+
+  it('stores displacementMeters when getImuSlice and prevCapturedAtMonotonic are provided', async () => {
+    const imuSamples = [
+      { t: 0,  ax: 1, ay: 0, az: 0, gx: 0, gy: 0, gz: 0, qx: 0, qy: 0, qz: 0, qw: 1, grx: 0, gry: 0, grz: 0 },
+      { t: 10, ax: 1, ay: 0, az: 0, gx: 0, gy: 0, gz: 0, qx: 0, qy: 0, qz: 0, qw: 1, grx: 0, gry: 0, grz: 0 },
+    ]
+    const deps = makeDeps(db, { getImuSlice: () => imuSamples })
+    const ctx = { ...BASE_CTX, prevCapturedAtMonotonic: 30 }
+    const { record } = await shutter(ctx, STEADY_SENSOR, deps)
+    expect(record.qualityChecks.displacementMeters).toBeGreaterThan(0)
+  })
+
+  it('omits displacementMeters on first capture (no prevCapturedAtMonotonic)', async () => {
+    const deps = makeDeps(db, { getImuSlice: () => [] })
+    const { record } = await shutter(BASE_CTX, STEADY_SENSOR, deps)
+    expect(record.qualityChecks.displacementMeters).toBeUndefined()
+  })
 })

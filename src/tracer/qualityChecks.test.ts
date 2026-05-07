@@ -110,6 +110,18 @@ describe('runQualityChecks boolean flags', () => {
     const img = makeImageData(10, 10, () => [128, 128, 128, 255])
     expect(runQualityChecks(img, steadySensor).dark).toBe(false)
   })
+
+  it('detects near-blown pixel (luma 241) as overexposed at new threshold', () => {
+    // R=G=B=241 → luma = 241; > 240 (new clip) but ≤ 250 (old clip)
+    const img = makeImageData(10, 10, () => [241, 241, 241, 255])
+    expect(runQualityChecks(img, steadySensor).overexposed).toBe(true)
+  })
+
+  it('detects crushed-shadow pixel (luma 14) as underexposed at new threshold', () => {
+    // R=G=B=14 → luma = 14; < 15 (new floor) but ≥ 5 (old floor)
+    const img = makeImageData(10, 10, () => [14, 14, 14, 255])
+    expect(runQualityChecks(img, steadySensor).underexposed).toBe(true)
+  })
 })
 
 describe('qualityWarnings', () => {

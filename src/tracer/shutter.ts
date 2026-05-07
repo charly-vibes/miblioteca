@@ -1,4 +1,6 @@
 import type { CaptureImageResult } from '../camera/captureImage'
+import { estimateDisplacement } from '../sensors/imuMath.js'
+import type { ImuSample } from '../sensors/imuTrace.js'
 import { createCaptureRecord } from './capture'
 import type { CaptureRecord } from './capture'
 import { saveCapture } from './persistence'
@@ -13,6 +15,7 @@ export type ShutterContext = {
   scanId: string
   userId: string
   captureIndex: number
+  prevCapturedAtMonotonic?: number
 }
 
 export type ShutterSensorState = {
@@ -28,6 +31,7 @@ export type ShutterDeps = {
   now: () => number
   monotonic: () => number
   generateId: () => string
+  getImuSlice?: (from: number, to: number) => ImuSample[]
 }
 
 export type ShutterResult = {
@@ -74,6 +78,11 @@ export async function shutter(
     },
     { now: deps.now, monotonic: deps.monotonic, generateId: deps.generateId }
   )
+
+  if (deps.getImuSlice != null && ctx.prevCapturedAtMonotonic != null) {
+    const samples = deps.getImuSlice(ctx.prevCapturedAtMonotonic, record.capturedAtMonotonic)
+    record.qualityChecks.displacementMeters = estimateDisplacement(samples)
+  }
 
   await saveCapture(deps.db, { record, imageBlob: blob, thumbnailBlob })
 

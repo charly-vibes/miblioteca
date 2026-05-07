@@ -19,12 +19,15 @@ export type GhostOverlayCanvasDeps = {
   now?: () => DOMHighResTimeStamp
 }
 
+const MOTION_GATE_RAD_S = 0.5
+
 export class GhostOverlayCanvas {
   private readonly canvas: HTMLCanvasElement
   private readonly ctx: CanvasRenderingContext2D
   private state: GhostOverlayState = initialGhostState()
   private rafId = 0
   private currentShiftPx = 0
+  private hasSnapshot = false
   private readonly deps: Required<GhostOverlayCanvasDeps>
 
   constructor(viewfinder: HTMLElement, deps: GhostOverlayCanvasDeps) {
@@ -57,6 +60,8 @@ export class GhostOverlayCanvas {
     const gyro = this.deps.gyro!
     const sample: GyroSample = {
       t: gyro.timestamp ?? this.deps.now(),
+      gx: gyro.x ?? 0,
+      gy: gyro.y ?? 0,
       gz: gyro.z ?? 0,
     }
     this.state = feedGhostGyro(this.state, sample)
@@ -64,6 +69,11 @@ export class GhostOverlayCanvas {
 
   private rafLoop: FrameRequestCallback = () => {
     this.rafId = this.deps.requestAnimationFrame(this.rafLoop)
+
+    const shouldShow = this.hasSnapshot && this.state.omegaMag <= MOTION_GATE_RAD_S
+    if (this.canvas.hidden !== !shouldShow) {
+      this.canvas.hidden = !shouldShow
+    }
     if (this.canvas.hidden) return
 
     const shiftPx = computeShiftPx(this.state.yawIntegral, this.canvas.width)
@@ -84,6 +94,7 @@ export class GhostOverlayCanvas {
     this.state = initialGhostState()
     this.currentShiftPx = 0
     this.canvas.style.transform = 'translate3d(0, 0, 0)'
+    this.hasSnapshot = true
     this.canvas.hidden = false
   }
 

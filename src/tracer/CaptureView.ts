@@ -10,6 +10,7 @@ import { feedAccel, initialSteadinessState } from '../sensors/steadiness'
 import type { SteadinessState } from '../sensors/steadiness'
 import { bootstrapTracerBullet, type BootstrapResult } from './bootstrap'
 import { createCaptureRecord } from './capture'
+import { makeThumbnail } from './imageProcessing'
 import { createMockScanFetch } from './mockScanApi'
 import { openShelfwalkDb, saveCapture } from './persistence'
 import { qualityWarnings } from './qualityChecks'
@@ -335,12 +336,14 @@ export class CaptureView {
     const ctx = canvas.getContext('2d')
     if (!ctx) throw new Error('Canvas 2D context unavailable')
     ctx.drawImage(this.video, 0, 0)
-    return new Promise((resolve, reject) => {
+    const imageBlob = await new Promise<Blob>((resolve, reject) => {
       canvas.toBlob((blob) => {
         if (!blob) { reject(new Error('Canvas capture returned null blob')); return }
-        resolve({ imageBlob: blob, thumbnailBlob: blob, width: canvas.width, height: canvas.height })
+        resolve(blob)
       }, 'image/jpeg', 0.92)
     })
+    const thumbnailBlob = await makeThumbnail(imageBlob)
+    return { imageBlob, thumbnailBlob, width: canvas.width, height: canvas.height }
   }
 
   private async takePhoto() {
@@ -351,6 +354,10 @@ export class CaptureView {
     try {
       const { session, scan } = this.bootstrapState.result
       const snapshot = await (this.opts.captureSnapshot ?? (() => this.captureFromLiveVideo()))()
+      const MAX_THUMB_EDGE = 640
+      const thumbScale = Math.min(MAX_THUMB_EDGE / snapshot.width, MAX_THUMB_EDGE / snapshot.height, 1)
+      const thumbnailWidth = Math.max(1, Math.round(snapshot.width * thumbScale))
+      const thumbnailHeight = Math.max(1, Math.round(snapshot.height * thumbScale))
       const db = await openShelfwalkDb()
       const record = createCaptureRecord(
         {
@@ -364,8 +371,8 @@ export class CaptureView {
             mimeType: snapshot.imageBlob.type || 'image/jpeg',
             width: snapshot.width,
             height: snapshot.height,
-            thumbnailWidth: snapshot.width,
-            thumbnailHeight: snapshot.height,
+            thumbnailWidth,
+            thumbnailHeight,
             sourceApi: 'CanvasSnapshot',
           },
         },

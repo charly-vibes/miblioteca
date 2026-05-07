@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CaptureView } from './CaptureView'
 import type { CaptureSnapshotResult } from './CaptureView'
 import type { AccelerometerLike } from '../sensors/imuRecorder'
+import * as persistence from './persistence'
 
 const MOCK_SNAPSHOT: CaptureSnapshotResult = {
   imageBlob: new Blob(['img'], { type: 'image/jpeg' }),
@@ -375,5 +376,36 @@ describe('CaptureView — capture and upload', () => {
     await vi.waitFor(() => {
       expect(screen.getByText(/saved locally/i)).toBeInTheDocument()
     })
+  })
+})
+
+// ── Thumbnail dimensions ──────────────────────────────────────────────────────
+
+describe('CaptureView — thumbnail dimensions', () => {
+  it('scales thumbnail dimensions to 640px long-edge (1280×720 → 640×360)', async () => {
+    mockGetUserMedia.mockResolvedValue(makeFakeStream())
+    const user = userEvent.setup()
+
+    const saveSpy = vi.spyOn(persistence, 'saveCapture')
+
+    mockCaptureSnapshot.mockResolvedValueOnce({
+      imageBlob: new Blob(['img'], { type: 'image/jpeg' }),
+      thumbnailBlob: new Blob(['thumb'], { type: 'image/jpeg' }),
+      width: 1280,
+      height: 720,
+    } satisfies CaptureSnapshotResult)
+
+    new CaptureView(container, { captureSnapshot: mockCaptureSnapshot, uploadFetch: mockUploadFetch(200) })
+    await vi.waitFor(() => screen.getByRole('button', { name: /open camera/i }))
+    await user.click(screen.getByRole('button', { name: /open camera/i }))
+    await vi.waitFor(() => screen.getByRole('button', { name: /take photo/i }))
+    await user.click(screen.getByRole('button', { name: /take photo/i }))
+
+    await vi.waitFor(() => expect(saveSpy).toHaveBeenCalled())
+    const { record } = saveSpy.mock.calls[0][1]
+    expect(record.image.thumbnailWidth).toBe(640)
+    expect(record.image.thumbnailHeight).toBe(360)
+
+    saveSpy.mockRestore()
   })
 })

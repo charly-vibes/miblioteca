@@ -79,6 +79,18 @@ describe('mountUploadStatusPanel', () => {
     await vi.waitFor(async () => {
       expect((await loadCaptureRecord(db, 'rec-failed'))?.uploadState).toBe('uploaded')
     })
-    expect(screen.getByRole('button', { name: /retry failed \(0\)/i })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /retry failed/i })).not.toBeInTheDocument()
+  })
+
+  it('retry button is absent when there are no failed records', async () => {
+    await save(db, makeRecord('rec-uploaded', 'uploaded'))
+    mountUploadStatusPanel(container, { openDb: async () => db })
+
+    await userEvent.click(screen.getByRole('button', { name: /uploads/i }))
+
+    await screen.findByRole('region', { name: /upload status/i })
+    await vi.waitFor(() =>
+      expect(screen.queryByRole('button', { name: /retry failed/i })).not.toBeInTheDocument()
+    )
   })
 })

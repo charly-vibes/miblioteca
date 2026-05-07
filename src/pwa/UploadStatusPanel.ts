@@ -89,12 +89,6 @@ export function mountUploadStatusPanel(
       counts.append(dt, dd)
     }
 
-    const retryButton = document.createElement('button')
-    retryButton.type = 'button'
-    retryButton.textContent = `Retry failed (${snapshot.counts.failed})`
-    retryButton.disabled = retrying || snapshot.counts.failed === 0
-    retryButton.addEventListener('click', () => void retryFailed())
-
     const rejectedTitle = document.createElement('h3')
     rejectedTitle.textContent = 'Rejected uploads'
     const rejectedList = document.createElement('ul')
@@ -111,7 +105,17 @@ export function mountUploadStatusPanel(
       }
     }
 
-    panel.append(title, counts, retryButton, rejectedTitle, rejectedList)
+    const children: Node[] = [title, counts]
+    if (snapshot.counts.failed > 0) {
+      const retryButton = document.createElement('button')
+      retryButton.type = 'button'
+      retryButton.textContent = `Retry failed (${snapshot.counts.failed})`
+      retryButton.disabled = retrying
+      retryButton.addEventListener('click', () => void retryFailed())
+      children.push(retryButton)
+    }
+    children.push(rejectedTitle, rejectedList)
+    panel.append(...children)
   }
 
   button.addEventListener('click', () => {

@@ -6,12 +6,20 @@ A ghost overlay showing the previous capture faintly behind the live view makes 
 intuitive — no backend required.
 
 ## What Changes
-- New `<canvas>` element absolutely positioned over the live `<video>` in `CaptureView`
-- CSS `transform: translate3d` shift driven by gyro yaw accumulation since the last shutter event
-- Shift formula: `shiftX = -(videoWidth/2) / tan(hFOV_rad/2) * yawIntegral` (default hFOV 65°, ≤20% error)
-- Overlay hidden while device angular velocity exceeds the steadiness gate (`|ω| > 0.5 rad/s`)
-- Ghost canvas appears after first capture; hidden before any capture exists
+`GhostOverlayCanvas` (`src/sensors/ghostOverlayCanvas.ts`) already creates the canvas,
+drives the RAF loop, integrates gyro yaw via `feedGhostGyro`, exposes `setSnapshot()` with
+yaw reset, and has `destroy()` for cleanup. What is missing:
+
+- **Motion gating**: extend `GhostOverlayState` and `feedGhostGyro()` to track all-axis
+  angular velocity (gx, gy, gz); in the RAF loop hide the canvas when `|ω| > 0.5 rad/s`
+  on any axis, restore when ≤ 0.5 rad/s and at least one snapshot has been set
+- **Shift clamping**: extend `computeShiftPx()` (`src/sensors/ghostOverlay.ts`) to clamp
+  the returned shift to ±(videoWidth/2) pixels, preventing the ghost from flying off-screen
+- **Null frame guard**: in `CaptureView.takePhoto()` (`src/tracer/CaptureView.ts`), guard
+  the `ghostOverlay.setSnapshot()` call — if `grabFrame()` returns null, skip the update
+  and retain previous ghost content
 
 ## Impact
 - Affected specs: `ghost-overlay` (new capability)
-- Affected code: `src/tracer/CaptureView.ts`, `src/tracer/imuRecorder.ts`
+- Affected code: `src/sensors/ghostOverlay.ts`, `src/sensors/ghostOverlayCanvas.ts`,
+  `src/tracer/CaptureView.ts`

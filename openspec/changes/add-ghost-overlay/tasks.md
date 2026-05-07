@@ -1,23 +1,15 @@
-## 1. Setup
-- [ ] 1.1 Add `hFovToShiftScale(videoWidth: number, hFovDeg: number): number` pure function to `src/tracer/imuMath.ts`
-- [ ] 1.2 Write unit tests for `hFovToShiftScale` (identity at 0 yaw, known angle → pixel calculation)
+## 1. Shift Clamping
+- [ ] 1.1 Extend `computeShiftPx()` in `src/sensors/ghostOverlay.ts` to clamp the return value to ±(videoWidth/2) pixels
+- [ ] 1.2 Write unit tests: large yaw angle (e.g. π/2 rad) is clamped to ±videoWidth/2; small yaw produces an unclamped result
 
-## 2. DOM Layer
-- [ ] 2.1 Add `ghostCanvas: HTMLCanvasElement` element to `CaptureView`, absolutely positioned over `<video>`, initially hidden
-- [ ] 2.2 Write test: ghost canvas is hidden before first capture
+## 2. Motion Gating
+- [ ] 2.1 Extend `GhostOverlayState` in `src/sensors/ghostOverlay.ts` to track the latest angular velocity magnitude across all three axes (gx, gy, gz); extend `feedGhostGyro()` signature to accept all three axes from `GyroLike.x/y/z`
+- [ ] 2.2 In `GhostOverlayCanvas.rafLoop()` (`src/sensors/ghostOverlayCanvas.ts`), hide the canvas when stored `|ω| > 0.5 rad/s` on any axis; restore when ≤ 0.5 rad/s and at least one snapshot has been drawn
+- [ ] 2.3 Write tests: canvas hidden when any angular velocity axis exceeds 0.5 rad/s; visible when all axes are below threshold and a snapshot exists
 
-## 3. Shutter Integration
-- [ ] 3.1 On shutter event, draw current `grabFrame()` result into `ghostCanvas` and reset yaw accumulator to zero
-- [ ] 3.2 Write test: ghost canvas becomes visible after first capture
+## 3. Null Frame Guard
+- [ ] 3.1 In `CaptureView.takePhoto()` (`src/tracer/CaptureView.ts`), guard the `ghostOverlay.setSnapshot()` call — if `grabFrame()` returns null, do not call `setSnapshot()` and retain previous ghost content
+- [ ] 3.2 Write test: after a failed grabFrame, the ghost canvas retains its previous snapshot and the yaw accumulator is not reset
 
-## 4. Gyro-Driven Shift
-- [ ] 4.1 In `requestAnimationFrame` loop, accumulate gyro yaw delta since last shutter
-- [ ] 4.2 Apply `transform: translate3d(shiftX, 0, 0)` to `ghostCanvas` using the shift formula
-- [ ] 4.3 Write unit tests for yaw accumulator: resets on shutter, accumulates correctly between shutters
-
-## 5. Motion Gating
-- [ ] 5.1 Hide ghost canvas (opacity 0) when `|ω| > 0.5 rad/s` on any axis; show when below threshold
-- [ ] 5.2 Write test: overlay hidden during rapid motion, shown when stationary
-
-## 6. Manual Test
-- [ ] 6.1 Manual test: ghost overlay shifts correctly left/right on real device during shelf scan
+## 4. Manual Test
+- [ ] 4.1 Manual test on real Android device during a shelf scan. Acceptance criteria: (a) overlay is invisible before first capture; (b) after first capture the ghost appears at correct position; (c) a 30° yaw rotation shifts the overlay approximately ±half-screen (~240 px at 65° hFOV on a 480 px-wide view); (d) overlay hides during rapid repositioning between shelves; (e) no jitter when device is stationary

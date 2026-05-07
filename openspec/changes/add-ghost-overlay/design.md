@@ -26,17 +26,24 @@ the alignment cue needed.
 Android wide-angle lenses cluster around 60–75°. 65° gives ≤20% error in shift magnitude
 across this range. A future calibration API can refine this per-device.
 
-### Steadiness gate: |ω| > 0.5 rad/s
+### Steadiness gate: |ω| > 0.5 rad/s (resolved)
 Reuses the existing ZUPT steadiness gate constant. Hiding the overlay during rapid motion
 avoids disorienting visual jitter while the user repositions between shelves.
+The gate checks all three gyro axes (gx, gy, gz from `GyroLike`) so pitch/roll turbulence
+also hides the overlay.
+
+### Visibility mechanism: canvas.hidden (chosen)
+Use `canvas.hidden` (boolean attribute) for show/hide rather than `opacity`. The canvas is
+already initialized with `hidden = true`. Toggling `hidden` is zero-cost, skips layout, and
+is consistent with the existing implementation.
+
+### Shift clamping: ±videoWidth/2 (resolved)
+The shift SHALL be clamped to ±(videoWidth/2) pixels to prevent the ghost from flying
+entirely off-screen during large rotations. This is applied inside `computeShiftPx()`.
 
 ## Risks / Trade-offs
 - `grabFrame()` is asynchronous — ghost canvas update may lag 1–2 frames behind shutter.
-  Acceptable: the ghost is a guide, not a pixel-perfect overlay.
+  Acceptable: the ghost is a guide, not a pixel-perfect overlay. Null return is guarded at
+  the `CaptureView.takePhoto()` call site.
 - `AbsoluteOrientationSensor` uses magnetometer internally; metal shelving can bias heading.
   Mitigation: use `RelativeOrientationSensor` quaternion for yaw-only shift (no magnetometer dependency).
-
-## Open Questions
-- Should ghost opacity be configurable by the user (slider)? Deferred to post-MVP.
-- Should yaw be clamped to a maximum shift (e.g., ±videoWidth) to prevent the ghost from
-  flying off-screen during large rotations? Recommend yes — clamp to ±videoWidth/2.

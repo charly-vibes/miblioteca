@@ -29,12 +29,22 @@ Three approaches evaluated:
 | EKF | 300+ | Marginal gain | ZUPT hard-reset eliminates main EKF benefit |
 
 Using `qx/qy/qz/qw` from `AbsoluteOrientationSensor` and `grx/gry/grz` from `GravitySensor`
-— both already in `imuTrace` — avoids any new sensor setup.
+— both already in `imuTrace` from `src/sensors/imuRecorder.ts` — avoids any new sensor setup.
 
 ### Field rename: `stepCountSincePrev` → `displacementMeters`
 `stepCountSincePrev` was a placeholder from an earlier stride-based PDR design that was
-never implemented. Rename inline as part of this change (no migration needed — field has
-never been populated with meaningful data).
+never implemented. Rename as part of this change. Before renaming, audit `src/tracer/shutter.ts`
+and `src/tracer/qualityChecks.ts` to confirm no assignment to this field exists (field was
+designed to be populated later, never set in production code).
+
+### New module location: `src/sensors/imuMath.ts`
+All existing IMU infrastructure lives in `src/sensors/` (`imuRecorder.ts`, `ghostOverlay.ts`,
+`imuTrace.ts`). New math functions follow the same convention.
+
+### Displacement safety cap: 5 m
+Severe device tilt (>45°) may cause gravity subtraction error, causing `estimateDisplacement`
+to return runaway values. A 5 m cap per inter-shot interval prevents corrupt outliers from
+polluting the record. Derived from: typical shelf walk covers < 3 m per 5-second interval.
 
 ## Risks / Trade-offs
 - Expected accuracy is 2–5 cm best case, 5–15 cm typical. At sparse capture (<3/m), this
@@ -43,6 +53,8 @@ never been populated with meaningful data).
 - `AbsoluteOrientationSensor` uses magnetometer — metal shelving may bias heading.
   Mitigation: use only horizontal displacement magnitude `sqrt(px²+py²)`, not directional,
   so heading bias does not affect the scalar estimate.
+- IMU samples with non-monotonic timestamps (clock skew, OEM monotonic timer resets):
+  mitigated by capping per-sample `dt` to 50 ms in the integrator.
 
 ## Open Questions
 - Should `displacementMeters` be surfaced in the UI? Deferred — store it in the record,

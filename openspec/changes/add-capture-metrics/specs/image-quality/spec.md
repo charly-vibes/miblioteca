@@ -3,7 +3,8 @@
 ### Requirement: Zero-Allocation Blur Scoring
 The system SHALL compute a blur score for each captured frame on a 320×240 downscaled image
 using a Laplacian accumulation algorithm that does not allocate intermediate arrays, producing
-a dimensionless variance score compared against `THRESHOLDS.blurry`.
+a dimensionless variance score compared against `THRESHOLDS.blurry`. The boolean result SHALL
+be stored as `qualityChecks.blurry` (added to `QualityChecks` in task 0.1).
 
 #### Scenario: Sharp frame passes blur gate
 - **WHEN** a captured frame has a Laplacian variance score ≥ `THRESHOLDS.blurry`
@@ -16,7 +17,10 @@ a dimensionless variance score compared against `THRESHOLDS.blurry`.
 ### Requirement: Calibrated Exposure Scoring
 The system SHALL flag captured frames for exposure issues using the following thresholds:
 overexposed when > 5% of pixels have luma > 240; underexposed when > 5% of pixels have
-luma < 15; globally dark when mean luma across all pixels < 50.
+luma < 15; globally dark when mean luma across all pixels < 50. Results are stored as
+`qualityChecks.overexposed`, `qualityChecks.underexposed`, `qualityChecks.dark` (boolean
+fields added to `QualityChecks` in task 0.1). The existing fraction fields
+(`overexposedFraction`, `underexposedFraction`) are retained for backward compatibility.
 
 #### Scenario: Near-blown frame flagged overexposed
 - **WHEN** more than 5% of pixels have luma value > 240

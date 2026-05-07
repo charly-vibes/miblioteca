@@ -1,5 +1,5 @@
-import { type ShelfwalkDatabase, putScan } from '../tracer/persistence'
-import { type TracerBulletScan } from '../tracer/storage'
+import { type ShelfwalkDatabase, putScan, putSession } from '../tracer/persistence'
+import { type TracerBulletScan, type TracerBulletSession } from '../tracer/storage'
 import { clockOffsetMs } from './codes'
 
 export type ScanErrorCode = 'bad-request' | 'conflict' | 'server-error'
@@ -26,6 +26,7 @@ type ScanApiResponse = {
 
 export type CreateScanResult = {
   scan: TracerBulletScan
+  session: TracerBulletSession
   sessionId: string
   userId: string
   clockOffsetMs: number
@@ -35,15 +36,17 @@ type CreateScanDeps = {
   fetch: typeof globalThis.fetch
   db: ShelfwalkDatabase
   now?: () => number
+  scanName?: string
 }
 
-export async function createScan({ fetch, db, now = Date.now }: CreateScanDeps): Promise<CreateScanResult> {
+export async function createScan({ fetch, db, now = Date.now, scanName }: CreateScanDeps): Promise<CreateScanResult> {
   const clientTimeMs = now()
+  const body = scanName ? { clientTimeMs, name: scanName } : { clientTimeMs }
 
   const response = await fetch('/api/scan', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ clientTimeMs }),
+    body: JSON.stringify(body),
   })
 
   if (!response.ok) {
@@ -53,20 +56,32 @@ export async function createScan({ fetch, db, now = Date.now }: CreateScanDeps):
 
   const data: ScanApiResponse = await response.json()
 
+  const createdAt = new Date(clientTimeMs).toISOString()
+  const offset = clockOffsetMs(data.serverTimeMs, now)
   const scan: TracerBulletScan = {
     id: data.scanId,
     shortCode: data.shortCode,
     joinToken: data.joinToken,
-    createdAt: new Date().toISOString(),
+    createdAt,
+  }
+  const session: TracerBulletSession = {
+    id: data.sessionId,
+    scanId: data.scanId,
+    userId: data.userId,
+    startedAt: createdAt,
+    clockOffsetMs: offset,
+    status: 'active',
   }
 
   await putScan(db, scan)
+  await putSession(db, session)
 
   return {
     scan,
+    session,
     sessionId: data.sessionId,
     userId: data.userId,
-    clockOffsetMs: clockOffsetMs(data.serverTimeMs, now),
+    clockOffsetMs: offset,
   }
 }
 

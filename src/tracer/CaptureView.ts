@@ -15,6 +15,7 @@ export type CaptureSnapshotResult = {
 }
 
 export type CaptureViewOptions = {
+  bootstrapResult?: BootstrapResult
   captureSnapshot?: () => Promise<CaptureSnapshotResult>
   uploadFetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Pick<Response, 'ok' | 'status'>>
 }
@@ -121,6 +122,10 @@ export class CaptureView {
     }
     if (typeof navigator === 'undefined' || typeof navigator.mediaDevices?.getUserMedia !== 'function') {
       this.setBootstrapState({ kind: 'error', message: 'Camera unavailable in this browser.' })
+      return
+    }
+    if (this.opts.bootstrapResult) {
+      this.setBootstrapState({ kind: 'ready', result: this.opts.bootstrapResult })
       return
     }
     await this.startBootstrap()

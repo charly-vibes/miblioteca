@@ -1,5 +1,6 @@
 type MockFetchResponse = {
   ok: boolean
+  status: number
   json: () => Promise<{
     scanId: string
     sessionId: string
@@ -16,6 +17,7 @@ export function createMockScanFetch(now: () => number) {
     if (path !== '/api/scan' || init?.method !== 'POST') {
       return {
         ok: false,
+        status: 404,
         json: async () => {
           throw new Error(`Unsupported mock request: ${init?.method ?? 'GET'} ${path}`)
         }
@@ -28,6 +30,7 @@ export function createMockScanFetch(now: () => number) {
 
     return {
       ok: true,
+      status: 200,
       json: async () => ({
         scanId: `scan-${suffix}`,
         sessionId: `session-${suffix}`,

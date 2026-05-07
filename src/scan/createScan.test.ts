@@ -25,19 +25,19 @@ describe('createScan', () => {
     dbName = `test-${Date.now()}-${Math.random()}`
   })
 
-  it('POSTs to /api/scan with clientTimeMs', async () => {
+  it('POSTs to /api/scan with clientTimeMs and optional scan name', async () => {
     const fetch = makeFetch(200, { sessionId: 'sid', userId: 'uid', ...GOOD_RESPONSE })
     const db = await openShelfwalkDb(dbName)
     const now = () => 1_000_000
 
-    await createScan({ fetch, db, now })
+    await createScan({ fetch, db, now, scanName: 'Main library' })
 
     expect(fetch).toHaveBeenCalledOnce()
     const [url, init] = fetch.mock.calls[0]
     expect(url).toBe('/api/scan')
     expect(init?.method).toBe('POST')
     const body = JSON.parse(init?.body as string)
-    expect(body).toMatchObject({ clientTimeMs: 1_000_000 })
+    expect(body).toMatchObject({ clientTimeMs: 1_000_000, name: 'Main library' })
     db.close()
   })
 
@@ -58,10 +58,13 @@ describe('createScan', () => {
     expect(result.scan.shortCode).toBe('ABCD-234')
     expect(result.scan.joinToken).toBe('deadbeef'.repeat(8))
     expect(result.clockOffsetMs).toBe(400)
+    expect(result.session).toMatchObject({ id: 'sid-1', scanId: 'scan-abc', userId: 'uid-1', status: 'active' })
 
     const stored = await db.get('scans', 'scan-abc')
     expect(stored).toBeDefined()
     expect(stored?.id).toBe('scan-abc')
+    const storedSession = await db.get('sessions', 'sid-1')
+    expect(storedSession).toMatchObject({ id: 'sid-1', scanId: 'scan-abc', userId: 'uid-1' })
     db.close()
   })
 

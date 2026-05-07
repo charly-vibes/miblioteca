@@ -66,6 +66,7 @@ describe('joinScan', () => {
     expect(result.sessionId).toBe('sess-abc')
     expect(result.userId).toBe('user-42')
     expect(result.clockOffsetMs).toBe(300)
+    expect(result.session).toMatchObject({ id: 'sess-abc', scanId: 'scan-xyz', userId: 'user-42' })
 
     const storedScan = await db.get('scans', 'scan-xyz')
     expect(storedScan).toBeDefined()

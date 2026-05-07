@@ -25,6 +25,7 @@ type JoinApiResponse = {
 
 export type JoinScanResult = {
   scan: TracerBulletScan
+  session: TracerBulletSession
   sessionId: string
   userId: string
   clockOffsetMs: number
@@ -84,6 +85,7 @@ export async function joinScan({
 
   return {
     scan,
+    session,
     sessionId: data.sessionId,
     userId: data.userId,
     clockOffsetMs: offset,

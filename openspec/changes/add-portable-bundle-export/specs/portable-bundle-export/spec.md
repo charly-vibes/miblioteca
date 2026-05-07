@@ -1,6 +1,6 @@
 ## ADDED Requirements
 ### Requirement: Portable scan bundle as MVP delivery artifact
-The system SHALL support exporting a saved scan session as a self-contained portable bundle without requiring a real backend, mock backend, account, or network connection.
+The system SHALL support exporting a saved scan session as a self-contained portable bundle without requiring a real backend, mock backend, account, or network connection for bundle generation.
 
 #### Scenario: Export one saved session
 - **WHEN** the user has a saved scan session with at least one persisted `CaptureRecord`, image blob, and thumbnail blob
@@ -10,7 +10,8 @@ The system SHALL support exporting a saved scan session as a self-contained port
 #### Scenario: Export while offline
 - **WHEN** the browser is offline and the required artifacts are present in local storage
 - **THEN** the system can still create the portable bundle
-- **AND** it does not block export on upload queue state, server health, authentication, or network availability
+- **AND** it does not block bundle generation on upload queue state, server health, authentication, or network availability
+- **AND** any later transfer through Drive, WhatsApp, email, or another channel may still depend on that channel's connectivity requirements
 
 ### Requirement: Bundle manifest and deterministic layout
 The system SHALL include a machine-readable `manifest.json` that identifies the bundle format and enumerates every artifact in deterministic paths.
@@ -18,12 +19,30 @@ The system SHALL include a machine-readable `manifest.json` that identifies the 
 #### Scenario: Manifest describes bundle contents
 - **WHEN** a bundle export succeeds
 - **THEN** `manifest.json` includes the bundle format version, app version, scan ID, session IDs, export timestamp, artifact counts, total byte count, and per-file entries
-- **AND** each file entry includes its relative path, media type or logical type, size in bytes, and checksum
+- **AND** each file entry includes its relative path, media type or logical type, size in bytes, and `sha256` checksum
+
+#### Scenario: Bundle filename is user-recognizable
+- **WHEN** the system names a generated bundle file
+- **THEN** the filename includes a filesystem-safe scan name or fallback label, export date, short scan identifier, and `.mbibundle.zip` extension
+- **AND** the filename avoids raw UUID-only naming unless no scan label is available
 
 #### Scenario: Optional artifacts are included when present
 - **WHEN** the scan session includes a motion trace or preview frames
 - **THEN** the manifest includes those files under deterministic trace and preview paths
 - **AND** the bundle remains valid when those optional artifacts are absent
+
+### Requirement: Export status separate from upload status
+The system SHALL track bundle export status independently from server upload state.
+
+#### Scenario: Bundle export succeeds without server upload
+- **WHEN** a valid bundle is generated for a session whose records have `uploadState: "pending"`
+- **THEN** the system records bundle export status as exported with filename, timestamp, size, and bundle checksum
+- **AND** it does not change any record to `uploadState: "uploaded"` solely because the bundle was exported
+
+#### Scenario: Bundle export fails
+- **WHEN** bundle generation fails before a valid archive is produced
+- **THEN** the system records export status as failed or aborted with a recoverable error
+- **AND** source records, image blobs, thumbnails, traces, and preview artifacts remain available for retry
 
 ### Requirement: Export validation before sharing
 The system SHALL validate bundle completeness before presenting the file as shareable.
@@ -33,10 +52,22 @@ The system SHALL validate bundle completeness before presenting the file as shar
 - **THEN** the export fails before producing a shareable bundle
 - **AND** the user sees a recoverable error identifying that local artifacts are incomplete
 
+#### Scenario: Generated archive fails validation
+- **WHEN** archive generation completes but the generated archive has missing files, unexpected byte counts, or checksum mismatches against the manifest
+- **THEN** the system does not mark export status as exported
+- **AND** it does not present the bundle as shareable
+- **AND** it preserves source artifacts so the user can retry export
+
 #### Scenario: Storage is insufficient for archive creation
-- **WHEN** available browser storage is insufficient to assemble the archive safely
-- **THEN** the system does not delete source IndexedDB artifacts
+- **WHEN** available browser storage is less than the estimated archive size plus a 20% safety margin
+- **THEN** the system blocks export before archive generation starts
+- **AND** it does not delete source IndexedDB artifacts
 - **AND** it explains that the user must free space or export a smaller scan
+
+#### Scenario: Export is aborted
+- **WHEN** the user cancels export, closes the share sheet, backgrounds the app during export, or the browser aborts archive generation
+- **THEN** the system records export status as aborted or failed without marking the bundle exported
+- **AND** it keeps source artifacts intact and allows the user to retry
 
 ### Requirement: User-initiated share and download
 The system SHALL let the user explicitly download or share the bundle through browser-supported file transfer mechanisms.
@@ -52,9 +83,9 @@ The system SHALL let the user explicitly download or share the bundle through br
 - **AND** it tells the user to transfer the downloaded bundle through Drive, USB, email when size permits, or another document-preserving channel
 
 #### Scenario: Bundle may exceed common channel limits
-- **WHEN** the estimated or generated bundle size is likely too large for common channels such as email or WhatsApp
-- **THEN** the system warns the user before sharing
-- **AND** it recommends a document-preserving transfer path such as Drive or USB
+- **WHEN** the estimated or generated bundle size exceeds 100 MB
+- **THEN** the system warns the user that some channels, especially email, may fail or be slow
+- **AND** when the bundle exceeds 500 MB, it recommends a document-preserving transfer path such as Drive or USB instead of email or chat apps
 
 ### Requirement: Backend remains optional post-MVP ingest
 The system SHALL treat backend upload as an optional future delivery adapter that consumes the same portable bundle contract, not as a prerequisite for MVP capture success.

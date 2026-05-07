@@ -94,7 +94,7 @@ describe('BundleExportPanel — idle state', () => {
 })
 
 describe('BundleExportPanel — restoring persisted delivery state', () => {
-  it('shows exported state when session already has exported delivery state', async () => {
+  it('shows previously-exported status and re-export button when session was exported in a prior session', async () => {
     await putScan(db, makeScan())
     await putSession(db, makeSession())
     await putSessionBundleDeliveryState(db, SESSION_ID, {
@@ -106,8 +106,11 @@ describe('BundleExportPanel — restoring persisted delivery state', () => {
     })
     makePanel()
     await vi.waitFor(() => {
-      expect(screen.getByText(/exported/i)).toBeInTheDocument()
+      expect(screen.getByText(/previously exported/i)).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
     })
+    expect(screen.queryByRole('button', { name: /download/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /share/i })).toBeNull()
   })
 
   it('shows failed state with retry when session has failed delivery state', async () => {

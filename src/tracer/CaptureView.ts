@@ -26,6 +26,7 @@ export type CaptureSnapshotResult = {
 
 export type CaptureViewOptions = {
   bootstrapResult?: BootstrapResult
+  appVersion?: string
   captureSnapshot?: () => Promise<CaptureSnapshotResult>
   uploadFetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Pick<Response, 'ok' | 'status'>>
   storageManager?: Partial<StorageBudgetManager>
@@ -185,7 +186,7 @@ export class CaptureView {
       this.bundleExportPanel = new BundleExportPanel(this.controls, {
         db,
         scanId: result.scan.id,
-        appVersion: '0.0.0',
+        appVersion: this.opts.appVersion ?? '0.0.0',
       })
     })
   }

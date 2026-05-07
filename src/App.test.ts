@@ -31,7 +31,15 @@ afterEach(() => {
 })
 
 describe('mountMibliotecaApp', () => {
-  it('shows scan management on the home route', async () => {
+  it('shows sessions list on the home route', async () => {
+    dispose = mountMibliotecaApp(container, { openDb: async () => db })
+
+    expect(await screen.findByRole('heading', { name: /sessions/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /new scan/i })).toBeInTheDocument()
+  })
+
+  it('shows scan management on the #/new route', async () => {
+    window.location.hash = '/new'
     dispose = mountMibliotecaApp(container, { openDb: async () => db })
 
     expect(await screen.findByRole('heading', { name: /start a shelf scan/i })).toBeInTheDocument()
@@ -87,7 +95,7 @@ describe('mountMibliotecaApp', () => {
     window.location.hash = '/session/nonexistent-id'
     dispose = mountMibliotecaApp(container, { openDb: async () => db })
 
-    expect(await screen.findByRole('heading', { name: /start a shelf scan/i })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /sessions/i })).toBeInTheDocument()
   })
 
   it('navigates to CaptureView when hash changes to a session route after mount', async () => {
@@ -107,12 +115,12 @@ describe('mountMibliotecaApp', () => {
     })
 
     dispose = mountMibliotecaApp(container, { openDb: async () => db })
-    expect(await screen.findByRole('heading', { name: /start a shelf scan/i })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /sessions/i })).toBeInTheDocument()
 
     window.location.hash = '/session/session-live'
     window.dispatchEvent(new HashChangeEvent('hashchange'))
 
     expect(await screen.findByRole('button', { name: /open camera/i })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: /start a shelf scan/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /sessions/i })).not.toBeInTheDocument()
   })
 })

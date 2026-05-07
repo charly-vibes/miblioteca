@@ -416,3 +416,97 @@ h1 {
 .scan-invite-slot {
   margin-top: 1rem;
 }
+
+/* ── Sessions list ───────────────────────────────────── */
+
+.sessions-list {
+  width: min(100%, 48rem);
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.sessions-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.sessions-list-header h1 {
+  margin: 0;
+  font-size: 1.75rem;
+}
+
+.sessions-new-btn {
+  flex-shrink: 0;
+}
+
+.sessions-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.sessions-empty {
+  color: #94a3b8;
+  text-align: center;
+  margin: 2rem 0;
+}
+
+.session-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid #334155;
+  border-radius: 1rem;
+  background: rgba(15, 23, 42, 0.72);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.session-row:hover,
+.session-row:focus-visible {
+  border-color: #7dd3fc;
+  outline: none;
+}
+
+.session-row-date {
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.session-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.session-row-count {
+  color: #94a3b8;
+  font-size: 0.9rem;
+}
+
+.session-row-status {
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.session-row-status--pending {
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+}
+
+.session-row-status--exported {
+  background: rgba(134, 239, 172, 0.15);
+  color: #86efac;
+}

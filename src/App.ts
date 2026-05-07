@@ -1,10 +1,11 @@
 import { mountAppHeader } from './pwa/AppHeader'
 import { mountScanManagementView } from './scan/ScanManagementView'
+import { mountSessionsListView } from './scan/SessionsListView'
 import { CaptureView } from './tracer/CaptureView'
 import { createMockScanFetch } from './tracer/mockScanApi'
 import { getSession, getScan, openShelfwalkDb, type ShelfwalkDatabase } from './tracer/persistence'
 import type { BootstrapResult } from './tracer/bootstrap'
-import { parseRoute, navigateToSession, navigateHome, type Route } from './router'
+import { parseRoute, navigateToSession, navigateHome, navigateToNewScan, type Route } from './router'
 
 export type MibliotecaAppDeps = {
   openDb?: () => Promise<ShelfwalkDatabase>
@@ -47,7 +48,7 @@ export function mountMibliotecaApp(root: HTMLElement, deps: MibliotecaAppDeps = 
       if (gen !== generation || disposed) return
       if (!bootstrap) { navigateHome(); return }
       captureView = new CaptureView(root, { bootstrapResult: bootstrap, onBack: navigateHome })
-    } else {
+    } else if (route.kind === 'new-scan') {
       unmountScanManagement = mountScanManagementView(root, {
         openDb: getDb,
         fetch,
@@ -55,6 +56,11 @@ export function mountMibliotecaApp(root: HTMLElement, deps: MibliotecaAppDeps = 
         onReady: (result) => {
           navigateToSession(result.session.id)
         },
+      })
+    } else {
+      unmountScanManagement = mountSessionsListView(root, {
+        openDb: getDb,
+        onNewScan: navigateToNewScan,
       })
     }
   }

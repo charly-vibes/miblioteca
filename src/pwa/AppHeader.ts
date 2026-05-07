@@ -2,6 +2,7 @@ import { createInstallPrompt } from './installPrompt'
 import { createOnlineStatus } from './onlineStatus'
 import { requestUploadSync } from './syncRegistration'
 import { mountUploadDrainFallback } from './uploadDrainFallback'
+import { mountUploadStatusPanel } from './UploadStatusPanel'
 
 export function mountAppHeader(container: HTMLElement): () => void {
   const header = document.createElement('header')
@@ -21,6 +22,7 @@ export function mountAppHeader(container: HTMLElement): () => void {
   const onlineStatus = createOnlineStatus()
   const installPrompt = createInstallPrompt()
   const unmountUploadDrainFallback = mountUploadDrainFallback()
+  const unmountUploadStatusPanel = mountUploadStatusPanel(header)
 
   function updateOnline(online: boolean) {
     offlineBadge.innerHTML = online
@@ -46,6 +48,7 @@ export function mountAppHeader(container: HTMLElement): () => void {
     onlineStatus.destroy()
     installPrompt.destroy()
     unmountUploadDrainFallback()
+    unmountUploadStatusPanel()
     header.remove()
   }
 }

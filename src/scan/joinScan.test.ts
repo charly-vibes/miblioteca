@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import 'fake-indexeddb/auto'
 import { openShelfwalkDb } from '../tracer/persistence'
-import { joinScan, JoinScanError } from './joinScan'
+import { joinScan } from './joinScan'
 
 function makeFetch(status: number, body: object) {
   return vi.fn().mockResolvedValue({

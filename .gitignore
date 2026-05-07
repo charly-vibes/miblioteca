@@ -3,3 +3,17 @@
 .dolt/
 *.db
 .beads-credential-key
+
+# Dependencies and local tooling
+node_modules/
+*.tsbuildinfo
+
+# Local HTTPS certificates
+localhost.pem
+localhost-key.pem
+
+# TypeScript build outputs for config/dev helper files
+vite.config.js
+vite.config.d.ts
+src/dev/*.js
+src/dev/*.d.ts

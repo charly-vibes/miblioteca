@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { laplacianVariance, makeThumbnail } from './imageProcessing'
+import type { MakeThumbnailDeps } from './imageProcessing'
 
 // jsdom lacks ImageData constructor without the 'canvas' package; create a compatible POJO
 function makeImageData(width: number, height: number, fillRgba: [number, number, number, number]): ImageData {
@@ -75,10 +76,10 @@ describe('makeThumbnail', () => {
     }
     const mockCanvas = {
       getContext: (_type: '2d') => mockCtx,
-      convertToBlob: async (_opts?: unknown) => resultBlob,
+      convertToBlob: async (_opts?: { type?: string; quality?: number }) => resultBlob,
     }
 
-    const deps = {
+    const deps: MakeThumbnailDeps = {
       createImageBitmap: async (_blob: Blob) => ({
         width: imgW,
         height: imgH,
@@ -125,7 +126,7 @@ describe('makeThumbnail', () => {
     const brokenDeps = {
       ...deps,
       createOffscreenCanvas: (_w: number, _h: number) => ({
-        getContext: (_type: '2d') => null as unknown as ReturnType<typeof deps.createOffscreenCanvas>['getContext'],
+        getContext: (_type: '2d') => null,
         convertToBlob: async () => new Blob(),
       }),
     }

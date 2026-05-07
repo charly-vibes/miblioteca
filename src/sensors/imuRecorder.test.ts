@@ -1,10 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { createImuRecorder } from './imuRecorder'
 import type { AccelerometerLike, GyroscopeLike, ImuRecorderDeps } from './imuRecorder'
-import { FIELD_COUNT, F_T, F_AX, F_GX, F_QW, F_GRZ } from './imuTrace'
+import { FIELD_COUNT, F_T, F_AX, F_GX, F_QW } from './imuTrace'
 import { openShelfwalkDb, getTrace, putTrace } from '../tracer/persistence'
 import type { ShelfwalkDatabase } from '../tracer/persistence'
-import type { ImuTrace } from './imuTrace'
 
 // Minimal mock sensor — exposes fireReading() to trigger onreading synchronously
 function makeMockAccel(

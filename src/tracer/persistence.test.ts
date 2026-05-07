@@ -226,7 +226,7 @@ describe('getScan / putScan', () => {
 
 describe('getTrace / putTrace', () => {
   it('stores and retrieves a trace by sessionId', async () => {
-    const traceData = { samples: [{ t: 0, ax: 0.1 }] }
+    const traceData = { sessionId: 'sess-trace-1', rowCount: 0, data: new ArrayBuffer(0), pauseGaps: [] }
     await putTrace(db, 'sess-trace-1', traceData)
     const loaded = await getTrace(db, 'sess-trace-1')
     expect(loaded).toEqual(traceData)

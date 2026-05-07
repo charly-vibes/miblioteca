@@ -74,7 +74,9 @@ export class GhostOverlayCanvas {
   }
 
   // Call after each capture to draw the thumbnail and reset yaw accumulation.
-  setSnapshot(imageBitmap: ImageBitmap) {
+  // Pass null when grabFrame() fails — previous snapshot is retained unchanged.
+  setSnapshot(imageBitmap: ImageBitmap | null) {
+    if (imageBitmap == null) return
     this.canvas.width = imageBitmap.width
     this.canvas.height = imageBitmap.height
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)

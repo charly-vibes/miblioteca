@@ -4,6 +4,8 @@ import type {
   BundleFileEntry,
   BundleExportState,
   SessionBundleDeliveryState,
+  BundleTransferGuidance,
+  BundleShareCapability,
 } from './types'
 import type { CaptureRecord } from '../tracer/capture'
 
@@ -87,5 +89,27 @@ describe('SessionBundleDeliveryState', () => {
   it('in_progress state has no bundle yet', () => {
     const state: SessionBundleDeliveryState = { status: 'in_progress' }
     expect(state.status).toBe('in_progress')
+  })
+})
+
+describe('transfer guidance and share capability', () => {
+  it('models large-bundle transfer guidance', () => {
+    const guidance: BundleTransferGuidance = {
+      level: 'recommend-drive-or-usb',
+      message: 'Use Drive or USB for very large bundles.',
+      thresholdBytes: 500 * 1024 * 1024,
+    }
+
+    expect(guidance.level).toBe('recommend-drive-or-usb')
+  })
+
+  it('models unsupported file sharing as a download fallback', () => {
+    const capability: BundleShareCapability = {
+      status: 'unsupported',
+      reason: 'file-share-unavailable',
+      fallback: 'download',
+    }
+
+    expect(capability.fallback).toBe('download')
   })
 })

@@ -39,3 +39,12 @@ export type SessionBundleDeliveryState =
   | { status: 'exported'; bundleFilename: string; exportedAt: string; sizeBytes: number; sha256: string }
   | { status: 'failed'; error: string }
   | { status: 'aborted' }
+
+export type BundleTransferGuidance =
+  | { level: 'normal'; message: string }
+  | { level: 'warning'; message: string; thresholdBytes: number }
+  | { level: 'recommend-drive-or-usb'; message: string; thresholdBytes: number }
+
+export type BundleShareCapability =
+  | { status: 'supported' }
+  | { status: 'unsupported'; reason: 'web-share-unavailable' | 'file-share-unavailable'; fallback: 'download' }

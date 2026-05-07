@@ -32,6 +32,12 @@ The product question for the MVP is narrower: can a phone capture useful bookshe
     - Loose files in a directory: rejected because mobile share flows handle a single file more reliably.
     - Only JSON plus image references: rejected because referenced IndexedDB blobs are not portable outside the browser profile.
 
+- Decision: generate `.mbibundle.zip` archives in-browser with JSZip.
+  - Why: JSZip runs in the PWA without native dependencies, supports Blob output, and lets tests inspect generated archives deterministically.
+  - Alternatives considered:
+    - StreamSaver/OPFS streaming ZIP: deferred until field data proves memory pressure is a problem.
+    - Custom ZIP writer: rejected because checksum and archive correctness are higher risk than using a maintained library.
+
 - Decision: use `sha256` checksums for manifest entries.
   - Why: SHA-256 is widely supported by browser cryptography APIs and downstream tooling.
   - Alternatives considered:
@@ -131,5 +137,4 @@ These are MVP defaults to validate manually on Android Chrome and may be revised
 6. Defer backend API implementation until after bundle artifacts have been validated against downstream processing needs.
 
 ## Open Questions
-- What is the preferred archive library for browser-side ZIP generation?
 - Should a future backend ingest the whole `.mbibundle.zip` as one upload, or unpack and upload individual artifacts client-side? This must be decided before backend work begins, but it does not block the bundle-first MVP.

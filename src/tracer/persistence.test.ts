@@ -20,6 +20,8 @@ import {
   getPreviewBlob,
   putPreviewBlob,
   updateUploadState,
+  getSessionBundleDeliveryState,
+  putSessionBundleDeliveryState,
 } from './persistence'
 import type { ShelfwalkDatabase } from './persistence'
 import { createCaptureRecord } from './capture'
@@ -123,7 +125,12 @@ describe('openShelfwalkDb', () => {
     expect(storeNames).toContain('previewBlobs')
   })
 
-  it('migrates a v1 database to v2 by adding previewFrames and previewBlobs', async () => {
+  it('creates the v3 session bundle delivery state store', () => {
+    const storeNames = Array.from(db.objectStoreNames)
+    expect(storeNames).toContain('sessionBundleDeliveryStates')
+  })
+
+  it('migrates a v1 database to current stores', async () => {
     const migrateName = `migrate-test-${Date.now()}`
 
     // Open at version 1 (no previewFrames/previewBlobs)
@@ -141,12 +148,26 @@ describe('openShelfwalkDb', () => {
     )
     v1db.close()
 
-    // Reopen at version 2 (our openShelfwalkDb) — should add previewFrames and previewBlobs
-    const v2db = await openShelfwalkDb(migrateName)
-    const storeNames = Array.from(v2db.objectStoreNames)
+    const upgradedDb = await openShelfwalkDb(migrateName)
+    const storeNames = Array.from(upgradedDb.objectStoreNames)
     expect(storeNames).toContain('previewFrames')
     expect(storeNames).toContain('previewBlobs')
-    v2db.close()
+    expect(storeNames).toContain('sessionBundleDeliveryStates')
+    upgradedDb.close()
+  })
+})
+
+describe('session bundle delivery state', () => {
+  it('round-trips export state by session id', async () => {
+    await putSessionBundleDeliveryState(db, 'session-1', {
+      status: 'failed',
+      error: 'Insufficient browser storage',
+    })
+
+    await expect(getSessionBundleDeliveryState(db, 'session-1')).resolves.toEqual({
+      status: 'failed',
+      error: 'Insufficient browser storage',
+    })
   })
 })
 

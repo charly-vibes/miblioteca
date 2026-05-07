@@ -3,6 +3,7 @@ import type { DBSchema, IDBPDatabase } from 'idb'
 import type { CaptureRecord, PreviewFrame } from './capture'
 import type { TracerBulletScan, TracerBulletSession } from './storage'
 import type { ImuTrace } from '../sensors/imuTrace'
+import type { SessionBundleDeliveryState } from '../bundle/types'
 
 export interface ShelfwalkDB extends DBSchema {
   records: {
@@ -38,12 +39,16 @@ export interface ShelfwalkDB extends DBSchema {
     key: string
     value: Blob
   }
+  sessionBundleDeliveryStates: {
+    key: string
+    value: SessionBundleDeliveryState
+  }
 }
 
 export type ShelfwalkDatabase = IDBPDatabase<ShelfwalkDB>
 
 export function openShelfwalkDb(name = 'shelfwalk'): Promise<ShelfwalkDatabase> {
-  return openDB<ShelfwalkDB>(name, 2, {
+  return openDB<ShelfwalkDB>(name, 3, {
     upgrade(db, oldVersion) {
       if (oldVersion < 1) {
         const records = db.createObjectStore('records')
@@ -57,6 +62,9 @@ export function openShelfwalkDb(name = 'shelfwalk'): Promise<ShelfwalkDatabase> 
       if (oldVersion < 2) {
         db.createObjectStore('previewFrames')
         db.createObjectStore('previewBlobs')
+      }
+      if (oldVersion < 3) {
+        db.createObjectStore('sessionBundleDeliveryStates')
       }
     },
   })
@@ -141,6 +149,21 @@ export function putSession(
   session: TracerBulletSession
 ): Promise<string> {
   return db.put('sessions', session, session.id)
+}
+
+export function getSessionBundleDeliveryState(
+  db: ShelfwalkDatabase,
+  sessionId: string
+): Promise<SessionBundleDeliveryState | undefined> {
+  return db.get('sessionBundleDeliveryStates', sessionId)
+}
+
+export function putSessionBundleDeliveryState(
+  db: ShelfwalkDatabase,
+  sessionId: string,
+  state: SessionBundleDeliveryState
+): Promise<string> {
+  return db.put('sessionBundleDeliveryStates', state, sessionId)
 }
 
 export function getAllRecords(db: ShelfwalkDatabase): Promise<CaptureRecord[]> {

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import JSZip from 'jszip'
 import {
   openShelfwalkDb,
@@ -7,6 +7,7 @@ import {
   putSession,
   loadBlob,
   loadThumbnail,
+  getSessionBundleDeliveryState,
 } from '../tracer/persistence'
 import type { ShelfwalkDatabase } from '../tracer/persistence'
 import { assembleBundle } from './assemble'
@@ -219,5 +220,77 @@ describe('assembleBundle', () => {
     if (!result.ok) return
     const traceEntry = result.manifest.files.find((f) => f.logicalType === 'trace')
     expect(traceEntry).toBeUndefined()
+  })
+
+  it('blocks export when storage headroom is below estimated archive size plus safety margin', async () => {
+    const db = await freshDb()
+    await putScan(db, makeScan())
+    await putSession(db, makeSession())
+    await saveCapture(db, {
+      record: makeRecord(),
+      imageBlob: new Blob([IMAGE_BYTES], { type: 'image/jpeg' }),
+      thumbnailBlob: new Blob([THUMB_BYTES], { type: 'image/jpeg' }),
+    })
+
+    const result = await assembleBundle({
+      db,
+      scanId: 'scan-1',
+      appVersion: '0.1.0',
+      storage: { estimate: vi.fn().mockResolvedValue({ usage: 999, quota: 1000 }) },
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toMatch(/storage|space|headroom/i)
+    const state = await getSessionBundleDeliveryState(db, 'session-1')
+    expect(state).toMatchObject({ status: 'failed' })
+    expect(await loadBlob(db, 'record-1')).not.toBeUndefined()
+  })
+
+  it('records aborted export state and allows retry', async () => {
+    const db = await freshDb()
+    await putScan(db, makeScan())
+    await putSession(db, makeSession())
+    await saveCapture(db, {
+      record: makeRecord(),
+      imageBlob: new Blob([IMAGE_BYTES], { type: 'image/jpeg' }),
+      thumbnailBlob: new Blob([THUMB_BYTES], { type: 'image/jpeg' }),
+    })
+    const controller = new AbortController()
+    controller.abort()
+
+    const aborted = await assembleBundle({ db, scanId: 'scan-1', appVersion: '0.1.0', signal: controller.signal })
+    expect(aborted.ok).toBe(false)
+    if (!aborted.ok) expect(aborted.error).toMatch(/abort/i)
+    expect(await getSessionBundleDeliveryState(db, 'session-1')).toMatchObject({ status: 'aborted' })
+
+    const retry = await assembleBundle({ db, scanId: 'scan-1', appVersion: '0.1.0' })
+    expect(retry.ok).toBe(true)
+    expect(await getSessionBundleDeliveryState(db, 'session-1')).toMatchObject({ status: 'exported' })
+  })
+
+  it('does not mark corrupted generated archive as exported', async () => {
+    const db = await freshDb()
+    await putScan(db, makeScan())
+    await putSession(db, makeSession())
+    await saveCapture(db, {
+      record: makeRecord(),
+      imageBlob: new Blob([IMAGE_BYTES], { type: 'image/jpeg' }),
+      thumbnailBlob: new Blob([THUMB_BYTES], { type: 'image/jpeg' }),
+    })
+
+    const result = await assembleBundle({
+      db,
+      scanId: 'scan-1',
+      appVersion: '0.1.0',
+      afterArchiveGenerated: async (blob) => {
+        const zip = await JSZip.loadAsync(blob)
+        zip.remove('images/session-1/record-1.jpg')
+        return zip.generateAsync({ type: 'blob' })
+      },
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toMatch(/missing file|archive/i)
+    expect(await getSessionBundleDeliveryState(db, 'session-1')).toMatchObject({ status: 'failed' })
   })
 })

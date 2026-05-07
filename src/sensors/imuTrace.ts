@@ -1,4 +1,5 @@
 export const FIELD_COUNT = 14
+export const MOTION_WINDOW_FIELD_COUNT = 7
 
 export const F_T = 0
 export const F_AX = 1
@@ -54,4 +55,43 @@ export function createTraceBlob(buf: Float32Array, rowCount: number): Blob {
   return new Blob([buf.slice(0, rowCount * FIELD_COUNT).buffer], {
     type: 'application/octet-stream',
   })
+}
+
+export function extractMotionWindow(
+  trace: Float32Array,
+  shotMs: number,
+  windowMs = 200
+): Float32Array {
+  if (trace.length % FIELD_COUNT !== 0) {
+    throw new RangeError('IMU trace length must be a multiple of FIELD_COUNT')
+  }
+  if (!Number.isFinite(shotMs)) {
+    throw new RangeError('shotMs must be finite')
+  }
+  if (!Number.isFinite(windowMs) || windowMs < 0) {
+    throw new RangeError('windowMs must be finite and non-negative')
+  }
+
+  const rowCount = trace.length / FIELD_COUNT
+  const halfWindowMs = windowMs / 2
+  const startMs = shotMs - halfWindowMs
+  const endMs = shotMs + halfWindowMs
+  const selected = new Float32Array(rowCount * MOTION_WINDOW_FIELD_COUNT)
+  let outputOffset = 0
+
+  for (let row = 0; row < rowCount; row++) {
+    const inputOffset = row * FIELD_COUNT
+    const t = trace[inputOffset + F_T]
+    if (t < startMs || t > endMs) continue
+
+    selected[outputOffset++] = t
+    selected[outputOffset++] = trace[inputOffset + F_AX]
+    selected[outputOffset++] = trace[inputOffset + F_AY]
+    selected[outputOffset++] = trace[inputOffset + F_AZ]
+    selected[outputOffset++] = trace[inputOffset + F_GX]
+    selected[outputOffset++] = trace[inputOffset + F_GY]
+    selected[outputOffset++] = trace[inputOffset + F_GZ]
+  }
+
+  return selected.slice(0, outputOffset)
 }

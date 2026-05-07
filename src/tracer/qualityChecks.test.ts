@@ -62,6 +62,56 @@ describe('runQualityChecks', () => {
   })
 })
 
+describe('runQualityChecks boolean flags', () => {
+  function makeCheckerboard(size = 10) {
+    return makeImageData(size, size, (i) => {
+      const x = i % size; const y = Math.floor(i / size)
+      return (x + y) % 2 === 0 ? [255, 255, 255, 255] : [0, 0, 0, 255]
+    })
+  }
+
+  it('sets blurry: true for a uniform image', () => {
+    const img = makeImageData(10, 10, () => [128, 128, 128, 255])
+    expect(runQualityChecks(img, steadySensor).blurry).toBe(true)
+  })
+
+  it('sets blurry: false for a high-contrast image', () => {
+    expect(runQualityChecks(makeCheckerboard(), steadySensor).blurry).toBe(false)
+  })
+
+  it('sets overexposed: true when >5% pixels have luma > 250', () => {
+    // 10 of 100 pixels fully white → 10%
+    const img = makeImageData(10, 10, (i) => i < 10 ? [255, 255, 255, 255] : [128, 128, 128, 255])
+    expect(runQualityChecks(img, steadySensor).overexposed).toBe(true)
+  })
+
+  it('sets overexposed: false for a normal image', () => {
+    const img = makeImageData(10, 10, () => [128, 128, 128, 255])
+    expect(runQualityChecks(img, steadySensor).overexposed).toBe(false)
+  })
+
+  it('sets underexposed: true when >5% pixels have luma < 5', () => {
+    const img = makeImageData(10, 10, (i) => i < 10 ? [0, 0, 0, 255] : [128, 128, 128, 255])
+    expect(runQualityChecks(img, steadySensor).underexposed).toBe(true)
+  })
+
+  it('sets underexposed: false for a normal image', () => {
+    const img = makeImageData(10, 10, () => [128, 128, 128, 255])
+    expect(runQualityChecks(img, steadySensor).underexposed).toBe(false)
+  })
+
+  it('sets dark: true when mean luma < 50', () => {
+    // luma(20,20,20) ≈ 20 < 50
+    const img = makeImageData(10, 10, () => [20, 20, 20, 255])
+    expect(runQualityChecks(img, steadySensor).dark).toBe(true)
+  })
+
+  it('sets dark: false for a mid-bright image', () => {
+    const img = makeImageData(10, 10, () => [128, 128, 128, 255])
+    expect(runQualityChecks(img, steadySensor).dark).toBe(false)
+  })
+})
+
 describe('qualityWarnings', () => {
   const base = {
     laplacianVariance: THRESHOLDS.blurry,
@@ -69,6 +119,10 @@ describe('qualityWarnings', () => {
     underexposedFraction: 0,
     steadyAtCapture: true,
     tiltDegrees: 0,
+    blurry: false,
+    overexposed: false,
+    underexposed: false,
+    dark: false,
   }
 
   it('returns empty for a good shot', () => {

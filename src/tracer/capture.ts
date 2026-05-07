@@ -56,8 +56,12 @@ export type CaptureRecord = {
     underexposedFraction: number
     steadyAtCapture: boolean
     tiltDegrees: number
+    blurry: boolean
+    overexposed: boolean
+    underexposed: boolean
+    dark: boolean
     estimatedYawDeltaSincePrev?: number
-    stepCountSincePrev?: number
+    displacementMeters?: number
   }
   exif?: Record<string, unknown>
   uploadState: 'pending' | 'uploading' | 'uploaded' | 'failed' | 'rejected'
@@ -101,8 +105,12 @@ export type CaptureRecordInput = {
     underexposedFraction: number
     steadyAtCapture: boolean
     tiltDegrees: number
+    blurry: boolean
+    overexposed: boolean
+    underexposed: boolean
+    dark: boolean
     estimatedYawDeltaSincePrev?: number
-    stepCountSincePrev?: number
+    displacementMeters?: number
   }
 }
 
@@ -118,6 +126,10 @@ const DEFAULT_QUALITY_CHECKS: CaptureRecord['qualityChecks'] = {
   underexposedFraction: 0,
   steadyAtCapture: true,
   tiltDegrees: 0,
+  blurry: false,
+  overexposed: false,
+  underexposed: false,
+  dark: false,
 }
 
 export function createCaptureRecord(

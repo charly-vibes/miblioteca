@@ -91,6 +91,8 @@ export class CaptureView {
   private bundleExportPanel: BundleExportPanel | null = null
   private readonly galleryEl: HTMLDivElement
   private thumbnailUrls: string[] = []
+  private gallerySeq = 0
+  private destroyed = false
 
   constructor(container: HTMLElement, opts: CaptureViewOptions = {}) {
     this.opts = opts
@@ -423,36 +425,49 @@ export class CaptureView {
   }
 
   private async loadGallery(sessionId: string) {
+    const seq = ++this.gallerySeq
     try {
       const db = await openShelfwalkDb()
+      if (seq !== this.gallerySeq || this.destroyed) return
+
       const all = await getAllRecords(db)
+      if (seq !== this.gallerySeq || this.destroyed) return
+
       const records = all.filter((r) => r.sessionId === sessionId).sort((a, b) => a.index - b.index)
 
-      this.thumbnailUrls.forEach((u) => URL.revokeObjectURL(u))
-      this.thumbnailUrls = []
-
       if (records.length === 0) {
+        const oldUrls = this.thumbnailUrls
+        this.thumbnailUrls = []
         this.galleryEl.hidden = true
         this.galleryEl.replaceChildren()
+        oldUrls.forEach((u) => URL.revokeObjectURL(u))
         return
       }
 
+      const blobs = await Promise.all(records.map((r) => loadThumbnail(db, r.recordId)))
+      if (seq !== this.gallerySeq || this.destroyed) return
+
       const imgs: HTMLImageElement[] = []
-      for (const record of records) {
-        const blob = await loadThumbnail(db, record.recordId)
+      const newUrls: string[] = []
+      for (let i = 0; i < records.length; i++) {
+        const blob = blobs[i]
         if (!blob) continue
         const url = URL.createObjectURL(blob)
-        this.thumbnailUrls.push(url)
+        newUrls.push(url)
         const img = document.createElement('img')
         img.src = url
         img.className = 'camera-gallery-thumb'
-        img.alt = `Capture ${record.index + 1}`
+        img.alt = `Capture ${records[i].index + 1}`
         imgs.push(img)
       }
 
+      // Swap URLs and update DOM before revoking old URLs to avoid broken-image flash
+      const oldUrls = this.thumbnailUrls
+      this.thumbnailUrls = newUrls
       this.galleryEl.replaceChildren(...imgs)
       this.galleryEl.hidden = imgs.length === 0
       this.galleryEl.scrollLeft = this.galleryEl.scrollWidth
+      oldUrls.forEach((u) => URL.revokeObjectURL(u))
     } catch {
       // gallery is non-critical; leave it as-is if loading fails
     }
@@ -525,6 +540,7 @@ export class CaptureView {
   }
 
   destroy() {
+    this.destroyed = true
     if (this.cameraState.kind === 'granted') {
       this.cameraState.stream.getTracks().forEach((t) => t.stop())
     }
@@ -533,6 +549,7 @@ export class CaptureView {
     this.stopAccel()
     this.bundleExportPanel?.destroy()
     this.thumbnailUrls.forEach((u) => URL.revokeObjectURL(u))
+    this.thumbnailUrls = []
     this.root.remove()
   }
 }

@@ -1,4 +1,5 @@
 import { initCamera } from '../camera/cameraInit'
+import { BundleExportPanel } from '../bundle/BundleExportPanel'
 import { checkStorageBudget } from '../pwa/storageBudget'
 import type { StorageBudgetManager, StorageBudgetStatus } from '../pwa/storageBudget'
 import { requestUploadSync } from '../pwa/syncRegistration'
@@ -82,6 +83,7 @@ export class CaptureView {
   private readonly retryBtn: HTMLButtonElement
   private readonly steadinessEl: HTMLDivElement
   private readonly warningsEl: HTMLDivElement
+  private bundleExportPanel: BundleExportPanel | null = null
 
   constructor(container: HTMLElement, opts: CaptureViewOptions = {}) {
     this.opts = opts
@@ -170,7 +172,22 @@ export class CaptureView {
 
   private setBootstrapState(s: BootstrapState) {
     this.bootstrapState = s
+    if (s.kind === 'ready') {
+      this.mountBundlePanel(s.result)
+    }
     this.render()
+  }
+
+  private mountBundlePanel(result: BootstrapResult) {
+    if (this.bundleExportPanel) return
+    void openShelfwalkDb().then((db) => {
+      if (this.bundleExportPanel) return
+      this.bundleExportPanel = new BundleExportPanel(this.controls, {
+        db,
+        scanId: result.scan.id,
+        appVersion: '0.0.0',
+      })
+    })
   }
 
   private setCameraState(s: CameraState) {
@@ -448,6 +465,7 @@ export class CaptureView {
     this.ghostOverlay?.destroy()
     this.stopQualityPoll()
     this.stopAccel()
+    this.bundleExportPanel?.destroy()
     this.root.remove()
   }
 }

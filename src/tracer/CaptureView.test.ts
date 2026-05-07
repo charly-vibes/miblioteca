@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CaptureView } from './CaptureView'
 import type { CaptureSnapshotResult } from './CaptureView'
+import type { BootstrapResult } from './bootstrap'
 import type { AccelerometerLike } from '../sensors/imuRecorder'
 import * as persistence from './persistence'
 
@@ -407,5 +408,79 @@ describe('CaptureView — thumbnail dimensions', () => {
     expect(record.image.thumbnailHeight).toBe(360)
 
     saveSpy.mockRestore()
+  })
+})
+
+// ── Captures gallery ─────────────────────────────────────────────────────────
+
+describe('CaptureView — captures gallery', () => {
+  let mockCreateObjectURL: ReturnType<typeof vi.fn>
+  let SESSION_ID: string
+  let fakeBootstrap: BootstrapResult
+
+  beforeEach(() => {
+    SESSION_ID = crypto.randomUUID()
+    fakeBootstrap = {
+      resumed: false,
+      scan: { id: 'scan-1', shortCode: 'ABC', joinToken: 'tok', createdAt: '2026-01-01T00:00:00.000Z' },
+      session: { id: SESSION_ID, scanId: 'scan-1', userId: 'user-1', startedAt: '2026-01-01T00:00:00.000Z', clockOffsetMs: 0, status: 'active' },
+    }
+    let n = 0
+    mockCreateObjectURL = vi.fn().mockImplementation(() => `blob:mock-${++n}`)
+    vi.stubGlobal('URL', { createObjectURL: mockCreateObjectURL, revokeObjectURL: vi.fn() })
+    mockGetUserMedia.mockResolvedValue(makeFakeStream())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  async function bootstrapAndGrantCamera() {
+    const user = userEvent.setup()
+    new CaptureView(container, {
+      bootstrapResult: fakeBootstrap,
+      captureSnapshot: mockCaptureSnapshot,
+      uploadFetch: mockUploadFetch(200),
+    })
+    await vi.waitFor(() => screen.getByRole('button', { name: /open camera/i }))
+    await user.click(screen.getByRole('button', { name: /open camera/i }))
+    await vi.waitFor(() => screen.getByRole('button', { name: /take photo/i }))
+    return user
+  }
+
+  it('shows no gallery thumbnails before any capture', async () => {
+    await bootstrapAndGrantCamera()
+    await vi.waitFor(() => {
+      expect(container.querySelectorAll('.camera-gallery-thumb')).toHaveLength(0)
+    })
+  })
+
+  it('shows one thumbnail after one capture', async () => {
+    const user = await bootstrapAndGrantCamera()
+    await user.click(screen.getByRole('button', { name: /take photo/i }))
+
+    await vi.waitFor(() => {
+      expect(container.querySelectorAll('.camera-gallery-thumb')).toHaveLength(1)
+    })
+  })
+
+  it('shows two thumbnails after two captures', async () => {
+    const user = await bootstrapAndGrantCamera()
+    await user.click(screen.getByRole('button', { name: /take photo/i }))
+    await vi.waitFor(() => expect(container.querySelectorAll('.camera-gallery-thumb')).toHaveLength(1))
+    await user.click(screen.getByRole('button', { name: /take photo/i }))
+
+    await vi.waitFor(() => {
+      expect(container.querySelectorAll('.camera-gallery-thumb')).toHaveLength(2)
+    })
+  })
+
+  it('thumbnail images have accessible alt text', async () => {
+    const user = await bootstrapAndGrantCamera()
+    await user.click(screen.getByRole('button', { name: /take photo/i }))
+
+    await vi.waitFor(() => {
+      expect(screen.getByRole('img', { name: /capture 1/i })).toBeInTheDocument()
+    })
   })
 })

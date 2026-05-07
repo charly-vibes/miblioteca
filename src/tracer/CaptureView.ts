@@ -12,7 +12,7 @@ import { bootstrapTracerBullet, type BootstrapResult } from './bootstrap'
 import { createCaptureRecord } from './capture'
 import { makeThumbnail } from './imageProcessing'
 import { createMockScanFetch } from './mockScanApi'
-import { openShelfwalkDb, saveCapture } from './persistence'
+import { getAllRecords, loadThumbnail, openShelfwalkDb, saveCapture } from './persistence'
 import { qualityWarnings } from './qualityChecks'
 import type { QualityWarning } from './qualityChecks'
 import { createLocalStorageTracerBulletStore } from './storage'
@@ -89,6 +89,8 @@ export class CaptureView {
   private readonly warningsEl: HTMLDivElement
   private readonly backBtn: HTMLButtonElement | null
   private bundleExportPanel: BundleExportPanel | null = null
+  private readonly galleryEl: HTMLDivElement
+  private thumbnailUrls: string[] = []
 
   constructor(container: HTMLElement, opts: CaptureViewOptions = {}) {
     this.opts = opts
@@ -97,6 +99,8 @@ export class CaptureView {
 
     this.root = this.mk('div', 'camera-app')
     this.viewfinder = this.mk('div', 'camera-viewfinder')
+    this.galleryEl = this.mk('div', 'camera-gallery')
+    this.galleryEl.hidden = true
 
     this.video = document.createElement('video')
     this.video.autoplay = true
@@ -157,7 +161,7 @@ export class CaptureView {
 
     this.controls.append(this.storageWarningEl, this.steadinessEl, this.shutterBtn, this.openCameraBtn, this.retryBtn, this.statusEl)
     this.viewfinder.append(this.warningsEl, this.onboarding, ...(this.backBtn ? [this.backBtn] : []))
-    this.root.append(this.viewfinder, this.controls)
+    this.root.append(this.viewfinder, this.galleryEl, this.controls)
     container.append(this.root)
 
     this.render()
@@ -191,6 +195,7 @@ export class CaptureView {
     this.bootstrapState = s
     if (s.kind === 'ready') {
       this.mountBundlePanel(s.result)
+      void this.loadGallery(s.result.session.id)
     }
     this.render()
   }
@@ -408,11 +413,48 @@ export class CaptureView {
         savedLocally: true,
         uploadState: uploadState === 'uploaded' ? 'uploaded' : 'failed',
       })
+      void this.loadGallery(session.id)
     } catch (error) {
       this.setCaptureState({
         kind: 'error',
         message: error instanceof Error ? error.message : 'Capture failed.',
       })
+    }
+  }
+
+  private async loadGallery(sessionId: string) {
+    try {
+      const db = await openShelfwalkDb()
+      const all = await getAllRecords(db)
+      const records = all.filter((r) => r.sessionId === sessionId).sort((a, b) => a.index - b.index)
+
+      this.thumbnailUrls.forEach((u) => URL.revokeObjectURL(u))
+      this.thumbnailUrls = []
+
+      if (records.length === 0) {
+        this.galleryEl.hidden = true
+        this.galleryEl.replaceChildren()
+        return
+      }
+
+      const imgs: HTMLImageElement[] = []
+      for (const record of records) {
+        const blob = await loadThumbnail(db, record.recordId)
+        if (!blob) continue
+        const url = URL.createObjectURL(blob)
+        this.thumbnailUrls.push(url)
+        const img = document.createElement('img')
+        img.src = url
+        img.className = 'camera-gallery-thumb'
+        img.alt = `Capture ${record.index + 1}`
+        imgs.push(img)
+      }
+
+      this.galleryEl.replaceChildren(...imgs)
+      this.galleryEl.hidden = imgs.length === 0
+      this.galleryEl.scrollLeft = this.galleryEl.scrollWidth
+    } catch {
+      // gallery is non-critical; leave it as-is if loading fails
     }
   }
 
@@ -490,6 +532,7 @@ export class CaptureView {
     this.stopQualityPoll()
     this.stopAccel()
     this.bundleExportPanel?.destroy()
+    this.thumbnailUrls.forEach((u) => URL.revokeObjectURL(u))
     this.root.remove()
   }
 }

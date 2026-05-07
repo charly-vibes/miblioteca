@@ -312,11 +312,19 @@ h1 {
   font: inherit;
 }
 
-.scan-form-error {
+.scan-form-error,
+.scan-form-success {
   min-height: 1.5rem;
   margin: 0.75rem 0 0;
-  color: #fca5a5;
   font-weight: 700;
+}
+
+.scan-form-error {
+  color: #fca5a5;
+}
+
+.scan-form-success {
+  color: #86efac;
 }
 
 .scan-invite-slot {

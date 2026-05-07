@@ -59,6 +59,9 @@ describe('mountScanManagementView', () => {
     await userEvent.click(screen.getByRole('button', { name: /create scan/i }))
 
     await screen.findByText('BARN-7K9')
+    expect(screen.getByText(/scan created/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /create scan/i })).toBeDisabled()
+    expect(screen.getByLabelText(/scan name/i)).toBeDisabled()
     expect(container.querySelector('svg')).toBeTruthy()
     expect(fetch).toHaveBeenCalledWith('/api/scan', expect.objectContaining({ method: 'POST' }))
     const body = JSON.parse(fetch.mock.calls[0][1].body as string)
@@ -74,6 +77,17 @@ describe('mountScanManagementView', () => {
         session: expect.objectContaining({ id: 'sess-host', scanId: 'scan-abc', userId: 'host-user' }),
       })
     )
+  })
+
+  it('validates trimmed create input before calling the API', async () => {
+    const fetch = makeFetch(200, CREATE_RESPONSE)
+    mountScanManagementView(container, { fetch, openDb: async () => db, onReady: vi.fn() })
+
+    await userEvent.type(screen.getByLabelText(/scan name/i), '   ')
+    await userEvent.click(screen.getByRole('button', { name: /create scan/i }))
+
+    expect(screen.getByText(/enter a scan name/i)).toBeInTheDocument()
+    expect(fetch).not.toHaveBeenCalled()
   })
 
   it('maps scan-create 409 conflicts to an inline name-taken error', async () => {
@@ -116,6 +130,19 @@ describe('mountScanManagementView', () => {
         session: expect.objectContaining({ id: 'sess-join', status: 'active' }),
       })
     )
+  })
+
+  it('validates trimmed join inputs before calling the API', async () => {
+    const fetch = makeFetch(200, JOIN_RESPONSE)
+    mountScanManagementView(container, { fetch, openDb: async () => db, onReady: vi.fn() })
+
+    await userEvent.type(screen.getByLabelText(/short code/i), '   ')
+    await userEvent.type(screen.getByLabelText(/invite token/i), 'token')
+    await userEvent.type(screen.getByLabelText(/your name/i), 'Alice')
+    await userEvent.click(screen.getByRole('button', { name: /join scan/i }))
+
+    expect(screen.getByText(/enter the short code, invite token, and your name/i)).toBeInTheDocument()
+    expect(fetch).not.toHaveBeenCalled()
   })
 
   it('shows required join error messages for expired links and missing scans', async () => {

@@ -50,10 +50,13 @@ export function mountScanManagementView(container: HTMLElement, deps: ScanManage
   createButton.type = 'submit'
   createButton.textContent = 'Create scan'
   const createError = statusParagraph('alert')
+  const createSuccess = document.createElement('p')
+  createSuccess.className = 'scan-form-success'
+  createSuccess.setAttribute('aria-live', 'polite')
   const inviteSlot = document.createElement('div')
   inviteSlot.className = 'scan-invite-slot'
   createForm.append(nameLabel, createButton)
-  createSection.append(createTitle, createCopy, createForm, createError, inviteSlot)
+  createSection.append(createTitle, createCopy, createForm, createError, createSuccess, inviteSlot)
 
   const joinTitle = document.createElement('h2')
   joinTitle.textContent = 'Join a scan'
@@ -103,14 +106,21 @@ export function mountScanManagementView(container: HTMLElement, deps: ScanManage
 
   async function submitCreate() {
     createError.textContent = ''
+    createSuccess.textContent = ''
     inviteSlot.replaceChildren()
+    const scanName = nameInput.value.trim()
+    if (!scanName) {
+      createError.textContent = 'Enter a scan name.'
+      return
+    }
+
     createButton.disabled = true
     try {
       const result = await createScan({
         fetch,
         db: await getDb(),
         now,
-        scanName: nameInput.value.trim(),
+        scanName,
       })
       const continueButton = document.createElement('button')
       continueButton.type = 'button'
@@ -118,25 +128,35 @@ export function mountScanManagementView(container: HTMLElement, deps: ScanManage
       continueButton.addEventListener('click', () => {
         deps.onReady({ resumed: false, scan: result.scan, session: result.session })
       })
+      createSuccess.textContent = 'Scan created — share this invite, then continue when ready.'
+      createButton.disabled = true
+      nameInput.disabled = true
       inviteSlot.append(createQrInvite({ scan: result.scan, baseUrl }), continueButton)
     } catch (error) {
       createError.textContent = createScanMessage(error)
-    } finally {
       createButton.disabled = false
     }
   }
 
   async function submitJoin() {
     joinError.textContent = ''
+    const shortCode = codeInput.value.trim()
+    const joinToken = tokenInput.value.trim()
+    const displayName = displayNameInput.value.trim()
+    if (!shortCode || !joinToken || !displayName) {
+      joinError.textContent = 'Enter the short code, invite token, and your name.'
+      return
+    }
+
     joinButton.disabled = true
     try {
       const result = await joinScan({
         fetch,
         db: await getDb(),
         now,
-        shortCode: codeInput.value.trim(),
-        joinToken: tokenInput.value.trim(),
-        displayName: displayNameInput.value.trim(),
+        shortCode,
+        joinToken,
+        displayName,
       })
       deps.onReady({ resumed: false, scan: result.scan, session: result.session })
     } catch (error) {

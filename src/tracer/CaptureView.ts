@@ -2,6 +2,8 @@ import { initCamera } from '../camera/cameraInit'
 import { checkStorageBudget } from '../pwa/storageBudget'
 import type { StorageBudgetManager, StorageBudgetStatus } from '../pwa/storageBudget'
 import { requestUploadSync } from '../pwa/syncRegistration'
+import { GhostOverlayCanvas } from '../sensors/ghostOverlayCanvas'
+import type { GyroLike } from '../sensors/ghostOverlayCanvas'
 import { bootstrapTracerBullet, type BootstrapResult } from './bootstrap'
 import { createCaptureRecord } from './capture'
 import { createMockScanFetch } from './mockScanApi'
@@ -21,6 +23,8 @@ export type CaptureViewOptions = {
   captureSnapshot?: () => Promise<CaptureSnapshotResult>
   uploadFetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Pick<Response, 'ok' | 'status'>>
   storageManager?: Partial<StorageBudgetManager>
+  gyro?: GyroLike | null
+  createImageBitmap?: (blob: Blob) => Promise<ImageBitmap>
 }
 
 type BootstrapState =
@@ -51,6 +55,7 @@ export class CaptureView {
   private readonly store
   private readonly mockFetch
   private readonly opts: CaptureViewOptions
+  private ghostOverlay: GhostOverlayCanvas | null = null
 
   private readonly root: HTMLDivElement
   private readonly viewfinder: HTMLDivElement
@@ -149,9 +154,14 @@ export class CaptureView {
     if (this.cameraState.kind === 'granted') {
       this.cameraState.stream.getTracks().forEach((t) => t.stop())
     }
+    this.ghostOverlay?.destroy()
+    this.ghostOverlay = null
     this.cameraState = s
     if (s.kind === 'granted') {
       this.video.srcObject = s.stream
+      if (this.opts.gyro !== undefined) {
+        this.ghostOverlay = new GhostOverlayCanvas(this.viewfinder, { gyro: this.opts.gyro ?? null })
+      }
     }
     this.render()
   }
@@ -235,6 +245,10 @@ export class CaptureView {
         db,
       })
       if (uploadState !== 'uploaded') void requestUploadSync()
+      if (this.ghostOverlay) {
+        const bitmapFn = this.opts.createImageBitmap ?? ((b) => createImageBitmap(b))
+        void bitmapFn(snapshot.thumbnailBlob).then((bm) => this.ghostOverlay?.setSnapshot(bm))
+      }
       this.setCaptureState({
         kind: 'done',
         savedLocally: true,
@@ -307,6 +321,7 @@ export class CaptureView {
     if (this.cameraState.kind === 'granted') {
       this.cameraState.stream.getTracks().forEach((t) => t.stop())
     }
+    this.ghostOverlay?.destroy()
     this.root.remove()
   }
 }

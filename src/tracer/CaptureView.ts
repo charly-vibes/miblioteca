@@ -1,4 +1,6 @@
 import { initCamera } from '../camera/cameraInit'
+import { checkStorageBudget } from '../pwa/storageBudget'
+import type { StorageBudgetManager, StorageBudgetStatus } from '../pwa/storageBudget'
 import { requestUploadSync } from '../pwa/syncRegistration'
 import { bootstrapTracerBullet, type BootstrapResult } from './bootstrap'
 import { createCaptureRecord } from './capture'
@@ -18,6 +20,7 @@ export type CaptureViewOptions = {
   bootstrapResult?: BootstrapResult
   captureSnapshot?: () => Promise<CaptureSnapshotResult>
   uploadFetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Pick<Response, 'ok' | 'status'>>
+  storageManager?: Partial<StorageBudgetManager>
 }
 
 type BootstrapState =
@@ -42,6 +45,7 @@ export class CaptureView {
   private bootstrapState: BootstrapState = { kind: 'idle' }
   private cameraState: CameraState = { kind: 'idle' }
   private captureState: CaptureState = { kind: 'idle' }
+  private storageBudget: StorageBudgetStatus = { kind: 'ok' }
   private captureIndex = 0
 
   private readonly store
@@ -53,6 +57,7 @@ export class CaptureView {
   private readonly video: HTMLVideoElement
   private readonly onboarding: HTMLDivElement
   private readonly controls: HTMLDivElement
+  private readonly storageWarningEl: HTMLDivElement
   private readonly statusEl: HTMLParagraphElement
   private readonly shutterBtn: HTMLButtonElement
   private readonly openCameraBtn: HTMLButtonElement
@@ -83,6 +88,9 @@ export class CaptureView {
     `
 
     this.controls = this.mk('div', 'camera-controls')
+    this.storageWarningEl = this.mk('div', 'camera-storage-warning')
+    this.storageWarningEl.setAttribute('role', 'status')
+    this.storageWarningEl.setAttribute('aria-live', 'polite')
     this.statusEl = this.mk('p', 'camera-status')
 
     this.shutterBtn = document.createElement('button')
@@ -100,7 +108,7 @@ export class CaptureView {
     this.retryBtn.textContent = 'Retry'
     this.retryBtn.addEventListener('click', () => void this.startBootstrap())
 
-    this.controls.append(this.shutterBtn, this.openCameraBtn, this.retryBtn, this.statusEl)
+    this.controls.append(this.storageWarningEl, this.shutterBtn, this.openCameraBtn, this.retryBtn, this.statusEl)
     this.viewfinder.append(this.onboarding)
     this.root.append(this.viewfinder, this.controls)
     container.append(this.root)
@@ -125,6 +133,7 @@ export class CaptureView {
       return
     }
     if (this.opts.bootstrapResult) {
+      await this.refreshStorageBudget({ requestPersist: true })
       this.setBootstrapState({ kind: 'ready', result: this.opts.bootstrapResult })
       return
     }
@@ -156,6 +165,7 @@ export class CaptureView {
     this.setBootstrapState({ kind: 'loading' })
     try {
       const result = await bootstrapTracerBullet({ now: () => Date.now(), fetch: this.mockFetch, store: this.store })
+      await this.refreshStorageBudget({ requestPersist: true })
       this.setBootstrapState({ kind: 'ready', result })
     } catch (error) {
       this.setBootstrapState({
@@ -193,6 +203,8 @@ export class CaptureView {
 
   private async takePhoto() {
     if (this.bootstrapState.kind !== 'ready') return
+    await this.refreshStorageBudget({ requestPersist: false })
+    if (this.storageBudget.kind === 'blocking') return
     this.setCaptureState({ kind: 'capturing' })
     try {
       const { session, scan } = this.bootstrapState.result
@@ -249,6 +261,21 @@ export class CaptureView {
     return 'Tap to open camera'
   }
 
+  private async refreshStorageBudget(opts: { requestPersist: boolean }) {
+    const next = await checkStorageBudget(this.opts.storageManager ?? navigator.storage, opts)
+    this.storageBudget = this.mergeStorageBudget(next)
+    this.render()
+  }
+
+  private mergeStorageBudget(next: StorageBudgetStatus): StorageBudgetStatus {
+    if (next.kind === 'blocking') return next
+    if (next.kind === 'warning') return next
+    if (this.storageBudget.kind === 'warning' && this.storageBudget.reason === 'persist-denied') {
+      return this.storageBudget
+    }
+    return next
+  }
+
   private render() {
     const cameraReady = this.cameraState.kind === 'granted'
     const bootstrapActive =
@@ -260,8 +287,11 @@ export class CaptureView {
       if (!this.viewfinder.contains(this.onboarding)) this.viewfinder.replaceChildren(this.onboarding)
     }
 
+    this.storageWarningEl.hidden = this.storageBudget.kind === 'ok'
+    this.storageWarningEl.textContent = this.storageBudget.kind === 'ok' ? '' : this.storageBudget.message
+
     this.shutterBtn.hidden = !cameraReady
-    this.shutterBtn.disabled = this.captureState.kind === 'capturing'
+    this.shutterBtn.disabled = this.captureState.kind === 'capturing' || this.storageBudget.kind === 'blocking'
 
     this.openCameraBtn.hidden = cameraReady || !bootstrapActive
     this.openCameraBtn.disabled = this.cameraState.kind === 'requesting' || this.bootstrapState.kind === 'loading'

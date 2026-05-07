@@ -250,6 +250,22 @@ h1 {
   opacity: 0.4;
 }
 
+.camera-storage-warning {
+  width: min(100%, 28rem);
+  padding: 0.75rem 1rem;
+  border: 1px solid #f59e0b;
+  border-radius: 0.75rem;
+  background: rgba(120, 53, 15, 0.92);
+  color: #fef3c7;
+  font-size: 0.875rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.camera-storage-warning[hidden] {
+  display: none;
+}
+
 .camera-status {
   margin: 0;
   font-size: 0.875rem;

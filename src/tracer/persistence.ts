@@ -192,9 +192,10 @@ export async function updateUploadState(
 ): Promise<void> {
   const tx = db.transaction('records', 'readwrite')
   const record = await tx.store.get(recordId)
-  if (record) {
-    tx.store.put({ ...record, uploadState }, recordId)
+  if (!record) {
+    throw new Error(`updateUploadState: record not found: ${recordId}`)
   }
+  tx.store.put({ ...record, uploadState }, recordId)
   await tx.done
 }
 
@@ -229,7 +230,6 @@ export async function updateUploadProgress(
   const tx = db.transaction('records', 'readwrite')
   const record = await tx.store.get(recordId)
   if (!record) {
-    tx.abort()
     throw new Error(`updateUploadProgress: record not found: ${recordId}`)
   }
   tx.store.put({ ...record, uploadState, uploadAttempts }, recordId)

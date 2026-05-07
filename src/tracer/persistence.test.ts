@@ -19,6 +19,7 @@ import {
   putPreviewFrame,
   getPreviewBlob,
   putPreviewBlob,
+  updateUploadState,
 } from './persistence'
 import type { ShelfwalkDatabase } from './persistence'
 import { createCaptureRecord } from './capture'
@@ -259,6 +260,22 @@ describe('getPreviewBlob / putPreviewBlob', () => {
 
   it('returns undefined for an unknown frameId', async () => {
     expect(await getPreviewBlob(db, 'no-preview-blob')).toBeUndefined()
+  })
+})
+
+describe('updateUploadState', () => {
+  it('updates uploadState on an existing record', async () => {
+    const record = makeRecord()
+    await putRecord(db, record)
+    await updateUploadState(db, record.recordId, 'uploaded')
+    const loaded = await loadCaptureRecord(db, record.recordId)
+    expect(loaded?.uploadState).toBe('uploaded')
+  })
+
+  it('throws when the record does not exist', async () => {
+    await expect(updateUploadState(db, 'no-such-id', 'uploaded')).rejects.toThrow(
+      'updateUploadState: record not found: no-such-id'
+    )
   })
 })
 

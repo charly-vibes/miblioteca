@@ -145,6 +145,22 @@ describe('mountScanManagementView', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
+  it('renders a back button when onBack is provided and calls it on click', async () => {
+    const onBack = vi.fn()
+    mountScanManagementView(container, { fetch: makeFetch(200, CREATE_RESPONSE), openDb: async () => db, onReady: vi.fn(), onBack })
+
+    const backBtn = screen.getByRole('button', { name: /back to sessions/i })
+    expect(backBtn).toBeInTheDocument()
+    await userEvent.click(backBtn)
+    expect(onBack).toHaveBeenCalledOnce()
+  })
+
+  it('renders no back button when onBack is omitted', () => {
+    mountScanManagementView(container, { fetch: makeFetch(200, CREATE_RESPONSE), openDb: async () => db, onReady: vi.fn() })
+
+    expect(screen.queryByRole('button', { name: /back to sessions/i })).not.toBeInTheDocument()
+  })
+
   it('shows required join error messages for expired links and missing scans', async () => {
     const fetch = makeFetch(401, { error: 'expired' })
     mountScanManagementView(container, { fetch, openDb: async () => db, onReady: vi.fn() })

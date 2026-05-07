@@ -56,6 +56,7 @@ export function mountMibliotecaApp(root: HTMLElement, deps: MibliotecaAppDeps = 
         onReady: (result) => {
           navigateToSession(result.session.id)
         },
+        onBack: navigateHome,
       })
     } else {
       unmountScanManagement = mountSessionsListView(root, {

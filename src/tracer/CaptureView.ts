@@ -10,10 +10,10 @@ import { feedAccel, initialSteadinessState } from '../sensors/steadiness'
 import type { SteadinessState } from '../sensors/steadiness'
 import { bootstrapTracerBullet, type BootstrapResult } from './bootstrap'
 import { createCaptureRecord } from './capture'
-import { makeThumbnail } from './imageProcessing'
+import { makeThumbnail, laplacianVariance } from './imageProcessing'
 import { createMockScanFetch } from './mockScanApi'
 import { getAllRecords, loadThumbnail, openShelfwalkDb, saveCapture } from './persistence'
-import { qualityWarnings, THRESHOLDS } from './qualityChecks'
+import { qualityWarnings, qualityChecksFromMetrics, exposureFractions } from './qualityChecks'
 import type { QualityWarning } from './qualityChecks'
 import { createLocalStorageTracerBulletStore } from './storage'
 import { uploadCapture } from './upload'
@@ -206,7 +206,7 @@ export class CaptureView {
     if (this.bundleExportPanel) return
     void openShelfwalkDb().then((db) => {
       if (this.bundleExportPanel) return
-      this.bundleExportPanel = new BundleExportPanel(this.controls, {
+      this.bundleExportPanel = new BundleExportPanel(this.root, {
         db,
         scanId: result.scan.id,
         appVersion: this.opts.appVersion ?? '0.0.0',
@@ -266,20 +266,9 @@ export class CaptureView {
     const poll = () => {
       const frame = getQualityFrame()
       if (frame) {
-        const lv = this.laplacianVarianceOf(frame)
-        const over = this.exposureFractionOf(frame, 'over')
-        const under = this.exposureFractionOf(frame, 'under')
-        const checks = {
-          laplacianVariance: lv,
-          overexposedFraction: over,
-          underexposedFraction: under,
-          steadyAtCapture: this.steadinessState.steady,
-          tiltDegrees: 0,
-          blurry: lv < THRESHOLDS.blurry,
-          overexposed: over > THRESHOLDS.overexposed,
-          underexposed: under > THRESHOLDS.underexposed,
-          dark: false,
-        }
+        const lv = laplacianVariance(frame)
+        const { overexposed: over, underexposed: under, meanLuma } = exposureFractions(frame)
+        const checks = qualityChecksFromMetrics(lv, over, under, this.steadinessState.steady, 0, meanLuma)
         this.activeWarnings = qualityWarnings(checks)
       } else {
         this.activeWarnings = []
@@ -294,33 +283,6 @@ export class CaptureView {
     if (this.pollId !== null) { clearInterval(this.pollId); this.pollId = null }
     this.activeWarnings = []
     this.renderWarnings()
-  }
-
-  private laplacianVarianceOf(frame: ImageData): number {
-    const { data, width, height } = frame
-    let sum = 0, n = 0
-    const luma = (i: number) => 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
-    for (let y = 1; y < height - 1; y++) {
-      for (let x = 1; x < width - 1; x++) {
-        const idx = (y * width + x) * 4
-        const lap = -4 * luma(idx) + luma(idx - 4) + luma(idx + 4) + luma(((y - 1) * width + x) * 4) + luma(((y + 1) * width + x) * 4)
-        sum += lap * lap; n++
-      }
-    }
-    return n > 0 ? sum / n : 0
-  }
-
-  private exposureFractionOf(frame: ImageData, kind: 'over' | 'under'): number {
-    const { data } = frame
-    const total = data.length / 4
-    if (total === 0) return 0
-    let count = 0
-    for (let i = 0; i < data.length; i += 4) {
-      const luma = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
-      if (kind === 'over' && luma > 250) count++
-      if (kind === 'under' && luma < 5) count++
-    }
-    return count / total
   }
 
   private renderWarnings() {

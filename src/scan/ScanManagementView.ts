@@ -11,12 +11,23 @@ export type ScanManagementViewDeps = {
   baseUrl?: string
   search?: string
   onReady: (result: BootstrapResult) => void
+  onBack?: () => void
 }
 
 export function mountScanManagementView(container: HTMLElement, deps: ScanManagementViewDeps): () => void {
   let dbPromise: Promise<ShelfwalkDatabase> | null = null
   const root = document.createElement('main')
   root.className = 'scan-management'
+
+  if (deps.onBack) {
+    const backBtn = document.createElement('button')
+    backBtn.type = 'button'
+    backBtn.className = 'scan-back-btn'
+    backBtn.setAttribute('aria-label', 'Back to sessions')
+    backBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>'
+    backBtn.addEventListener('click', deps.onBack)
+    root.append(backBtn)
+  }
 
   const fetch = deps.fetch ?? ((input, init) => globalThis.fetch(input, init))
   const now = deps.now ?? Date.now

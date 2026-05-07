@@ -36,6 +36,27 @@ export function runQualityChecks(imageData: ImageData, sensor: QualitySensorStat
   }
 }
 
+export function qualityChecksFromMetrics(
+  lv: number,
+  overexposedFraction: number,
+  underexposedFraction: number,
+  steadyAtCapture: boolean,
+  tiltDegrees: number,
+  meanLuma: number,
+): QualityChecks {
+  return {
+    laplacianVariance: lv,
+    overexposedFraction,
+    underexposedFraction,
+    steadyAtCapture,
+    tiltDegrees,
+    blurry: lv < THRESHOLDS.blurry,
+    overexposed: overexposedFraction > THRESHOLDS.overexposed,
+    underexposed: underexposedFraction > THRESHOLDS.underexposed,
+    dark: meanLuma < THRESHOLDS.darkMeanLuma,
+  }
+}
+
 export function qualityWarnings(checks: QualityChecks): QualityWarning[] {
   const warnings: QualityWarning[] = []
   if (checks.blurry) warnings.push('blurry')
@@ -45,7 +66,7 @@ export function qualityWarnings(checks: QualityChecks): QualityWarning[] {
   return warnings
 }
 
-function exposureFractions(imageData: ImageData): { overexposed: number; underexposed: number; meanLuma: number } {
+export function exposureFractions(imageData: ImageData): { overexposed: number; underexposed: number; meanLuma: number } {
   const { data } = imageData
   const total = data.length / 4
   if (total === 0) return { overexposed: 0, underexposed: 0, meanLuma: 0 }

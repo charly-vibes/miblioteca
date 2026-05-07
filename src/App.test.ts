@@ -46,6 +46,13 @@ describe('mountMibliotecaApp', () => {
     expect(screen.getByRole('heading', { name: /join a scan/i })).toBeInTheDocument()
   })
 
+  it('shows back button on the #/new route', async () => {
+    window.location.hash = '/new'
+    dispose = mountMibliotecaApp(container, { openDb: async () => db })
+
+    expect(await screen.findByRole('button', { name: /back to sessions/i })).toBeInTheDocument()
+  })
+
   it('shows CaptureView when hash route points to a valid session', async () => {
     await putScan(db, {
       id: 'scan-nav',

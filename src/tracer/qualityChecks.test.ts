@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { runQualityChecks, qualityWarnings, THRESHOLDS } from './qualityChecks.js'
+import { runQualityChecks, qualityWarnings, qualityChecksFromMetrics, THRESHOLDS } from './qualityChecks.js'
 
 function makeImageData(
   width: number,
@@ -121,6 +121,41 @@ describe('runQualityChecks boolean flags', () => {
     // R=G=B=14 → luma = 14; < 15 (new floor) but ≥ 5 (old floor)
     const img = makeImageData(10, 10, () => [14, 14, 14, 255])
     expect(runQualityChecks(img, steadySensor).underexposed).toBe(true)
+  })
+})
+
+describe('qualityChecksFromMetrics', () => {
+  it('computes boolean flags from scalars using canonical thresholds', () => {
+    const result = qualityChecksFromMetrics(
+      THRESHOLDS.blurry - 1,   // lv below threshold → blurry
+      THRESHOLDS.overexposed + 0.01,
+      THRESHOLDS.underexposed + 0.01,
+      true,
+      0,
+      THRESHOLDS.darkMeanLuma - 1,
+    )
+    expect(result.blurry).toBe(true)
+    expect(result.overexposed).toBe(true)
+    expect(result.underexposed).toBe(true)
+    expect(result.dark).toBe(true)
+    expect(result.steadyAtCapture).toBe(true)
+    expect(result.tiltDegrees).toBe(0)
+  })
+
+  it('produces the same boolean fields as runQualityChecks for equivalent inputs', () => {
+    const img = makeImageData(10, 10, () => [128, 128, 128, 255])
+    const fromImage = runQualityChecks(img, { steady: true, tiltDegrees: 5 })
+    const fromMetrics = qualityChecksFromMetrics(
+      fromImage.laplacianVariance,
+      fromImage.overexposedFraction,
+      fromImage.underexposedFraction,
+      fromImage.steadyAtCapture,
+      fromImage.tiltDegrees,
+      128,
+    )
+    expect(fromMetrics.blurry).toBe(fromImage.blurry)
+    expect(fromMetrics.overexposed).toBe(fromImage.overexposed)
+    expect(fromMetrics.underexposed).toBe(fromImage.underexposed)
   })
 })
 

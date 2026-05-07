@@ -106,4 +106,18 @@ describe('computeShiftPx', () => {
     // Wider FOV → smaller focal length → smaller pixel shift per radian
     expect(Math.abs(shift90)).toBeLessThan(Math.abs(shift65))
   })
+
+  it('clamps to +videoWidth/2 when yaw is very large positive', () => {
+    expect(computeShiftPx(-100, 1920)).toBe(960)
+  })
+
+  it('clamps to -videoWidth/2 when yaw is very large negative', () => {
+    expect(computeShiftPx(100, 1920)).toBe(-960)
+  })
+
+  it('does not clamp a small unclamped shift', () => {
+    const shift = computeShiftPx(0.1, 1920)
+    expect(Math.abs(shift)).toBeLessThan(960)
+    expect(shift).toBeCloseTo(computeShiftPx(0.1, 1920))
+  })
 })

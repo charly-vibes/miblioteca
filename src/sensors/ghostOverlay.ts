@@ -30,9 +30,11 @@ export function feedGhostGyro(state: GhostOverlayState, sample: GyroSample): Gho
   }
 }
 
-// shiftX = -(videoWidth/2) / tan(hFov/2) * yawIntegral
+// shiftX = -(videoWidth/2) / tan(hFov/2) * yawIntegral, clamped to ±videoWidth/2.
 // Positive yaw (camera swings right) → negative shift (overlay moves left).
 export function computeShiftPx(yawIntegral: number, videoWidth: number, hFovDeg = DEFAULT_HFOV_DEG): number {
   const hFovRad = (hFovDeg * Math.PI) / 180
-  return -(videoWidth / 2) / Math.tan(hFovRad / 2) * yawIntegral
+  const shift = -(videoWidth / 2) / Math.tan(hFovRad / 2) * yawIntegral
+  const half = videoWidth / 2
+  return Math.max(-half, Math.min(half, shift))
 }

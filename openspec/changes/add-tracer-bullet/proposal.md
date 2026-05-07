@@ -1,3 +1,5 @@
+> **SUPERSEDED** by `add-portable-bundle-export` (2026-05-07). The first vertical slice succeeds by producing a valid one-record `.mbibundle.zip`, not by mock upload acknowledgement. Local capture and IndexedDB persistence remain implemented prerequisites. Backend mock adapter work is deferred indefinitely.
+
 # Change: Add a tracer-bullet vertical slice
 
 ## Description

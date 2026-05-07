@@ -15,7 +15,7 @@ A real backend adds hosting, authentication, upload retry, operations, and priva
 - Require explicit user warnings for bundle size, browser sharing limitations, aborted exports, generated-bundle validation failures, and local storage/export risk
 
 ## Coordination With `add-tracer-bullet`
-This change supersedes the upload-boundary portion of `add-tracer-bullet`. Before implementation, revise or supersede `add-tracer-bullet` so its first vertical slice succeeds by producing and validating a one-record `.mbibundle.zip` instead of requiring development mock `POST /api/upload` acknowledgement. The local capture and IndexedDB persistence portions of `add-tracer-bullet` remain useful prerequisites.
+This change supersedes the upload-boundary portion of `add-tracer-bullet`. `add-tracer-bullet` was marked superseded on 2026-05-07: the first vertical slice succeeds by producing and validating a one-record `.mbibundle.zip` instead of requiring development mock `POST /api/upload` acknowledgement. The local capture and IndexedDB persistence portions of `add-tracer-bullet` were implemented prerequisites and remain in the codebase.
 
 ## Impact
 - Affected specs: `portable-bundle-export`

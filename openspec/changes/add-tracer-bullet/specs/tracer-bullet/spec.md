@@ -1,3 +1,5 @@
+> **SUPERSEDED** by `add-portable-bundle-export` (2026-05-07). The upload-boundary and mock adapter requirements below are replaced by the bundle export acceptance slice in that change. Capture and persistence requirements remain implemented.
+
 ## ADDED Requirements
 ### Requirement: Single-device tracer-bullet flow
 The system SHALL provide a first vertical slice that lets one user complete a single-device happy path by creating a scan via a development-served mock `POST /api/scan` handshake, entering capture mode, taking one photo, and continuing without production backend services.

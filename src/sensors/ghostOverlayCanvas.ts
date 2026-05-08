@@ -1,5 +1,14 @@
-import { initialGhostState, feedGhostGyro, computeShiftPx, computeShiftPy } from './ghostOverlay'
-import type { GhostOverlayState, GyroSample } from './ghostOverlay'
+import {
+  initialGhostState,
+  feedGhostGyro,
+  feedGhostAccel,
+  zeroVelocity,
+  computeShiftPx,
+  computeShiftPy,
+  computeTranslationShiftPx,
+  computeTranslationShiftPy,
+} from './ghostOverlay'
+import type { GhostOverlayState, GyroSample, AccelSample } from './ghostOverlay'
 import { debugLogger } from '../debug/logger'
 
 export type GyroLike = {
@@ -13,8 +22,19 @@ export type GyroLike = {
   stop(): void
 }
 
+export type MotionLike = {
+  onreading: (() => void) | null
+  x: number | null    // DeviceMotionEvent.acceleration.x (m/s², gravity subtracted)
+  y: number | null    // DeviceMotionEvent.acceleration.y (m/s², gravity subtracted)
+  interval: number    // DeviceMotionEvent.interval (ms)
+  start(): void
+  stop(): void
+}
+
 export type GhostOverlayCanvasDeps = {
   gyro: GyroLike | null
+  motion?: MotionLike | null
+  getBeta?: () => number   // returns current DeviceOrientationEvent.beta; default 90 (phone upright)
   requestAnimationFrame?: (cb: FrameRequestCallback) => number
   cancelAnimationFrame?: (id: number) => void
   now?: () => DOMHighResTimeStamp
@@ -38,16 +58,24 @@ export class GhostOverlayCanvas {
   private firstRafFired = false
   private lastOrientationLogMs = 0
   private lastShiftLogMs = 0
-  private readonly deps: Required<GhostOverlayCanvasDeps>
+  private workingDistanceCm = 60
+  private readonly deps: Required<Omit<GhostOverlayCanvasDeps, 'motion' | 'getBeta'>> & Pick<GhostOverlayCanvasDeps, 'motion' | 'getBeta'>
 
   constructor(viewfinder: HTMLElement, deps: GhostOverlayCanvasDeps) {
     this.viewfinder = viewfinder
     this.deps = {
       gyro: deps.gyro,
+      motion: deps.motion,
+      getBeta: deps.getBeta,
       requestAnimationFrame: deps.requestAnimationFrame ?? ((cb) => window.requestAnimationFrame(cb)),
       cancelAnimationFrame: deps.cancelAnimationFrame ?? ((id) => window.cancelAnimationFrame(id)),
       now: deps.now ?? (() => performance.now()),
     }
+
+    // Parse working distance from ?distance=<cm> URL param (clamp to [20, 150] cm).
+    const distParam = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('distance') : null
+    const parsed = distParam ? Number(distParam) : NaN
+    this.workingDistanceCm = Number.isFinite(parsed) && parsed >= 20 && parsed <= 150 ? parsed : 60
 
     this.canvas = document.createElement('canvas')
     this.canvas.className = 'ghost-overlay'
@@ -65,8 +93,13 @@ export class GhostOverlayCanvas {
       this.deps.gyro.start()
     }
 
+    if (this.deps.motion) {
+      this.deps.motion.onreading = () => this.onMotionReading()
+      this.deps.motion.start()
+    }
+
     this.rafId = this.deps.requestAnimationFrame(this.rafLoop)
-    debugLogger.log('ghost:created', {})
+    debugLogger.log('ghost:created', { workingDistanceCm: this.workingDistanceCm })
   }
 
   private onGyroReading() {
@@ -88,6 +121,18 @@ export class GhostOverlayCanvas {
     }
   }
 
+  private onMotionReading() {
+    const motion = this.deps.motion!
+    const betaDeg = this.deps.getBeta?.() ?? 90
+    const sample: AccelSample = {
+      ax: motion.x ?? 0,
+      ay: motion.y ?? 0,
+      interval_ms: motion.interval || 16,
+      betaDeg,
+    }
+    this.state = feedGhostAccel(this.state, sample)
+  }
+
   private rafLoop: FrameRequestCallback = () => {
     if (this.destroyed) return
     this.rafId = this.deps.requestAnimationFrame(this.rafLoop)
@@ -104,6 +149,8 @@ export class GhostOverlayCanvas {
     )
     if (this.canvas.hidden !== !shouldShow) {
       this.canvas.hidden = !shouldShow
+      // Secondary ZUPT: zero velocity when gate closes so drift doesn't accumulate during still periods.
+      if (!shouldShow) this.state = zeroVelocity(this.state)
       debugLogger.log('ghost:visibility-changed', { visible: shouldShow, omegaMag: this.state.omegaMag, yawIntegral: this.state.yawIntegral })
     }
     if (this.canvas.hidden) return
@@ -111,8 +158,20 @@ export class GhostOverlayCanvas {
     // Use CSS display dimensions so shifts are in CSS pixels, not bitmap pixels.
     const displayWidth = this.viewfinder.clientWidth || this.canvas.width
     const displayHeight = this.viewfinder.clientHeight || this.canvas.height
-    const shiftPx = computeShiftPx(this.state.yawIntegral, displayWidth)
-    const shiftPy = computeShiftPy(this.state.pitchIntegral, displayWidth, displayHeight)
+    const workingDistanceM = this.workingDistanceCm / 100
+
+    // Rotation component (each internally clamped to display bounds)
+    const rotShiftPx = computeShiftPx(this.state.yawIntegral, displayWidth)
+    const rotShiftPy = computeShiftPy(this.state.pitchIntegral, displayWidth, displayHeight)
+    // Translation component (unclamped; combined clamp applied below)
+    const transShiftPx = computeTranslationShiftPx(this.state.dx_m, workingDistanceM, displayWidth)
+    const transShiftPy = computeTranslationShiftPy(this.state.dy_m, workingDistanceM, displayWidth)
+    // Combined shift, clamped to display boundaries
+    const halfW = displayWidth / 2
+    const halfH = displayHeight / 2
+    const shiftPx = Math.max(-halfW, Math.min(halfW, rotShiftPx + transShiftPx))
+    const shiftPy = Math.max(-halfH, Math.min(halfH, rotShiftPy + transShiftPy))
+
     if (shiftPx !== this.currentShiftPx || shiftPy !== this.currentShiftPy) {
       this.canvas.style.transform = `translate3d(${shiftPx}px, ${shiftPy}px, 0)`
       this.currentShiftPx = shiftPx
@@ -121,12 +180,19 @@ export class GhostOverlayCanvas {
 
     const now = this.deps.now()
     if (now - this.lastShiftLogMs >= 500) {
-      debugLogger.log('ghost:shift', { shiftPx, shiftPy, yawIntegral: this.state.yawIntegral, pitchIntegral: this.state.pitchIntegral, displayWidth, displayHeight })
+      debugLogger.log('ghost:shift', {
+        shiftPx, shiftPy,
+        yawIntegral: this.state.yawIntegral, pitchIntegral: this.state.pitchIntegral,
+        dx_cm: this.state.dx_m * 100, dy_cm: this.state.dy_m * 100,
+        velX: this.state.velX, velY: this.state.velY,
+        workingDistanceCm: this.workingDistanceCm,
+        displayWidth, displayHeight,
+      })
       this.lastShiftLogMs = now
     }
   }
 
-  // Call after each capture to draw the thumbnail and reset yaw/pitch accumulation.
+  // Call after each capture to draw the thumbnail and reset yaw/pitch/translation accumulators.
   // Pass null when grabFrame() fails — previous snapshot is retained unchanged.
   setSnapshot(imageBitmap: ImageBitmap | null) {
     debugLogger.log('ghost:reference-frame-set', { hasImageData: imageBitmap != null })
@@ -148,6 +214,7 @@ export class GhostOverlayCanvas {
     this.ctx.clearRect(0, 0, w, h)
     this.ctx.drawImage(imageBitmap, sx, sy, sw, sh, 0, 0, w, h)
 
+    // Primary ZUPT: reset all accumulators including velocity and displacement.
     this.state = initialGhostState()
     this.currentShiftPx = 0
     this.currentShiftPy = 0
@@ -157,7 +224,15 @@ export class GhostOverlayCanvas {
   }
 
   // Returns a snapshot of the current ghost state for debug logging at shutter time.
-  getDebugState(): { shiftPx: number; shiftPy: number; yawIntegral: number; pitchIntegral: number; visible: boolean; displayWidth: number; displayHeight: number } {
+  getDebugState(): {
+    shiftPx: number; shiftPy: number
+    yawIntegral: number; pitchIntegral: number
+    dx_cm: number; dy_cm: number
+    velX: number; velY: number
+    visible: boolean
+    displayWidth: number; displayHeight: number
+    workingDistanceCm: number
+  } {
     const displayWidth = this.viewfinder.clientWidth || this.canvas.width
     const displayHeight = this.viewfinder.clientHeight || this.canvas.height
     return {
@@ -165,9 +240,14 @@ export class GhostOverlayCanvas {
       shiftPy: this.currentShiftPy,
       yawIntegral: this.state.yawIntegral,
       pitchIntegral: this.state.pitchIntegral,
+      dx_cm: this.state.dx_m * 100,
+      dy_cm: this.state.dy_m * 100,
+      velX: this.state.velX,
+      velY: this.state.velY,
       visible: !this.canvas.hidden,
       displayWidth,
       displayHeight,
+      workingDistanceCm: this.workingDistanceCm,
     }
   }
 
@@ -176,6 +256,7 @@ export class GhostOverlayCanvas {
     this.destroyed = true
     this.deps.cancelAnimationFrame(this.rafId)
     this.deps.gyro?.stop()
+    this.deps.motion?.stop()
     this.canvas.remove()
     debugLogger.log('ghost:destroyed', {})
   }

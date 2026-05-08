@@ -2,8 +2,12 @@ import { describe, it, expect } from 'vitest'
 import {
   initialGhostState,
   feedGhostGyro,
+  feedGhostAccel,
+  zeroVelocity,
   computeShiftPx,
   computeShiftPy,
+  computeTranslationShiftPx,
+  computeTranslationShiftPy,
 } from './ghostOverlay'
 
 describe('initialGhostState', () => {
@@ -203,5 +207,176 @@ describe('computeShiftPy', () => {
 
   it('clamps to -displayHeight/2 when pitch is very large negative', () => {
     expect(computeShiftPy(-100, 1920, 1080)).toBe(-540)
+  })
+})
+
+describe('initialGhostState translation fields', () => {
+  it('starts with zero velocity and displacement', () => {
+    const s = initialGhostState()
+    expect(s.velX).toBe(0)
+    expect(s.velY).toBe(0)
+    expect(s.dx_m).toBe(0)
+    expect(s.dy_m).toBe(0)
+  })
+})
+
+describe('feedGhostAccel', () => {
+  const base = () => initialGhostState()
+  const sample = (overrides: Partial<{ ax: number; ay: number; interval_ms: number; betaDeg: number }> = {}) => ({
+    ax: 0, ay: 0, interval_ms: 100, betaDeg: 90, ...overrides,
+  })
+
+  it('integrates lateral acceleration into velocity and displacement', () => {
+    const s = feedGhostAccel(base(), sample({ ax: 1.0, interval_ms: 100 }))
+    // dt = 0.1s; velX = 0 + 1.0*0.1 = 0.1; dx_m = (0+0.1)/2 * 0.1 = 0.005
+    expect(s.velX).toBeCloseTo(0.1)
+    expect(s.dx_m).toBeCloseTo(0.005)
+  })
+
+  it('integrates vertical acceleration into velocity and displacement', () => {
+    const s = feedGhostAccel(base(), sample({ ay: 2.0, interval_ms: 100 }))
+    // dt = 0.1s (capped); velY = 2.0*0.1 = 0.2; dy_m = (0+0.2)/2 * 0.1 = 0.01
+    expect(s.velY).toBeCloseTo(0.2)
+    expect(s.dy_m).toBeCloseTo(0.01)
+  })
+
+  it('uses trapezoidal integration (averages old and new velocity for position)', () => {
+    // Two samples: first builds velocity, second uses trapezoidal rule
+    const s1 = feedGhostAccel(base(), sample({ ax: 1.0, interval_ms: 100 }))
+    const s2 = feedGhostAccel(s1, sample({ ax: 1.0, interval_ms: 100 }))
+    // After s1: velX=0.1, dx=0.005
+    // After s2: velX=0.2, dx = 0.005 + (0.1+0.2)/2 * 0.1 = 0.005 + 0.015 = 0.02
+    expect(s2.velX).toBeCloseTo(0.2)
+    expect(s2.dx_m).toBeCloseTo(0.02)
+  })
+
+  it('caps dt at 100ms to guard against stale interval values', () => {
+    const s = feedGhostAccel(base(), sample({ ax: 1.0, interval_ms: 5000 }))
+    expect(s.velX).toBeCloseTo(0.1)  // dt clamped to 0.1s, not 5s
+  })
+
+  it('returns state unchanged for non-finite ax', () => {
+    const s = base()
+    expect(feedGhostAccel(s, sample({ ax: NaN }))).toBe(s)
+  })
+
+  it('returns state unchanged for non-finite betaDeg', () => {
+    const s = base()
+    expect(feedGhostAccel(s, sample({ betaDeg: Infinity }))).toBe(s)
+  })
+
+  it('zeros velocity and skips position update when phone is near-horizontal (|beta-90| > 30)', () => {
+    const sMoving = feedGhostAccel(base(), sample({ ax: 1.0, interval_ms: 100, betaDeg: 90 }))
+    // Phone goes flat (beta=0) — gravity leaks into ax
+    const sFlat = feedGhostAccel(sMoving, sample({ ax: 9.8, interval_ms: 100, betaDeg: 0 }))
+    expect(sFlat.velX).toBe(0)
+    expect(sFlat.velY).toBe(0)
+    // dx_m is retained (not zeroed by the guard)
+    expect(sFlat.dx_m).toBeCloseTo(sMoving.dx_m)
+  })
+
+  it('accepts beta=90 (phone upright) without zeroing', () => {
+    const s = feedGhostAccel(base(), sample({ ax: 1.0, interval_ms: 100, betaDeg: 90 }))
+    expect(s.velX).toBeGreaterThan(0)
+  })
+
+  it('accepts beta=70 (|70-90|=20 < 30) without zeroing', () => {
+    const s = feedGhostAccel(base(), sample({ ax: 1.0, interval_ms: 100, betaDeg: 70 }))
+    expect(s.velX).toBeGreaterThan(0)
+  })
+
+  it('zeros velocity but returns same ref when velocity is already zero on horizontal guard', () => {
+    const s = base()  // velX=velY=0
+    const next = feedGhostAccel(s, sample({ ax: 1.0, interval_ms: 100, betaDeg: 0 }))
+    expect(next).toBe(s)  // same reference since nothing changed
+  })
+
+  it('preserves gyro fields (yawIntegral, omegaMag) when updating accel state', () => {
+    const gyroState = { ...base(), yawIntegral: 1.5, omegaMag: 0.3 }
+    const s = feedGhostAccel(gyroState, sample({ ax: 0.5, interval_ms: 100 }))
+    expect(s.yawIntegral).toBe(1.5)
+    expect(s.omegaMag).toBe(0.3)
+  })
+})
+
+describe('zeroVelocity', () => {
+  it('zeros velX and velY', () => {
+    const s = feedGhostAccel(initialGhostState(), { ax: 1.0, ay: 2.0, interval_ms: 100, betaDeg: 90 })
+    const z = zeroVelocity(s)
+    expect(z.velX).toBe(0)
+    expect(z.velY).toBe(0)
+  })
+
+  it('retains dx_m and dy_m (position not reset on gate-close ZUPT)', () => {
+    const s = feedGhostAccel(initialGhostState(), { ax: 1.0, ay: 2.0, interval_ms: 100, betaDeg: 90 })
+    const z = zeroVelocity(s)
+    expect(z.dx_m).toBe(s.dx_m)
+    expect(z.dy_m).toBe(s.dy_m)
+  })
+
+  it('returns same reference when velocity is already zero', () => {
+    const s = initialGhostState()
+    expect(zeroVelocity(s)).toBe(s)
+  })
+})
+
+describe('computeTranslationShiftPx', () => {
+  it('returns 0 when dx_m is 0', () => {
+    expect(computeTranslationShiftPx(0, 0.6, 390)).toBeCloseTo(0)
+  })
+
+  it('returns negative shift when camera moves right (dx_m > 0)', () => {
+    // Phone moves right → ghost moves left = negative shiftPx
+    expect(computeTranslationShiftPx(0.05, 0.6, 390)).toBeLessThan(0)
+  })
+
+  it('returns positive shift when camera moves left (dx_m < 0)', () => {
+    expect(computeTranslationShiftPx(-0.05, 0.6, 390)).toBeGreaterThan(0)
+  })
+
+  it('is proportional to dx_m', () => {
+    const s1 = computeTranslationShiftPx(0.05, 0.6, 390)
+    const s2 = computeTranslationShiftPx(0.10, 0.6, 390)
+    expect(s2).toBeCloseTo(s1 * 2)
+  })
+
+  it('is inversely proportional to working distance', () => {
+    const sClose = computeTranslationShiftPx(0.05, 0.3, 390)
+    const sFar   = computeTranslationShiftPx(0.05, 0.6, 390)
+    // Closer distance → larger apparent shift
+    expect(Math.abs(sClose)).toBeGreaterThan(Math.abs(sFar))
+  })
+
+  it('returns 0 when workingDistanceM is 0 or negative (guard against divide-by-zero)', () => {
+    expect(computeTranslationShiftPx(0.05, 0, 390)).toBe(0)
+    expect(computeTranslationShiftPx(0.05, -1, 390)).toBe(0)
+  })
+
+  it('produces a plausible pixel shift for a realistic bookcase scan (5cm lateral, 60cm distance)', () => {
+    // 5cm at 60cm = 8.3% of FOV → at 390px display: ~(390/2)/tan(32.5°) * atan(0.05/0.6) ≈ 32px
+    const shift = computeTranslationShiftPx(0.05, 0.6, 390)
+    expect(Math.abs(shift)).toBeGreaterThan(10)
+    expect(Math.abs(shift)).toBeLessThan(100)
+  })
+})
+
+describe('computeTranslationShiftPy', () => {
+  it('returns 0 when dy_m is 0', () => {
+    expect(computeTranslationShiftPy(0, 0.6, 390)).toBeCloseTo(0)
+  })
+
+  it('returns positive shift when camera moves up (dy_m > 0)', () => {
+    // Phone moves up → shelf appears to shift down → ghost moves down = positive shiftPy
+    expect(computeTranslationShiftPy(0.05, 0.6, 390)).toBeGreaterThan(0)
+  })
+
+  it('returns 0 when workingDistanceM is 0', () => {
+    expect(computeTranslationShiftPy(0.05, 0, 390)).toBe(0)
+  })
+
+  it('uses the same focal length as computeTranslationShiftPx', () => {
+    const px = Math.abs(computeTranslationShiftPx(0.05, 0.6, 390))
+    const py = Math.abs(computeTranslationShiftPy(0.05, 0.6, 390))
+    expect(px).toBeCloseTo(py)
   })
 })

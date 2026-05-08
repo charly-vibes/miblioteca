@@ -1,5 +1,7 @@
 import { initCamera } from '../camera/cameraInit'
 import { BundleExportPanel } from '../bundle/BundleExportPanel'
+import { DebugPanel } from '../debug/DebugPanel'
+import { debugLogger } from '../debug/logger'
 import { checkStorageBudget } from '../pwa/storageBudget'
 import type { StorageBudgetManager, StorageBudgetStatus } from '../pwa/storageBudget'
 import { requestUploadSync } from '../pwa/syncRegistration'
@@ -89,6 +91,10 @@ export class CaptureView {
   private readonly warningsEl: HTMLDivElement
   private readonly backBtn: HTMLButtonElement | null
   private bundleExportPanel: BundleExportPanel | null = null
+  private debugPanel: DebugPanel | null = null
+  private onVisibilityChange: (() => void) | null = null
+  private onUnhandledRejection: ((ev: PromiseRejectionEvent) => void) | null = null
+  private onWindowError: ((ev: ErrorEvent) => void) | null = null
   private readonly galleryEl: HTMLDivElement
   private thumbnailUrls: string[] = []
   private gallerySeq = 0
@@ -167,6 +173,7 @@ export class CaptureView {
     container.append(this.root)
 
     this.render()
+    if (debugLogger.enabled) this.setupDebug()
     void this.init()
   }
 
@@ -174,6 +181,27 @@ export class CaptureView {
     const el = document.createElement(tag)
     el.className = cls
     return el
+  }
+
+  private setupDebug(): void {
+    debugLogger.log('share:api-check', {
+      available: typeof navigator?.share === 'function',
+      canShare: typeof navigator?.canShare === 'function',
+      isSecureContext: location.protocol === 'https:',
+    })
+    this.onVisibilityChange = () => {
+      debugLogger.log('lifecycle:visibility-changed', { state: document.visibilityState })
+    }
+    this.onUnhandledRejection = (ev: PromiseRejectionEvent) => {
+      debugLogger.log('error:uncaught', { message: String(ev.reason), type: 'unhandledrejection' })
+    }
+    this.onWindowError = (ev: ErrorEvent) => {
+      debugLogger.log('error:uncaught', { message: ev.message, source: ev.filename, type: 'error' })
+    }
+    document.addEventListener('visibilitychange', this.onVisibilityChange)
+    window.addEventListener('unhandledrejection', this.onUnhandledRejection)
+    window.addEventListener('error', this.onWindowError)
+    this.debugPanel = new DebugPanel(document.body, debugLogger)
   }
 
   private async init() {
@@ -550,6 +578,10 @@ export class CaptureView {
     this.stopQualityPoll()
     this.stopAccel()
     this.bundleExportPanel?.destroy()
+    if (this.onVisibilityChange) document.removeEventListener('visibilitychange', this.onVisibilityChange)
+    if (this.onUnhandledRejection) window.removeEventListener('unhandledrejection', this.onUnhandledRejection)
+    if (this.onWindowError) window.removeEventListener('error', this.onWindowError)
+    this.debugPanel?.destroy()
     this.thumbnailUrls.forEach((u) => URL.revokeObjectURL(u))
     this.thumbnailUrls = []
     this.root.remove()

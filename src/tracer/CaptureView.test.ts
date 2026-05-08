@@ -411,6 +411,15 @@ describe('CaptureView — thumbnail dimensions', () => {
   })
 })
 
+// ── Debug mode ───────────────────────────────────────────────────────────────
+
+describe('CaptureView — debug mode', () => {
+  it('does not render an export logs button when debug mode is disabled', () => {
+    new CaptureView(container, { captureSnapshot: mockCaptureSnapshot, uploadFetch: mockUploadFetch(200) })
+    expect(screen.queryByRole('button', { name: /export logs/i })).not.toBeInTheDocument()
+  })
+})
+
 // ── Captures gallery ─────────────────────────────────────────────────────────
 
 describe('CaptureView — captures gallery', () => {

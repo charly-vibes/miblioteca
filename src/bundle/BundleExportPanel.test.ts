@@ -3,6 +3,12 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BundleExportPanel } from './BundleExportPanel'
 import type { BundleExportPanelOptions } from './BundleExportPanel'
+
+vi.mock('./share', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./share')>()
+  return { ...actual, shareBundle: vi.fn(), downloadBundle: vi.fn() }
+})
+import { shareBundle, downloadBundle } from './share'
 import {
   openShelfwalkDb,
   saveCapture,
@@ -196,6 +202,29 @@ describe('BundleExportPanel — exporting flow', () => {
 
     await vi.waitFor(() => {
       expect(screen.getByRole('button', { name: /share/i })).toBeInTheDocument()
+    })
+  })
+
+  it('falls back to download when share throws NotAllowedError', async () => {
+    await putScan(db, makeScan())
+    await putSession(db, makeSession())
+    await saveCapture(db, { record: makeRecord(), imageBlob: new Blob(['img']), thumbnailBlob: new Blob(['th']) })
+
+    const assemble = vi.fn().mockResolvedValue({
+      ok: true, blob: makeBlob(), manifest: makeManifest(), filename: 'lib.mbibundle.zip',
+    } satisfies BundleAssemblyResult)
+
+    vi.mocked(shareBundle).mockRejectedValue(new DOMException('Permission denied', 'NotAllowedError'))
+
+    makePanel({ assemble, shareCapability: { status: 'supported' } })
+    await vi.waitFor(() => screen.getByRole('button', { name: /export bundle/i }))
+    await userEvent.click(screen.getByRole('button', { name: /export bundle/i }))
+
+    await vi.waitFor(() => screen.getByRole('button', { name: /share/i }))
+    await userEvent.click(screen.getByRole('button', { name: /share/i }))
+
+    await vi.waitFor(() => {
+      expect(vi.mocked(downloadBundle)).toHaveBeenCalled()
     })
   })
 

@@ -171,6 +171,10 @@ export class BundleExportPanel {
       }
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return
+      if (err instanceof DOMException && err.name === 'NotAllowedError') {
+        downloadBundle(blob, filename)
+        return
+      }
       throw err
     }
   }

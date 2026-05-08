@@ -12,6 +12,9 @@ node_modules/
 localhost.pem
 localhost-key.pem
 
+# Test output
+test-results/
+
 # TypeScript build outputs for config/dev helper files
 vite.config.js
 vite.config.d.ts

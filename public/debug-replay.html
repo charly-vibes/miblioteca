@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Miblioteca · Ghost Overlay Debug Replay</title>
+  <style>
+    :root {
+      --bg: #0d1117; --bg2: #161b22; --bg3: #21262d;
+      --border: #30363d; --text: #e6edf3; --muted: #7d8590;
+      --orange: #f0883e; --blue: #58a6ff; --green: #3fb950; --red: #f85149;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    code { font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 0.85em; }
+
+    /* ── header ──────────────────────────────────── */
+    .hdr { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
+    .hdr h1 { font-size: 16px; font-weight: 600; }
+    .hdr-sub { font-size: 12px; color: var(--muted); margin-left: auto; }
+
+    /* ── drop zone ───────────────────────────────── */
+    #drop-zone {
+      margin: 32px auto; max-width: 480px;
+      border: 2px dashed var(--border); border-radius: 10px;
+      padding: 48px 32px; text-align: center; cursor: pointer;
+      transition: border-color .2s, background .2s;
+    }
+    #drop-zone:hover { border-color: var(--blue); }
+    #drop-zone.drag-over { border-color: var(--green); background: rgba(63,185,80,.05); }
+    #drop-zone .icon { font-size: 36px; margin-bottom: 12px; }
+    #drop-zone p { color: var(--muted); font-size: 13px; margin-top: 6px; }
+    #file-input { display: none; }
+
+    /* ── meta bar ────────────────────────────────── */
+    .meta-bar { display: flex; flex-wrap: wrap; gap: 20px; padding: 10px 20px; background: var(--bg2); border-bottom: 1px solid var(--border); font-size: 12px; }
+    .meta-item b { color: var(--text); }
+    .meta-item { color: var(--muted); }
+
+    /* ── content ─────────────────────────────────── */
+    .content { padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; }
+
+    /* ── panel ───────────────────────────────────── */
+    .panel { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    .panel-hdr {
+      padding: 10px 14px; background: var(--bg3); border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+    .panel-hdr h2 { font-size: 13px; font-weight: 600; }
+    .panel-body { padding: 12px 14px; }
+    .chart-label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin-bottom: 6px; }
+
+    /* ── stat pills ───────────────────────────────── */
+    .pill { font-size: 11px; padding: 2px 7px; border-radius: 10px; background: var(--bg); border: 1px solid var(--border); color: var(--text); }
+    .pill.green { border-color: var(--green); color: var(--green); }
+    .pill.orange { border-color: var(--orange); color: var(--orange); }
+    .pill.red { border-color: var(--red); color: var(--red); }
+    .issue { font-size: 11px; padding: 2px 7px; border-radius: 4px; background: rgba(248,81,73,.12); color: var(--red); border: 1px solid rgba(248,81,73,.3); }
+
+    /* ── charts ───────────────────────────────────── */
+    .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+    .chart-col { padding: 12px 14px; border-right: 1px solid var(--border); }
+    .chart-col:last-child { border-right: none; }
+    canvas { width: 100%; display: block; border-radius: 3px; }
+
+    /* ── legend ───────────────────────────────────── */
+    .legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px; font-size: 11px; color: var(--muted); }
+    .legend-item { display: flex; align-items: center; gap: 4px; }
+    .swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+
+    /* ── no-data ──────────────────────────────────── */
+    .no-data { padding: 14px; color: var(--muted); font-size: 13px; }
+
+    @media (max-width: 600px) {
+      .charts-grid { grid-template-columns: 1fr; }
+      .chart-col { border-right: none; border-bottom: 1px solid var(--border); }
+      .chart-col:last-child { border-bottom: none; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="hdr">
+  <h1>Miblioteca · Ghost Overlay Debug Replay</h1>
+  <span class="hdr-sub">Drop a <code>miblioteca-debug-*.json</code> file to analyse a session</span>
+</div>
+
+<div id="drop-zone">
+  <div class="icon">📂</div>
+  <strong>Drop debug JSON here</strong>
+  <p>or click to browse</p>
+  <input type="file" id="file-input" accept=".json">
+</div>
+
+<div id="session" style="display:none">
+  <div class="meta-bar" id="meta-bar"></div>
+  <div class="content" id="content"></div>
+</div>
+
+<script>
+// ─── Constants matching the app ──────────────────────────────────────────────
+const HFOV_DEG = 65;
+const MOTION_GATE = 0.5; // rad/s
+
+// ─── File handling ────────────────────────────────────────────────────────────
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+dropZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) load(fileInput.files[0]); });
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('drag-over'); if (e.dataTransfer.files[0]) load(e.dataTransfer.files[0]); });
+
+function load(file) {
+  const r = new FileReader();
+  r.onload = e => {
+    try { render(JSON.parse(e.target.result)); }
+    catch (err) { alert('Could not parse JSON: ' + err.message); }
+  };
+  r.readAsText(file);
+}
+
+// ─── Main render ──────────────────────────────────────────────────────────────
+function render(data) {
+  const { meta, events } = data;
+
+  const byType = {};
+  for (const ev of events) (byType[ev.type] ??= []).push(ev);
+
+  const captures    = byType['capture:shutter'] ?? [];
+  const sensorAll   = byType['sensor:orientation-sample'] ?? [];
+  const shiftAll    = byType['ghost:shift'] ?? [];
+  const visAll      = byType['ghost:visibility-changed'] ?? [];
+
+  const duration = meta.sessionMs;
+
+  dropZone.style.display = 'none';
+  document.getElementById('session').style.display = 'block';
+
+  // Meta bar
+  const ua = meta.userAgent.match(/\(([^)]+)\)/)?.[1] ?? '?';
+  document.getElementById('meta-bar').innerHTML = [
+    `<div class="meta-item"><b>${(duration/1000).toFixed(1)}s</b> session</div>`,
+    `<div class="meta-item"><b>${captures.length}</b> captures</div>`,
+    `<div class="meta-item"><b>${sensorAll.length}</b> sensor samples</div>`,
+    `<div class="meta-item"><b>${shiftAll.length}</b> ghost:shift events</div>`,
+    `<div class="meta-item"><b>${visAll.filter(e=>!e.payload.visible).length}</b> motion-gate triggers</div>`,
+    `<div class="meta-item">${ua}</div>`,
+    `<div class="meta-item">${new Date(meta.exportedAt).toLocaleString()}</div>`,
+  ].join('');
+
+  // Build sections: one per inter-capture gap
+  const times = [0, ...captures.map(c => c.t), duration];
+  const sections = times.slice(1).map((endT, i) => {
+    const startT = times[i];
+    const slice = arr => arr.filter(e => e.t > startT && e.t <= endT);
+    return { i, startT, endT, sensor: slice(sensorAll), shift: slice(shiftAll), vis: slice(visAll) };
+  });
+
+  const content = document.getElementById('content');
+  content.innerHTML = '';
+
+  // Master timeline
+  content.appendChild(masterTimeline(events, captures, visAll, duration));
+
+  // Section cards
+  for (const s of sections) content.appendChild(sectionCard(s, captures, duration));
+
+  // Draw after layout
+  requestAnimationFrame(() => requestAnimationFrame(() => drawAll()));
+}
+
+// ─── Deferred drawing registry ────────────────────────────────────────────────
+const drawQueue = [];
+function queueDraw(fn) { drawQueue.push(fn); }
+function drawAll() { for (const fn of drawQueue) fn(); drawQueue.length = 0; }
+
+// ─── Master timeline ──────────────────────────────────────────────────────────
+function masterTimeline(events, captures, visAll, duration) {
+  const panel = makePanel('Session Overview', []);
+  const body = panel.querySelector('.panel-body');
+
+  body.innerHTML = `<div class="chart-label">Event timeline · captures (orange) · ghost visibility (blue=visible, red=hidden) · |ω| sparkline (gray) · gate (0.5 rad/s, red dashed)</div>`;
+  const cv = makeCanvas(72);
+  body.appendChild(cv);
+
+  const legend = document.createElement('div');
+  legend.className = 'legend';
+  legend.innerHTML = [
+    legend_('Capture', '#f0883e'),
+    legend_('Ghost visible', 'rgba(88,166,255,.4)'),
+    legend_('Ghost hidden (fast motion)', 'rgba(248,81,73,.3)'),
+    legend_('|ω|', '#7d8590'),
+  ].join('');
+  body.appendChild(legend);
+
+  const sensorAll = events.filter(e => e.type === 'sensor:orientation-sample');
+
+  queueDraw(() => {
+    const W = cv.parentElement.clientWidth - 28;
+    cv.width = W; cv.height = 72;
+    const ctx = cv.getContext('2d');
+    const tX = t => (t / duration) * W;
+
+    ctx.fillStyle = '#0d1117'; ctx.fillRect(0, 0, W, 72);
+
+    // Visibility bands
+    let wasVis = false, lastT = 0;
+    for (const ev of visAll) {
+      paintBand(ctx, tX(lastT), tX(ev.t), wasVis ? 'rgba(88,166,255,.15)' : (lastT > 0 ? 'rgba(248,81,73,.15)' : null));
+      wasVis = ev.payload.visible; lastT = ev.t;
+    }
+    paintBand(ctx, tX(lastT), W, wasVis ? 'rgba(88,166,255,.15)' : 'rgba(248,81,73,.1)');
+
+    // |ω| sparkline
+    const maxOmega = 1.5;
+    ctx.strokeStyle = 'rgba(125,133,144,.6)'; ctx.lineWidth = 1;
+    polyline(ctx, sensorAll, e => tX(e.t), e => 68 - Math.min(e.payload.omegaMag / maxOmega, 1) * 58);
+
+    // Gate line
+    ctx.strokeStyle = 'rgba(248,81,73,.5)'; ctx.setLineDash([3,3]);
+    const gy = 68 - (MOTION_GATE / maxOmega) * 58;
+    ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Capture markers
+    for (let i = 0; i < captures.length; i++) {
+      const x = tX(captures[i].t);
+      ctx.strokeStyle = '#f0883e'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x, 4); ctx.lineTo(x, 68); ctx.stroke();
+      ctx.fillStyle = '#f0883e'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
+      ctx.fillText('C' + (i+1), x, 4);
+    }
+  });
+
+  return panel;
+}
+
+// ─── Section card ─────────────────────────────────────────────────────────────
+function sectionCard(s, captures, duration) {
+  const { i, startT, endT, sensor, shift, vis } = s;
+
+  const durS = ((endT - startT) / 1000).toFixed(1);
+  const last = shift.at(-1)?.payload;
+  const yawRad = last?.yawIntegral ?? 0;
+  const yawDeg = (yawRad * 180 / Math.PI).toFixed(1);
+  const maxOmega = sensor.reduce((m, e) => Math.max(m, e.payload.omegaMag), 0);
+  const overlapPct = last ? Math.max(0, (1 - Math.abs(yawRad) / (HFOV_DEG * Math.PI / 180)) * 100).toFixed(0) : null;
+  const nGateHits = vis.filter(e => !e.payload.visible).length;
+
+  // Detect big shift jumps (ghost teleport after motion gate)
+  const jumps = [];
+  for (let j = 1; j < shift.length; j++) {
+    const delta = Math.abs(shift[j].payload.shiftPx - shift[j-1].payload.shiftPx);
+    if (delta > 50) jumps.push(delta.toFixed(0));
+  }
+
+  // Detect accumulated yaw during hidden periods (ghost teleport source)
+  const accumDuringHidden = [];
+  let hiddenStart = null, hiddenYaw = null;
+  for (const ev of vis) {
+    if (!ev.payload.visible) { hiddenStart = ev.t; hiddenYaw = ev.payload.yawIntegral; }
+    else if (hiddenStart !== null) {
+      const delta = Math.abs(ev.payload.yawIntegral - hiddenYaw);
+      if (delta > 0.1) accumDuringHidden.push((delta * 180 / Math.PI).toFixed(1));
+      hiddenStart = null;
+    }
+  }
+
+  const issues = [
+    nGateHits >= 3 && `ghost hidden ${nGateHits}× (fast motion)`,
+    jumps.length && `shift jump ${jumps.map(j => j + 'px').join(', ')} (yaw accumulated while hidden)`,
+    overlapPct !== null && parseInt(overlapPct) < 20 && `only ${overlapPct}% overlap`,
+    overlapPct !== null && parseInt(overlapPct) === 0 && 'no overlap — gap in scan',
+    accumDuringHidden.length && `yaw drifted ${accumDuringHidden.join(', ')}° while gate was closed`,
+  ].filter(Boolean);
+
+  const title = i === 0 ? 'Before first capture' : `Photo ${i} → Photo ${i+1}`;
+  const pills = [
+    `<span class="pill">${durS}s</span>`,
+    last ? `<span class="pill ${parseInt(overlapPct)>=20?'green':'red'}">overlap ${overlapPct}%</span>` : '',
+    last ? `<span class="pill">pan ${yawDeg}°</span>` : '',
+    maxOmega > 0 ? `<span class="pill ${maxOmega>0.5?'orange':''}">peak ω ${maxOmega.toFixed(2)}</span>` : '',
+    ...issues.map(iss => `<span class="issue">⚠ ${iss}</span>`),
+  ].filter(Boolean).join('');
+
+  const panel = makePanel(title, []);
+  panel.querySelector('.panel-hdr').innerHTML = `<h2>${title}</h2>${pills}`;
+
+  const body = panel.querySelector('.panel-body');
+  body.style.padding = '0';
+
+  if (sensor.length === 0 && shift.length === 0) {
+    body.innerHTML = `<div class="no-data">No sensor data in this interval.</div>`;
+    return panel;
+  }
+
+  // Charts row
+  const grid = document.createElement('div');
+  grid.className = 'charts-grid';
+
+  // Gyro chart
+  const gyroCol = document.createElement('div');
+  gyroCol.className = 'chart-col';
+  gyroCol.innerHTML = `<div class="chart-label">Gyro scan axis (gy, blue) · |ω| (gray) · gate 0.5 rad/s (red dashed)</div>`;
+  const gyroCv = makeCanvas(110);
+  gyroCol.appendChild(gyroCv);
+  gyroCol.innerHTML += '<div class="legend">' + [
+    legend_('gy scan axis (rad/s)', '#58a6ff'),
+    legend_('|ω| magnitude', '#7d8590'),
+    legend_('motion gate (0.5)', '#f85149'),
+  ].join('') + '</div>';
+  grid.appendChild(gyroCol);
+
+  // Shift chart
+  const shiftCol = document.createElement('div');
+  shiftCol.className = 'chart-col';
+  shiftCol.innerHTML = `<div class="chart-label">Ghost shift px · red zone = ghost hidden (motion gate)</div>`;
+  const shiftCv = makeCanvas(110);
+  shiftCol.appendChild(shiftCv);
+  shiftCol.innerHTML += '<div class="legend">' + [
+    legend_('shiftPx (actual)', '#e6edf3'),
+    legend_('ghost hidden', 'rgba(248,81,73,.3)'),
+    legend_('±displayWidth/2', '#30363d'),
+  ].join('') + '</div>';
+  grid.appendChild(shiftCol);
+
+  body.appendChild(grid);
+
+  // AR diagram
+  if (last) {
+    const arDiv = document.createElement('div');
+    arDiv.style.cssText = 'padding:12px 14px;border-top:1px solid var(--border)';
+    arDiv.innerHTML = `<div class="chart-label">AR overlap diagram — angular space, end of section</div>`;
+    const arCv = makeCanvas(90);
+    arDiv.appendChild(arCv);
+    arDiv.innerHTML += '<div class="legend" style="margin-top:8px">' + [
+      legend_('Previous photo FOV', 'rgba(240,136,62,.5)'),
+      legend_('Current camera FOV', 'rgba(88,166,255,.5)'),
+      legend_('Overlap', 'rgba(63,185,80,.5)'),
+    ].join('') + `<span style="margin-left:auto;font-size:11px;color:var(--muted)">` +
+      `Δyaw=${yawDeg}° · FOV=${HFOV_DEG}° · display=${last.displayWidth}px</span>` +
+      '</div>';
+    body.appendChild(arDiv);
+
+    queueDraw(() => {
+      arCv.width = arCv.parentElement.clientWidth - 28;
+      arCv.height = 90;
+      drawAR(arCv, yawRad, last.displayWidth);
+    });
+  }
+
+  queueDraw(() => {
+    const colW = gyroCv.parentElement.clientWidth - 28;
+    gyroCv.width = colW; gyroCv.height = 110;
+    drawGyro(gyroCv, sensor, vis, startT, endT);
+
+    shiftCv.width = colW; shiftCv.height = 110;
+    drawShift(shiftCv, shift, vis, startT, endT);
+  });
+
+  return panel;
+}
+
+// ─── Chart: Gyro ─────────────────────────────────────────────────────────────
+function drawGyro(cv, sensor, vis, startT, endT) {
+  if (!sensor.length) return;
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  const tX = t => ((t - startT) / (endT - startT)) * W;
+
+  ctx.fillStyle = '#0d1117'; ctx.fillRect(0, 0, W, H);
+
+  const gyRange = 0.6;
+  const gyY = v => H/2 - clamp(v / gyRange, -1, 1) * (H/2 - 8);
+  const omY  = v => H - 5 - clamp(v / gyRange, 0, 1) * (H - 13);
+
+  // Zero line
+  ctx.strokeStyle = '#21262d'; ctx.lineWidth = 1;
+  hline(ctx, H/2, W);
+
+  // Gate threshold (omega)
+  ctx.strokeStyle = 'rgba(248,81,73,.5)'; ctx.setLineDash([3,3]);
+  hline(ctx, omY(MOTION_GATE), W);
+  ctx.setLineDash([]);
+
+  // |ω| area
+  ctx.strokeStyle = 'rgba(125,133,144,.55)'; ctx.lineWidth = 1;
+  polyline(ctx, sensor, e => tX(e.t), e => omY(e.payload.omegaMag));
+
+  // gy
+  ctx.strokeStyle = '#58a6ff'; ctx.lineWidth = 1.5;
+  polyline(ctx, sensor, e => tX(e.t), e => gyY(e.payload.gy));
+
+  // Axis labels
+  ctx.fillStyle = '#7d8590'; ctx.font = '9px monospace'; ctx.textAlign = 'left';
+  ctx.fillText(`+${gyRange}`, 2, 12);
+  ctx.fillText('  0', 2, H/2 + 4);
+  ctx.fillText(`-${gyRange}`, 2, H - 4);
+}
+
+// ─── Chart: Shift ─────────────────────────────────────────────────────────────
+function drawShift(cv, shift, vis, startT, endT) {
+  if (!shift.length) return;
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  const tX = t => ((t - startT) / (endT - startT)) * W;
+
+  ctx.fillStyle = '#0d1117'; ctx.fillRect(0, 0, W, H);
+
+  const halfPx = (shift[0].payload.displayWidth ?? 411) / 2;
+  const shY = v => H/2 - clamp(v / halfPx, -1, 1) * (H/2 - 8);
+
+  // Hidden zones
+  let wasVis = true, lastT2 = startT;
+  for (const ev of vis) {
+    if (!wasVis) { paintBand(ctx, tX(lastT2), tX(ev.t), 'rgba(248,81,73,.15)'); }
+    wasVis = ev.payload.visible; lastT2 = ev.t;
+  }
+  if (!wasVis) paintBand(ctx, tX(lastT2), W, 'rgba(248,81,73,.15)');
+
+  // ±half lines
+  ctx.strokeStyle = '#30363d'; ctx.lineWidth = 1; ctx.setLineDash([2,4]);
+  hline(ctx, shY(halfPx), W); hline(ctx, shY(-halfPx), W);
+  ctx.setLineDash([]);
+
+  // Zero line
+  ctx.strokeStyle = '#21262d'; ctx.lineWidth = 1;
+  hline(ctx, H/2, W);
+
+  // shiftPx
+  ctx.strokeStyle = '#e6edf3'; ctx.lineWidth = 2;
+  polyline(ctx, shift, e => tX(e.t), e => shY(e.payload.shiftPx));
+
+  // Axis labels
+  ctx.fillStyle = '#7d8590'; ctx.font = '9px monospace'; ctx.textAlign = 'left';
+  ctx.fillText(`+${halfPx.toFixed(0)}`, 2, 12);
+  ctx.fillText('  0', 2, H/2 + 4);
+  ctx.fillText(`-${halfPx.toFixed(0)}`, 2, H - 4);
+}
+
+// ─── Chart: AR overlap diagram ─────────────────────────────────────────────────
+// Shows where the previous photo and current camera FOV sit in angular world space.
+// yawIntegral > 0  = camera rotated right from prev capture → prev photo is LEFT
+// yawIntegral < 0  = camera rotated left  from prev capture → prev photo is RIGHT
+function drawAR(cv, yawIntegral, displayWidth) {
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+
+  ctx.fillStyle = '#0d1117'; ctx.fillRect(0, 0, W, H);
+
+  const yawDeg = yawIntegral * 180 / Math.PI;
+
+  // World range shown: 3× FOV centred on 0° (prev capture centre)
+  const worldDeg = 3 * HFOV_DEG;
+  const dpx = W / worldDeg; // display pixels per degree
+
+  const cx = W / 2; // angle 0 in px
+
+  // Previous photo (centred at 0°)
+  const pL = cx - (HFOV_DEG / 2) * dpx;
+  const pR = cx + (HFOV_DEG / 2) * dpx;
+
+  // Current camera centre in world-angle space = yawDeg
+  // (positive yawDeg = camera moved RIGHT, centred right of prev capture centre)
+  const cCx = cx + yawDeg * dpx;
+  const cL = cCx - (HFOV_DEG / 2) * dpx;
+  const cR = cCx + (HFOV_DEG / 2) * dpx;
+
+  const barY = 18, barH = 40;
+
+  // Book background
+  ctx.fillStyle = '#161b22';
+  ctx.fillRect(Math.min(pL, cL) - 4, barY - 2, Math.max(pR, cR) - Math.min(pL, cL) + 8, barH + 4);
+
+  // Prev photo (orange)
+  ctx.fillStyle = 'rgba(240,136,62,.25)'; ctx.fillRect(pL, barY, pR - pL, barH);
+  ctx.strokeStyle = '#f0883e'; ctx.lineWidth = 1.5; ctx.strokeRect(pL, barY, pR - pL, barH);
+
+  // Current camera (blue)
+  ctx.fillStyle = 'rgba(88,166,255,.25)'; ctx.fillRect(cL, barY, cR - cL, barH);
+  ctx.strokeStyle = '#58a6ff'; ctx.lineWidth = 1.5; ctx.strokeRect(cL, barY, cR - cL, barH);
+
+  // Overlap (green)
+  const oL = Math.max(pL, cL), oR = Math.min(pR, cR);
+  if (oR > oL) {
+    ctx.fillStyle = 'rgba(63,185,80,.4)'; ctx.fillRect(oL, barY, oR - oL, barH);
+    const overlapDeg = (oR - oL) / dpx;
+    const overlapPct = (overlapDeg / HFOV_DEG * 100).toFixed(0);
+    ctx.fillStyle = '#3fb950'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center';
+    ctx.fillText(`${overlapPct}% overlap`, (oL + oR) / 2, barY + barH / 2 + 4);
+  } else {
+    ctx.fillStyle = '#f85149'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center';
+    ctx.fillText('NO OVERLAP', cx, barY + barH / 2 + 4);
+  }
+
+  // Labels
+  ctx.fillStyle = '#f0883e'; ctx.font = '10px system-ui'; ctx.textAlign = 'center';
+  ctx.fillText('Photo N-1 (0°)', cx, barY - 4);
+
+  // Ghost direction annotation
+  const ghostDir = yawDeg < 0 ? '→ right' : yawDeg > 0 ? '← left' : 'center';
+  const ghostPx = yawDeg < 0
+    ? `+${Math.abs(computeShift(yawIntegral, displayWidth)).toFixed(0)}px`
+    : yawDeg > 0 ? `-${Math.abs(computeShift(yawIntegral, displayWidth)).toFixed(0)}px` : '0px';
+
+  ctx.fillStyle = '#58a6ff'; ctx.font = '10px system-ui';
+  ctx.fillText(`Current (${yawDeg >= 0 ? '+' : ''}${yawDeg.toFixed(1)}°)`, cCx, barY + barH + 12);
+
+  // Ghost shift annotation
+  ctx.fillStyle = '#7d8590'; ctx.font = '10px monospace'; ctx.textAlign = 'center';
+  ctx.fillText(`ghost ${ghostDir} @ ${ghostPx}`, W / 2, H - 2);
+
+  // Axis ticks
+  ctx.fillStyle = '#30363d'; ctx.textAlign = 'center'; ctx.font = '9px monospace';
+  for (let deg = -HFOV_DEG; deg <= HFOV_DEG; deg += HFOV_DEG / 2) {
+    const x = cx + deg * dpx;
+    ctx.fillStyle = '#30363d'; ctx.fillRect(x, barY + barH + 2, 1, 4);
+    ctx.fillStyle = '#7d8590'; ctx.fillText(`${deg >= 0 ? '+' : ''}${deg.toFixed(0)}°`, x, H - 2);
+  }
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function computeShift(yawIntegral, displayWidth, hFovDeg = HFOV_DEG) {
+  const r = (hFovDeg * Math.PI) / 180;
+  const s = -(displayWidth / 2) / Math.tan(r / 2) * yawIntegral;
+  return Math.max(-displayWidth / 2, Math.min(displayWidth / 2, s));
+}
+
+function polyline(ctx, pts, xFn, yFn) {
+  if (!pts.length) return;
+  ctx.beginPath();
+  for (let i = 0; i < pts.length; i++) {
+    const x = xFn(pts[i]), y = yFn(pts[i]);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+
+function hline(ctx, y, W) {
+  ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+}
+
+function paintBand(ctx, x1, x2, color) {
+  if (!color || x2 <= x1) return;
+  ctx.fillStyle = color; ctx.fillRect(x1, 0, x2 - x1, ctx.canvas.height);
+}
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function makeCanvas(h) {
+  const cv = document.createElement('canvas');
+  cv.height = h;
+  return cv;
+}
+
+function makePanel(title, _pills) {
+  const el = document.createElement('div');
+  el.className = 'panel';
+  el.innerHTML = `<div class="panel-hdr"><h2>${title}</h2></div><div class="panel-body"></div>`;
+  return el;
+}
+
+function legend_(label, color) {
+  return `<div class="legend-item"><div class="swatch" style="background:${color}"></div>${label}</div>`;
+}
+</script>
+</body>
+</html>

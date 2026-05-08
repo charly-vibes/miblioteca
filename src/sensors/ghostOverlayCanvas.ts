@@ -1,4 +1,4 @@
-import { initialGhostState, feedGhostGyro, computeShiftPx } from './ghostOverlay'
+import { initialGhostState, feedGhostGyro, computeShiftPx, computeShiftPy } from './ghostOverlay'
 import type { GhostOverlayState, GyroSample } from './ghostOverlay'
 import { debugLogger } from '../debug/logger'
 
@@ -29,6 +29,7 @@ export class GhostOverlayCanvas {
   private state: GhostOverlayState = initialGhostState()
   private rafId = 0
   private currentShiftPx = 0
+  private currentShiftPy = 0
   private hasSnapshot = false
   private destroyed = false
   private firstRafFired = false
@@ -99,32 +100,49 @@ export class GhostOverlayCanvas {
     }
     if (this.canvas.hidden) return
 
-    // Use CSS display width so shiftPx is in CSS pixels, not bitmap pixels.
+    // Use CSS display dimensions so shifts are in CSS pixels, not bitmap pixels.
     const displayWidth = this.viewfinder.clientWidth || this.canvas.width
+    const displayHeight = this.viewfinder.clientHeight || this.canvas.height
     const shiftPx = computeShiftPx(this.state.yawIntegral, displayWidth)
-    if (shiftPx !== this.currentShiftPx) {
-      this.canvas.style.transform = `translate3d(${shiftPx}px, 0, 0)`
+    const shiftPy = computeShiftPy(this.state.pitchIntegral, displayWidth, displayHeight)
+    if (shiftPx !== this.currentShiftPx || shiftPy !== this.currentShiftPy) {
+      this.canvas.style.transform = `translate3d(${shiftPx}px, ${shiftPy}px, 0)`
       this.currentShiftPx = shiftPx
+      this.currentShiftPy = shiftPy
     }
 
     const now = this.deps.now()
     if (now - this.lastShiftLogMs >= 500) {
-      debugLogger.log('ghost:shift', { shiftPx, yawIntegral: this.state.yawIntegral, displayWidth })
+      debugLogger.log('ghost:shift', { shiftPx, shiftPy, yawIntegral: this.state.yawIntegral, pitchIntegral: this.state.pitchIntegral, displayWidth, displayHeight })
       this.lastShiftLogMs = now
     }
   }
 
-  // Call after each capture to draw the thumbnail and reset yaw accumulation.
+  // Call after each capture to draw the thumbnail and reset yaw/pitch accumulation.
   // Pass null when grabFrame() fails — previous snapshot is retained unchanged.
   setSnapshot(imageBitmap: ImageBitmap | null) {
     debugLogger.log('ghost:reference-frame-set', { hasImageData: imageBitmap != null })
     if (imageBitmap == null) return
-    this.canvas.width = imageBitmap.width
-    this.canvas.height = imageBitmap.height
-    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
-    this.ctx.drawImage(imageBitmap, 0, 0)
+
+    // Size canvas to the viewfinder CSS dimensions so the ghost exactly overlaps the live video.
+    // Fall back to bitmap dimensions in test environments where clientWidth is 0.
+    const w = this.viewfinder.clientWidth  || imageBitmap.width
+    const h = this.viewfinder.clientHeight || imageBitmap.height
+    this.canvas.width  = w
+    this.canvas.height = h
+
+    // Draw with object-fit:cover semantics: scale to fill, center-crop any overflow.
+    // (object-fit CSS has no effect on <canvas> elements, so we do this in 2D context.)
+    const bw = imageBitmap.width, bh = imageBitmap.height
+    const scale = Math.max(w / bw, h / bh)
+    const sw = w / scale, sh = h / scale
+    const sx = (bw - sw) / 2,  sy = (bh - sh) / 2
+    this.ctx.clearRect(0, 0, w, h)
+    this.ctx.drawImage(imageBitmap, sx, sy, sw, sh, 0, 0, w, h)
+
     this.state = initialGhostState()
     this.currentShiftPx = 0
+    this.currentShiftPy = 0
     this.canvas.style.transform = 'translate3d(0, 0, 0)'
     this.hasSnapshot = true
     this.canvas.hidden = false

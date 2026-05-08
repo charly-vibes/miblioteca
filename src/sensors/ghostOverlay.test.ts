@@ -3,12 +3,14 @@ import {
   initialGhostState,
   feedGhostGyro,
   computeShiftPx,
+  computeShiftPy,
 } from './ghostOverlay'
 
 describe('initialGhostState', () => {
-  it('starts with zero yaw integral and no prior sample', () => {
+  it('starts with zero yaw and pitch integrals and no prior sample', () => {
     const state = initialGhostState()
     expect(state.yawIntegral).toBe(0)
+    expect(state.pitchIntegral).toBe(0)
     expect(state.lastT).toBe(-Infinity)
   })
 
@@ -99,6 +101,22 @@ describe('feedGhostGyro', () => {
     expect(s2.yawIntegral).toBeCloseTo(1.0)
   })
 
+  it('accumulates pitchIntegral from gx in portrait mode (tilt up = positive pitch)', () => {
+    const s0 = initialGhostState()
+    const s1 = feedGhostGyro(s0, { t: 0, gx: 0, gy: 0, gz: 0 })           // first sample
+    const s2 = feedGhostGyro(s1, { t: 200, gx: 3.0, gy: 0, gz: 0 })       // gx=3.0 → +3.0*0.2 = +0.6 rad
+    expect(s2.pitchIntegral).toBeCloseTo(0.6)
+    expect(s2.yawIntegral).toBeCloseTo(0)                                   // gy=0, no horizontal movement
+  })
+
+  it('accumulates pitchIntegral from gy in landscape mode', () => {
+    const s0 = initialGhostState()
+    const s1 = feedGhostGyro(s0, { t: 0, gx: 0, gy: 0, gz: 0 }, 'x')
+    const s2 = feedGhostGyro(s1, { t: 200, gx: 0, gy: 3.0, gz: 0 }, 'x') // gy=3.0 → pitch axis in landscape
+    expect(s2.pitchIntegral).toBeCloseTo(0.6)
+    expect(s2.yawIntegral).toBeCloseTo(0)
+  })
+
   it('produces a plausible pixel shift at a realistic scanning rate (debug log baseline)', () => {
     // Debug log shows gy ≈ −0.35 rad/s during real scanning; verify the result is on-screen-visible
     const s0 = initialGhostState()
@@ -160,5 +178,30 @@ describe('computeShiftPx', () => {
     const shift = computeShiftPx(0.1, 1920)
     expect(Math.abs(shift)).toBeLessThan(960)
     expect(shift).toBeCloseTo(computeShiftPx(0.1, 1920))
+  })
+})
+
+describe('computeShiftPy', () => {
+  it('returns 0 when pitch integral is 0', () => {
+    expect(computeShiftPy(0, 1920, 1080)).toBeCloseTo(0)
+  })
+
+  it('returns positive shift for positive pitchIntegral (tilt up → ghost moves down)', () => {
+    expect(computeShiftPy(0.1, 1920, 1080)).toBeGreaterThan(0)
+  })
+
+  it('uses the same focal length as computeShiftPx', () => {
+    // focal = (displayWidth/2) / tan(hFov/2); shiftY = focal * pitchIntegral
+    const hFovRad = (65 * Math.PI) / 180
+    const focal = (1920 / 2) / Math.tan(hFovRad / 2)
+    expect(computeShiftPy(0.1, 1920, 1080)).toBeCloseTo(focal * 0.1)
+  })
+
+  it('clamps to +displayHeight/2 when pitch is very large positive', () => {
+    expect(computeShiftPy(100, 1920, 1080)).toBe(540)
+  })
+
+  it('clamps to -displayHeight/2 when pitch is very large negative', () => {
+    expect(computeShiftPy(-100, 1920, 1080)).toBe(-540)
   })
 })

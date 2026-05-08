@@ -1,3 +1,5 @@
+import { debugLogger } from '../debug/logger'
+
 export type SensorCapabilityMap = {
   accelerometer: boolean
   gyroscope: boolean
@@ -48,8 +50,6 @@ export function detectSensorDeps(w: Window & typeof globalThis = window): Sensor
         : undefined,
   }
 }
-
-import { debugLogger } from '../debug/logger'
 
 export async function probeSensors(deps: SensorProbeDeps): Promise<SensorProbeResult> {
   const hasGenericSensor =

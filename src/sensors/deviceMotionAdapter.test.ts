@@ -113,7 +113,7 @@ describe('DeviceMotionAccelAdapter', () => {
     expect(adapter.timestamp).toBe(300)
   })
 
-  it('fires onreading callback', () => {
+  it('fires onreading callback with real event', () => {
     const cb = vi.fn()
     adapter.onreading = cb
     adapter.start()
@@ -122,6 +122,7 @@ describe('DeviceMotionAccelAdapter', () => {
       timeStamp: 100,
     })
     expect(cb).toHaveBeenCalledOnce()
+    expect((cb.mock.calls[0][0] as Event).timeStamp).toBe(100)
   })
 
   it('handles null accelerationIncludingGravity safely', () => {

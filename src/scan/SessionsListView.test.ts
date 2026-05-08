@@ -28,6 +28,9 @@ function makeRecord(overrides: Partial<CaptureRecord> = {}): CaptureRecord {
       sourceApi: 'ImageCapture',
     },
     camera: {},
+    qualityChecks: { laplacianVariance: 0, overexposedFraction: 0, underexposedFraction: 0, steadyAtCapture: true, tiltDegrees: 0, blurry: false, overexposed: false, underexposed: false, dark: false },
+    uploadState: 'pending' as const,
+    uploadAttempts: 0,
     ...overrides,
   }
 }

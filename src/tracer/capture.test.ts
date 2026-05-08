@@ -140,6 +140,10 @@ describe('createCaptureRecord', () => {
           underexposedFraction: 0.02,
           steadyAtCapture: true,
           tiltDegrees: 2.5,
+          blurry: false,
+          overexposed: false,
+          underexposed: false,
+          dark: false,
         },
       },
       BASE_DEPS

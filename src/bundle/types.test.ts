@@ -98,6 +98,7 @@ describe('transfer guidance and share capability', () => {
       level: 'recommend-drive-or-usb',
       message: 'Use Drive or USB for very large bundles.',
       thresholdBytes: 500 * 1024 * 1024,
+      recompressWarning: '',
     }
 
     expect(guidance.level).toBe('recommend-drive-or-usb')

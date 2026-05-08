@@ -124,7 +124,7 @@ describe('GhostOverlayCanvas motion gating', () => {
 
   it('stays hidden when omegaMag ≤ 0.5 but no snapshot has been set', () => {
     const gyro = makeGyro(0, 0, 0.0)
-    const { overlay, viewfinder, tick } = makeTickableOverlay(gyro)
+    const { viewfinder, tick } = makeTickableOverlay(gyro)
     const el = viewfinder.querySelector('canvas')!
     expect(el.hidden).toBe(true)
     gyro.z = 0.0
@@ -136,19 +136,19 @@ describe('GhostOverlayCanvas motion gating', () => {
 
   it('cancels the RAF loop on the tick immediately after destroy()', () => {
     const cancelRaf = vi.fn()
-    let rafCallback: FrameRequestCallback | null = null
+    const raf = { callback: null as FrameRequestCallback | null }
     const viewfinder = document.createElement('div')
     document.body.appendChild(viewfinder)
     makeCanvas()
     const overlay = new GhostOverlayCanvas(viewfinder, {
       gyro: null,
-      requestAnimationFrame: (cb) => { rafCallback = cb; return 42 },
+      requestAnimationFrame: (cb) => { raf.callback = cb; return 42 },
       cancelAnimationFrame: cancelRaf,
       now: () => 0,
     })
     overlay.destroy()                 // sets destroyed=true, cancels current rafId
     cancelRaf.mockClear()
-    rafCallback?.(0)                  // simulate the already-scheduled callback firing post-destroy
+    raf.callback?.(0)                 // simulate the already-scheduled callback firing post-destroy
     expect(cancelRaf).toHaveBeenCalled()  // the loop self-cancels its newly scheduled id
     viewfinder.remove()
   })

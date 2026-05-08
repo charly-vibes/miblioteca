@@ -37,7 +37,7 @@ function makeRecord(partial: Partial<CaptureRecord> = {}): CaptureRecord {
     uploadState: 'pending',
     uploadAttempts: 0,
     camera: {},
-    qualityChecks: { laplacianVariance: 0, overexposedFraction: 0, underexposedFraction: 0, steadyAtCapture: true, tiltDegrees: 0 },
+    qualityChecks: { laplacianVariance: 0, overexposedFraction: 0, underexposedFraction: 0, steadyAtCapture: true, tiltDegrees: 0, blurry: false, overexposed: false, underexposed: false, dark: false },
     image: { blobRef: 'rec-1', thumbnailBlobRef: 'rec-1', mimeType: 'image/jpeg', width: 100, height: 100, thumbnailWidth: 10, thumbnailHeight: 10, sizeBytes: 4, thumbnailSizeBytes: 4, sourceApi: 'CanvasSnapshot' },
     ...partial,
   }

@@ -57,6 +57,7 @@ describe('sensor:probe-result + sensor:permission-result', () => {
       hasGyroscope: false,
       hasAbsoluteOrientationSensor: false,
       hasGravitySensor: false,
+      hasDeviceMotionEvent: false,
     }
     await probeSensors(deps)
     expect(hasEvent('sensor:probe-result')).toBe(true)
@@ -68,6 +69,7 @@ describe('sensor:probe-result + sensor:permission-result', () => {
       hasGyroscope: false,
       hasAbsoluteOrientationSensor: false,
       hasGravitySensor: false,
+      hasDeviceMotionEvent: false,
       requestMotionPermission: vi.fn().mockResolvedValue('granted'),
     }
     await probeSensors(deps)

@@ -79,6 +79,7 @@ export class DeviceMotionLinearAccelAdapter implements MotionLike {
   interval = 16  // default ~60 Hz until first event
   /** True when falling back to accelerationIncludingGravity (gravity not subtracted by hardware). */
   usingRawAccel = false
+  get gravitySubtracted(): boolean { return !this.usingRawAccel }
 
   private readonly win: Window
   private readonly handler: (e: DeviceMotionEvent) => void

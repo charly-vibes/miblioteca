@@ -27,6 +27,7 @@ export type MotionLike = {
   x: number | null    // DeviceMotionEvent.acceleration.x (m/s², gravity subtracted)
   y: number | null    // DeviceMotionEvent.acceleration.y (m/s², gravity subtracted)
   interval: number    // DeviceMotionEvent.interval (ms)
+  gravitySubtracted?: boolean  // true when hardware removed gravity; widens beta guard in feedGhostAccel
   start(): void
   stop(): void
 }
@@ -129,18 +130,20 @@ export class GhostOverlayCanvas {
     if (motion.x === null || motion.y === null) return
     const betaDeg = this.deps.getBeta?.() ?? 90
     const now = this.deps.now()
+    const gravitySubtracted = motion.gravitySubtracted ?? false
     const sample: AccelSample = {
       ax: motion.x,
       ay: motion.y,
       interval_ms: motion.interval || 16,  // some browsers report 0; MotionLike types it as number but 0 is possible
       betaDeg,
       t: now,
+      gravitySubtracted,
     }
     this.state = feedGhostAccel(this.state, sample)
     if (now - this.lastMotionLogMs >= 500) {
       debugLogger.log('ghost:motion-sample', {
         ax: motion.x, ay: motion.y,
-        usingRawAccel: (motion as { usingRawAccel?: boolean }).usingRawAccel ?? false,
+        usingRawAccel: !gravitySubtracted,
         betaDeg, interval_ms: motion.interval,
         dx_cm: this.state.dx_m * 100, dy_cm: this.state.dy_m * 100,
         velX: this.state.velX, velY: this.state.velY,

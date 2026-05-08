@@ -11,6 +11,7 @@ export type AccelSample = {
   interval_ms: number // from DeviceMotionEvent.interval (ms); used only for the first sample (no prior timestamp)
   betaDeg: number     // DeviceOrientationEvent.beta (0=flat, 90=upright facing wall)
   t: number           // DOMHighResTimeStamp; used for elapsed-time guard on subsequent samples
+  gravitySubtracted?: boolean  // true when hardware removed gravity (DeviceMotionEvent.acceleration); widens the beta guard to 45°
 }
 
 export type GhostOverlayState = {
@@ -64,15 +65,18 @@ export function feedGhostGyro(
 }
 
 // Integrate gravity-subtracted linear acceleration into velocity and displacement.
-// Beta-angle guard: if the phone is too far from vertical (|betaDeg-90| > 30°), gravity
-// leaks into acceleration.x/y, producing bogus shifts. In that case velocity is zeroed
-// and displacement is not updated.
+// Beta-angle guard: if the phone is too far from vertical, gravity leaks into ax/ay.
+// Threshold is 30° for raw accel (usingRawAccel=true) and 45° for hardware-subtracted
+// accel (gravitySubtracted=true). Camera postures typically land at betaDeg ~55-70°,
+// so raw-accel sessions need a strict guard while hardware-subtracted sessions get the
+// wider window without risking gravity contamination.
 export function feedGhostAccel(
   state: GhostOverlayState,
   sample: AccelSample,
 ): GhostOverlayState {
   if (!isFinite(sample.ax) || !isFinite(sample.ay) || !isFinite(sample.betaDeg) || !isFinite(sample.interval_ms) || !isFinite(sample.t)) return state
-  if (Math.abs(sample.betaDeg - 90) > 30) {
+  const maxTiltDeg = sample.gravitySubtracted ? 45 : 30
+  if (Math.abs(sample.betaDeg - 90) > maxTiltDeg) {
     // Phone near-horizontal: gravity leaks into ax/ay. Zero velocity but don't update position.
     // Early return when already zeroed (avoids allocation).
     if (state.velX === 0 && state.velY === 0) return state

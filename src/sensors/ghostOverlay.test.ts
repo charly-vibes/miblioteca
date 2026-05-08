@@ -222,7 +222,7 @@ describe('initialGhostState translation fields', () => {
 
 describe('feedGhostAccel', () => {
   const base = () => initialGhostState()
-  const sample = (overrides: Partial<{ ax: number; ay: number; interval_ms: number; betaDeg: number; t: number }> = {}) => ({
+  const sample = (overrides: Partial<{ ax: number; ay: number; interval_ms: number; betaDeg: number; t: number; gravitySubtracted: boolean }> = {}) => ({
     ax: 0, ay: 0, interval_ms: 100, betaDeg: 90, t: 0, ...overrides,
   })
 
@@ -314,6 +314,25 @@ describe('feedGhostAccel', () => {
     const s = base()  // velX=velY=0
     const next = feedGhostAccel(s, sample({ ax: 1.0, interval_ms: 100, betaDeg: 0, t: 0 }))
     expect(next).toBe(s)  // same reference since nothing changed
+  })
+
+  it('uses wider 45° guard for hardware-subtracted accel (betaDeg=55 passes)', () => {
+    const s = feedGhostAccel(base(), sample({ ax: 1.0, interval_ms: 100, betaDeg: 55, gravitySubtracted: true, t: 0 }))
+    // |55-90|=35 > 30 (raw threshold) but ≤ 45 (hardware-subtracted threshold) → should integrate
+    expect(s.velX).toBeGreaterThan(0)
+  })
+
+  it('still rejects betaDeg=44 even for hardware-subtracted accel (|44-90|=46 > 45)', () => {
+    const sMoving = feedGhostAccel(base(), sample({ ax: 1.0, interval_ms: 100, betaDeg: 90, t: 0 }))
+    const s = feedGhostAccel(sMoving, sample({ ax: 1.0, interval_ms: 100, betaDeg: 44, gravitySubtracted: true, t: 100 }))
+    expect(s.velX).toBe(0)
+  })
+
+  it('keeps 30° guard for raw accel (betaDeg=55 still zeroes without gravitySubtracted)', () => {
+    const sMoving = feedGhostAccel(base(), sample({ ax: 1.0, interval_ms: 100, betaDeg: 90, t: 0 }))
+    const s = feedGhostAccel(sMoving, sample({ ax: 1.0, interval_ms: 100, betaDeg: 55, t: 100 }))
+    // |55-90|=35 > 30 → raw accel threshold fires
+    expect(s.velX).toBe(0)
   })
 
   it('preserves gyro fields (yawIntegral, omegaMag) when updating accel state', () => {

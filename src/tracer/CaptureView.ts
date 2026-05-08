@@ -226,13 +226,18 @@ export class CaptureView {
     this.cameraState = s
     if (s.kind === 'granted') {
       this.video.srcObject = s.stream
-      if (this.opts.gyro) {
-        this.ghostOverlay = new GhostOverlayCanvas(this.viewfinder, { gyro: this.opts.gyro })
-      }
       this.startAccel()
       this.startQualityPoll()
     }
+    // render() must run before GhostOverlayCanvas is created: the first render with
+    // cameraReady=true calls replaceChildren on the viewfinder, which would discard
+    // any canvas already appended. Creating the overlay after render() ensures the
+    // canvas is appended after the video is in the viewfinder, so subsequent renders
+    // see contains(video)=true and skip replaceChildren.
     this.render()
+    if (s.kind === 'granted' && this.opts.gyro) {
+      this.ghostOverlay = new GhostOverlayCanvas(this.viewfinder, { gyro: this.opts.gyro })
+    }
   }
 
   private startAccel() {

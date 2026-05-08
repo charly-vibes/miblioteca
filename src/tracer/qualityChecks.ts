@@ -1,5 +1,5 @@
-import { laplacianVariance } from './imageProcessing.js'
-import type { CaptureRecord } from './capture.js'
+import { laplacianVariance } from './imageProcessing'
+import type { CaptureRecord } from './capture'
 
 export type QualityChecks = CaptureRecord['qualityChecks']
 

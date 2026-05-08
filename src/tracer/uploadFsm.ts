@@ -12,7 +12,7 @@ export type UploadEvent =
 export const MAX_UPLOAD_ATTEMPTS = 5
 
 export function classifyStatus(status: number): HttpOutcome {
-  if (status === 200) return 'success'
+  if (status >= 200 && status < 300) return 'success'
   if (status === 400 || status === 413 || status === 422) return 'terminal'
   if (status === 429 || (status >= 500 && status < 600)) return 'retryable'
   return 'terminal'

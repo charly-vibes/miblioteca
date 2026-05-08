@@ -265,6 +265,16 @@ export class CaptureView {
     this.steadinessState = initialSteadinessState()
   }
 
+  private computeTiltDeg(): number {
+    const { window } = this.steadinessState
+    if (window.length === 0) return 0
+    const n = window.length
+    const meanAx = window.reduce((s, p) => s + p.ax, 0) / n
+    const meanAy = window.reduce((s, p) => s + p.ay, 0) / n
+    const meanAz = window.reduce((s, p) => s + p.az, 0) / n
+    return Math.abs(Math.atan2(meanAx, Math.sqrt(meanAy ** 2 + meanAz ** 2)) * (180 / Math.PI))
+  }
+
   private startQualityPoll() {
     const { getQualityFrame, pollIntervalMs = 100 } = this.opts
     if (!getQualityFrame) return
@@ -273,7 +283,8 @@ export class CaptureView {
       if (frame) {
         const lv = laplacianVariance(frame)
         const { overexposed: over, underexposed: under, meanLuma } = exposureFractions(frame)
-        const checks = qualityChecksFromMetrics(lv, over, under, this.steadinessState.steady, 0, meanLuma)
+        const tiltDeg = this.opts.accel ? this.computeTiltDeg() : 0
+        const checks = qualityChecksFromMetrics(lv, over, under, this.steadinessState.steady, tiltDeg, meanLuma)
         this.activeWarnings = qualityWarnings(checks)
       } else {
         this.activeWarnings = []
@@ -360,6 +371,16 @@ export class CaptureView {
       const thumbScale = Math.min(MAX_THUMB_EDGE / snapshot.width, MAX_THUMB_EDGE / snapshot.height, 1)
       const thumbnailWidth = Math.max(1, Math.round(snapshot.width * thumbScale))
       const thumbnailHeight = Math.max(1, Math.round(snapshot.height * thumbScale))
+
+      const qualityFrame = this.opts.getQualityFrame?.()
+      let shutterQuality: ReturnType<typeof qualityChecksFromMetrics> | undefined
+      if (qualityFrame) {
+        const lv = laplacianVariance(qualityFrame)
+        const { overexposed: over, underexposed: under, meanLuma } = exposureFractions(qualityFrame)
+        const tiltDeg = this.opts.accel ? this.computeTiltDeg() : 0
+        shutterQuality = qualityChecksFromMetrics(lv, over, under, this.steadinessState.steady, tiltDeg, meanLuma)
+      }
+
       const db = await openShelfwalkDb()
       const record = createCaptureRecord(
         {
@@ -367,6 +388,7 @@ export class CaptureView {
           scanId: scan.id,
           userId: session.userId,
           index: this.captureIndex++,
+          qualityChecks: shutterQuality,
           image: {
             size: snapshot.imageBlob.size,
             thumbnailSize: snapshot.thumbnailBlob.size,

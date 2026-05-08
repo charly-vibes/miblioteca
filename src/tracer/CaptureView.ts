@@ -171,9 +171,9 @@ export class CaptureView {
       this.backBtn = null
     }
 
-    this.controls.append(this.storageWarningEl, this.steadinessEl, this.shutterBtn, this.openCameraBtn, this.retryBtn, this.statusEl)
-    this.viewfinder.append(this.warningsEl, this.onboarding, ...(this.backBtn ? [this.backBtn] : []))
-    this.root.append(this.viewfinder, this.galleryEl, this.controls)
+    this.controls.append(this.galleryEl, this.steadinessEl, this.shutterBtn, this.openCameraBtn, this.retryBtn, this.statusEl)
+    this.viewfinder.append(this.warningsEl, this.storageWarningEl, this.onboarding, ...(this.backBtn ? [this.backBtn] : []))
+    this.root.append(this.viewfinder, this.controls)
     container.append(this.root)
 
     this.render()
@@ -548,11 +548,11 @@ export class CaptureView {
     const overlay = this.backBtn ? [this.backBtn] : []
     if (cameraReady) {
       if (!this.viewfinder.contains(this.video)) {
-        this.viewfinder.replaceChildren(this.warningsEl, this.video, ...overlay)
+        this.viewfinder.replaceChildren(this.warningsEl, this.storageWarningEl, this.video, ...overlay)
       }
     } else {
       if (!this.viewfinder.contains(this.onboarding)) {
-        this.viewfinder.replaceChildren(this.warningsEl, this.onboarding, ...overlay)
+        this.viewfinder.replaceChildren(this.warningsEl, this.storageWarningEl, this.onboarding, ...overlay)
       }
     }
 

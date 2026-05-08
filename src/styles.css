@@ -168,21 +168,21 @@ h1 {
 /* ── Camera app layout ─────────────────────────────────── */
 
 .camera-app {
-  display: flex;
-  flex-direction: column;
+  position: relative;
   height: 100dvh;
   overflow: hidden;
   background: #000;
 }
 
 .camera-viewfinder {
-  flex: 1;
-  position: relative;
+  position: absolute;
+  inset: 0;
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
   background: #0a0f14;
+  z-index: 0;
 }
 
 .camera-video {
@@ -234,12 +234,26 @@ h1 {
 }
 
 .camera-controls {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0.75rem;
-  padding: 1.5rem 1.5rem calc(1.5rem + env(safe-area-inset-bottom));
-  background: #000;
+  padding: 1.5rem 1.5rem;
+  padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.6) 50%, transparent 100%);
+  z-index: 1;
+  pointer-events: none;
+  contain: layout style;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.camera-controls > * {
+  pointer-events: auto;
 }
 
 .shutter-btn {
@@ -251,6 +265,7 @@ h1 {
   padding: 0;
   box-shadow: 0 0 0 2px #fff;
   transition: transform 0.08s ease, opacity 0.08s ease;
+  touch-action: manipulation;
 }
 
 .shutter-btn:active {
@@ -263,7 +278,11 @@ h1 {
 }
 
 .camera-storage-warning {
-  width: min(100%, 28rem);
+  position: absolute;
+  top: 3.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(calc(100% - 2rem), 28rem);
   padding: 0.75rem 1rem;
   border: 1px solid #f59e0b;
   border-radius: 0.75rem;
@@ -272,6 +291,8 @@ h1 {
   font-size: 0.875rem;
   font-weight: 700;
   text-align: center;
+  pointer-events: none;
+  z-index: 1;
 }
 
 .camera-storage-warning[hidden] {
@@ -538,8 +559,7 @@ h1 {
   overflow-x: auto;
   overflow-y: hidden;
   height: 72px;
-  background: #000;
-  flex-shrink: 0;
+  width: 100%;
   scrollbar-width: none;
 }
 

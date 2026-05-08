@@ -83,7 +83,11 @@ export class DeviceMotionLinearAccelAdapter implements MotionLike {
     this.handler = (e: DeviceMotionEvent) => {
       const a = e.acceleration  // gravity-subtracted; null if unavailable or hardware doesn't support it.
                                  // Some Android devices return non-null but non-zero at rest (no hw subtraction).
-      if (!a) return             // skip when gravity-subtracted data is unavailable; stale velocity must not accumulate
+      if (!a) {
+        this.x = null
+        this.y = null
+        return
+      }
       this.x = a.x ?? null
       this.y = a.y ?? null
       this.interval = e.interval || 16  // some browsers report interval=0 when unknown; 16ms (~60Hz) is a safe fallback

@@ -160,19 +160,22 @@ export class GhostOverlayCanvas {
     if (this.canvas.hidden) return
 
     // Use CSS display dimensions so shifts are in CSS pixels, not bitmap pixels.
-    const displayWidth = this.viewfinder.clientWidth || this.canvas.width
-    const displayHeight = this.viewfinder.clientHeight || this.canvas.height
+    // readDisplayDims() caps clientWidth/Height at the viewport to guard against a Firefox
+    // Android quirk where setting canvas.width > viewport inflates the parent's clientWidth.
+    const { w: rw, h: rh } = this.readDisplayDims()
+    const dw = rw || this.canvas.width
+    const dh = rh || this.canvas.height
     const workingDistanceM = this.workingDistanceCm / 100
 
     // Rotation component (each internally clamped to display bounds)
-    const rotShiftPx = computeShiftPx(this.state.yawIntegral, displayWidth)
-    const rotShiftPy = computeShiftPy(this.state.pitchIntegral, displayWidth, displayHeight)
+    const rotShiftPx = computeShiftPx(this.state.yawIntegral, dw)
+    const rotShiftPy = computeShiftPy(this.state.pitchIntegral, dw, dh)
     // Translation component (unclamped; combined clamp applied below)
-    const transShiftPx = computeTranslationShiftPx(this.state.dx_m, workingDistanceM, displayWidth)
-    const transShiftPy = computeTranslationShiftPy(this.state.dy_m, workingDistanceM, displayWidth)
+    const transShiftPx = computeTranslationShiftPx(this.state.dx_m, workingDistanceM, dw)
+    const transShiftPy = computeTranslationShiftPy(this.state.dy_m, workingDistanceM, dw)
     // Combined shift, clamped to display boundaries
-    const halfW = displayWidth / 2
-    const halfH = displayHeight / 2
+    const halfW = dw / 2
+    const halfH = dh / 2
     const shiftPx = Math.max(-halfW, Math.min(halfW, rotShiftPx + transShiftPx))
     const shiftPy = Math.max(-halfH, Math.min(halfH, rotShiftPy + transShiftPy))
 
@@ -190,9 +193,27 @@ export class GhostOverlayCanvas {
         dx_cm: this.state.dx_m * 100, dy_cm: this.state.dy_m * 100,
         velX: this.state.velX, velY: this.state.velY,
         workingDistanceCm: this.workingDistanceCm,
-        displayWidth, displayHeight,
+        displayWidth: dw, displayHeight: dh,
       })
       this.lastShiftLogMs = now
+    }
+  }
+
+  // Returns viewfinder CSS dimensions capped at the visual viewport.
+  // On Firefox Android, setting canvas.width > viewport can cause the parent's clientWidth to
+  // report the inflated bitmap width instead of the CSS layout width. Capping at window.innerWidth
+  // breaks that feedback loop.
+  // The `window === undefined` guard handles SSR/Node; the `maxW > 0` check handles jsdom (innerWidth=0).
+  // Both paths return uncapped clientWidth, which callers fall back with || canvas.width.
+  private readDisplayDims(): { w: number; h: number } {
+    const vw = this.viewfinder.clientWidth
+    const vh = this.viewfinder.clientHeight
+    if (typeof window === 'undefined') return { w: vw, h: vh }
+    const maxW = window.innerWidth
+    const maxH = window.innerHeight
+    return {
+      w: maxW > 0 ? Math.min(vw, maxW) : vw,
+      h: maxH > 0 ? Math.min(vh, maxH) : vh,
     }
   }
 
@@ -202,10 +223,10 @@ export class GhostOverlayCanvas {
     debugLogger.log('ghost:reference-frame-set', { hasImageData: imageBitmap != null })
     if (imageBitmap == null) return
 
-    // Size canvas to the viewfinder CSS dimensions so the ghost exactly overlaps the live video.
-    // Fall back to bitmap dimensions in test environments where clientWidth is 0.
-    const w = this.viewfinder.clientWidth  || imageBitmap.width
-    const h = this.viewfinder.clientHeight || imageBitmap.height
+    // Size canvas to CSS dimensions; readDisplayDims() caps at viewport (Firefox Android workaround).
+    const { w: vw, h: vh } = this.readDisplayDims()
+    const w = vw || imageBitmap.width
+    const h = vh || imageBitmap.height
     this.canvas.width  = w
     this.canvas.height = h
 
@@ -228,8 +249,12 @@ export class GhostOverlayCanvas {
   }
 
   // Returns a snapshot of the current ghost state for debug logging at shutter time.
+  // Shift values are computed fresh from current integrals (not cached RAF values)
+  // so they reflect the true overlay position at the exact moment of capture.
   getDebugState(): {
     shiftPx: number; shiftPy: number
+    rotShiftPx: number; rotShiftPy: number
+    transShiftPx: number; transShiftPy: number
     yawIntegral: number; pitchIntegral: number
     dx_cm: number; dy_cm: number
     velX: number; velY: number
@@ -237,11 +262,25 @@ export class GhostOverlayCanvas {
     displayWidth: number; displayHeight: number
     workingDistanceCm: number
   } {
-    const displayWidth = this.viewfinder.clientWidth || this.canvas.width
-    const displayHeight = this.viewfinder.clientHeight || this.canvas.height
+    const { w: dw, h: dh } = this.readDisplayDims()
+    const displayWidth = dw || this.canvas.width
+    const displayHeight = dh || this.canvas.height
+    const workingDistanceM = this.workingDistanceCm / 100
+    const rotShiftPx = computeShiftPx(this.state.yawIntegral, displayWidth)
+    const rotShiftPy = computeShiftPy(this.state.pitchIntegral, displayWidth, displayHeight)
+    const transShiftPx = computeTranslationShiftPx(this.state.dx_m, workingDistanceM, displayWidth)
+    const transShiftPy = computeTranslationShiftPy(this.state.dy_m, workingDistanceM, displayWidth)
+    const halfW = displayWidth / 2
+    const halfH = displayHeight / 2
+    const shiftPx = Math.max(-halfW, Math.min(halfW, rotShiftPx + transShiftPx))
+    const shiftPy = Math.max(-halfH, Math.min(halfH, rotShiftPy + transShiftPy))
     return {
-      shiftPx: this.currentShiftPx,
-      shiftPy: this.currentShiftPy,
+      shiftPx,
+      shiftPy,
+      rotShiftPx,
+      rotShiftPy,
+      transShiftPx,
+      transShiftPy,
       yawIntegral: this.state.yawIntegral,
       pitchIntegral: this.state.pitchIntegral,
       dx_cm: this.state.dx_m * 100,

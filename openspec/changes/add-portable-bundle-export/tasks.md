@@ -1,8 +1,8 @@
 ## 1. Proposal Alignment
 - [x] 1.1 Review and approve the bundle-first MVP decision with stakeholders
 - [x] 1.2 Revise or supersede `add-tracer-bullet` so the first vertical slice exports a one-record bundle instead of requiring mock upload success
-- [ ] 1.3 Update baseline backend/API notes to mark per-record upload as post-MVP optional ingest, not an MVP prerequisite
-- [ ] 1.4 Decide before backend work whether future ingest accepts whole `.mbibundle.zip` files, unpacked artifacts, or both
+- [x] 1.3 Update baseline backend/API notes to mark per-record upload as post-MVP optional ingest, not an MVP prerequisite
+- [x] 1.4 Decide before backend work whether future ingest accepts whole `.mbibundle.zip` files, unpacked artifacts, or both
 
 ## 2. Bundle Contract
 - [x] 2.1 Define TypeScript types for `BundleManifest`, file entries, `sha256` checksums, validation warnings, export status, and transfer guidance
@@ -26,12 +26,12 @@
 ## 5. User-Initiated Sharing
 - [x] 5.1 Add UI to export/download the `.mbibundle.zip` from a saved session
 - [x] 5.2 Add Web Share support only from a user gesture when supported by the browser
-- [ ] 5.3 Show guidance for large files and warn that media-sharing channels may recompress images unless sent as a document/file
+- [x] 5.3 Show guidance for large files and warn that media-sharing channels may recompress images unless sent as a document/file
 - [x] 5.4 Warn above 100 MB, recommend Drive/USB-style transfer above 500 MB, and block export when estimated storage headroom is less than archive size plus 20% safety margin
 - [x] 5.5 Keep visible local/export status so users know whether data is only on-device, currently exporting, exported, failed, or aborted
 
 ## 6. Validation
 - [x] 6.1 Add unit tests for manifest generation, filename/path mapping, export state transitions, and export validation
 - [x] 6.2 Add integration tests for IndexedDB-to-bundle assembly with real IDB
-- [ ] 6.3 Document manual Android Chrome verification for capture, persistence, export, aborted export retry, generated bundle validation, and at least one successful transfer path
-- [ ] 6.4 Create follow-on issues for backend ingest, multi-device merge, collaboration, and automatic backup after MVP validation
+- [x] 6.3 Document manual Android Chrome verification for capture, persistence, export, aborted export retry, generated bundle validation, and at least one successful transfer path
+- [x] 6.4 Create follow-on issues for backend ingest, multi-device merge, collaboration, and automatic backup after MVP validation

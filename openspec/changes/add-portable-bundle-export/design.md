@@ -9,7 +9,7 @@ The product question for the MVP is narrower: can a phone capture useful bookshe
   - Support user-initiated export and transfer readiness without a production backend
   - Keep all metadata needed for future stitching/cataloguing in the bundle
   - Track bundle export state separately from server upload state
-  - Preserve a clean adapter seam so a backend can later ingest the same bundle format
+  - Preserve a clean adapter seam so a backend can later ingest the same capture record format via per-record upload
   - Reduce MVP operational risk by avoiding auth, hosting, retry queues, and live collaboration
 - Non-Goals:
   - Real-time multi-user collaboration
@@ -56,10 +56,11 @@ The product question for the MVP is narrower: can a phone capture useful bookshe
     - Automatic Drive/API upload: rejected for MVP because it introduces provider auth and integration scope.
     - Email-only export: rejected because bundle sizes may exceed email limits.
 
-- Decision: model backend as a future consumer of the bundle, not a prerequisite for capture.
-  - Why: the same artifact can support manual processing now and server ingest later.
+- Decision: model backend as a future consumer of the same capture record format, not a prerequisite for capture. Backend ingest uses individual artifact upload (per-record POST /api/upload); the bundle is not a server ingest format.
+  - Why: the capture record format is stable across both delivery modes (bundle export and per-record upload). The bundle is a local transfer artifact and MVP stopgap; once a backend exists, records upload individually with granular retry semantics suited to field connectivity conditions.
   - Alternatives considered:
-    - Keep per-record upload contracts as canonical: rejected for MVP because it couples capture success to network availability and server behavior.
+    - Backend ingests the whole `.mbibundle.zip`: rejected because it couples the server to the bundle packaging format and loses per-record retry granularity. The per-record upload API is already designed and the client already tracks `uploadState` per record.
+    - Keep per-record upload contracts as canonical for MVP: rejected because it couples MVP success to network availability and server behavior before capture quality is validated.
 
 ## Bundle Shape
 Recommended archive extension: `.mbibundle.zip`.
@@ -136,5 +137,6 @@ These are MVP defaults to validate manually on Android Chrome and may be revised
 5. Add user-initiated download/share UI with clear channel guidance.
 6. Defer backend API implementation until after bundle artifacts have been validated against downstream processing needs.
 
-## Open Questions
-- Should a future backend ingest the whole `.mbibundle.zip` as one upload, or unpack and upload individual artifacts client-side? This must be decided before backend work begins, but it does not block the bundle-first MVP.
+## Resolved Decisions
+
+- **Backend ingest format** (resolved 2026-05-08): the backend accepts individual artifacts via per-record upload (`POST /api/upload`). The client unpacks and uploads records individually. The bundle is not a server ingest format. Granular per-record retry is better suited to field connectivity conditions, and the per-record API is already designed.

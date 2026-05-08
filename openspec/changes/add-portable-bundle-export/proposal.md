@@ -10,7 +10,7 @@ A real backend adds hosting, authentication, upload retry, operations, and priva
 - Add a `portable-bundle-export` capability defining the canonical MVP delivery artifact: one self-contained scan bundle containing images, thumbnails, sidecar metadata, session records, traces when present, and a manifest
 - Replace the near-term requirement for real or mock upload success with local export validation and user-initiated transfer readiness
 - Add export/session delivery state separate from server `uploadState`, so bundle export does not pretend records were uploaded
-- Preserve a delivery adapter boundary so backend upload can later ingest the same bundle format without changing capture metadata semantics
+- Preserve a delivery adapter boundary so a backend can later ingest the same capture record format via per-record upload without changing capture metadata semantics; the bundle is a local transfer artifact, not a server ingest format
 - Defer multi-user live collaboration, server clock anchoring, account/auth systems, automatic backup, and centralized processing to post-MVP backend work
 - Require explicit user warnings for bundle size, browser sharing limitations, aborted exports, generated-bundle validation failures, and local storage/export risk
 

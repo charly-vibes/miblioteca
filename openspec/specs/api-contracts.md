@@ -1,7 +1,9 @@
 # Backend API Contracts
 
 Version: 0.1.0  
-Status: baseline (pre-implementation — backend is out of scope for capture client)
+Status: baseline (pre-implementation — backend is out of scope for the capture MVP)
+
+> **MVP note**: All endpoints in this document are post-MVP. The MVP capture client delivers data via portable bundle export (`add-portable-bundle-export`), not server upload. These contracts describe the future backend ingest path: individual artifact upload (`POST /api/upload`) using the same capture record format the bundle already contains. No backend work begins until bundle artifacts have been validated against downstream processing needs.
 
 ## Overview
 

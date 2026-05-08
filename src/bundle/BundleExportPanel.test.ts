@@ -205,7 +205,7 @@ describe('BundleExportPanel — exporting flow', () => {
     })
   })
 
-  it('falls back to download when share throws NotAllowedError', async () => {
+  it('swaps Share button to Download when share throws NotAllowedError', async () => {
     await putScan(db, makeScan())
     await putSession(db, makeSession())
     await saveCapture(db, { record: makeRecord(), imageBlob: new Blob(['img']), thumbnailBlob: new Blob(['th']) })
@@ -223,9 +223,13 @@ describe('BundleExportPanel — exporting flow', () => {
     await vi.waitFor(() => screen.getByRole('button', { name: /share/i }))
     await userEvent.click(screen.getByRole('button', { name: /share/i }))
 
+    // Button swaps to Download and status updates — user clicks Download for a fresh gesture
     await vi.waitFor(() => {
-      expect(vi.mocked(downloadBundle)).toHaveBeenCalled()
+      expect(screen.getByRole('button', { name: /download/i })).toBeInTheDocument()
+      expect(screen.getByText(/sharing not available/i)).toBeInTheDocument()
     })
+    await userEvent.click(screen.getByRole('button', { name: /download/i }))
+    expect(vi.mocked(downloadBundle)).toHaveBeenCalled()
   })
 
   it('shows error and retry after failed assembly', async () => {

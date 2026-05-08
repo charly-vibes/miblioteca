@@ -20,15 +20,15 @@ describe('initialGhostState', () => {
 describe('feedGhostGyro', () => {
   it('records first sample time without integrating (no dt known yet)', () => {
     const state = initialGhostState()
-    const next = feedGhostGyro(state, { t: 100, gx: 0, gy: 0, gz: 1.0 })
+    const next = feedGhostGyro(state, { t: 100, gx: 0, gy: -1.0, gz: 0 })
     expect(next.lastT).toBe(100)
     expect(next.yawIntegral).toBe(0)
   })
 
-  it('integrates gz * dt on subsequent samples', () => {
+  it('integrates -gy * dt on subsequent samples (portrait pan uses device-y axis)', () => {
     const s0 = initialGhostState()
     const s1 = feedGhostGyro(s0, { t: 0, gx: 0, gy: 0, gz: 0 })          // first sample
-    const s2 = feedGhostGyro(s1, { t: 200, gx: 0, gy: 0, gz: 5.0 })      // +5.0 rad/s * 0.2s = +1.0 rad
+    const s2 = feedGhostGyro(s1, { t: 200, gx: 0, gy: -5.0, gz: 0 })     // gy=-5.0 rad/s → -(-5)*0.2 = +1.0 rad
     expect(s2.yawIntegral).toBeCloseTo(1.0)
     expect(s2.lastT).toBe(200)
   })
@@ -37,38 +37,38 @@ describe('feedGhostGyro', () => {
     const s0 = initialGhostState()
     const s1 = feedGhostGyro(s0, { t: 0, gx: 0, gy: 0, gz: 0 })
     // 10 second gap (e.g. gyro resumed after pause): dt clamped to 0.5s, not 10s
-    const s2 = feedGhostGyro(s1, { t: 10000, gx: 0, gy: 0, gz: 2.0 })
-    expect(s2.yawIntegral).toBeCloseTo(1.0)    // 2.0 * 0.5 = 1.0, not 20.0
+    const s2 = feedGhostGyro(s1, { t: 10000, gx: 0, gy: -2.0, gz: 0 })
+    expect(s2.yawIntegral).toBeCloseTo(1.0)    // -(-2.0) * 0.5 = 1.0, not 20.0
   })
 
   it('accumulates across multiple samples', () => {
     let s = initialGhostState()
     s = feedGhostGyro(s, { t: 0, gx: 0, gy: 0, gz: 0 })
-    s = feedGhostGyro(s, { t: 500, gx: 0, gy: 0, gz: 2.0 })   // 2 rad/s * 0.5s = 1.0 rad
-    s = feedGhostGyro(s, { t: 1000, gx: 0, gy: 0, gz: -1.0 }) // -1 rad/s * 0.5s = -0.5 rad
+    s = feedGhostGyro(s, { t: 500, gx: 0, gy: -2.0, gz: 0 }) // -(-2)*0.5 = +1.0 rad
+    s = feedGhostGyro(s, { t: 1000, gx: 0, gy: 1.0, gz: 0 }) // -(1)*0.5  = -0.5 rad
     expect(s.yawIntegral).toBeCloseTo(0.5)
   })
 
   it('drops out-of-order samples', () => {
     let s = initialGhostState()
     s = feedGhostGyro(s, { t: 1000, gx: 0, gy: 0, gz: 0 })
-    s = feedGhostGyro(s, { t: 2000, gx: 0, gy: 0, gz: 1.0 })
+    s = feedGhostGyro(s, { t: 2000, gx: 0, gy: -1.0, gz: 0 })
     const before = s
-    const next = feedGhostGyro(s, { t: 500, gx: 0, gy: 0, gz: 99 })  // stale
+    const next = feedGhostGyro(s, { t: 500, gx: 0, gy: 99, gz: 0 })  // stale
     expect(next).toBe(before)
   })
 
-  it('ignores non-finite gz values', () => {
+  it('ignores non-finite gy values', () => {
     let s = initialGhostState()
     s = feedGhostGyro(s, { t: 0, gx: 0, gy: 0, gz: 0 })
     const before = s
-    const next = feedGhostGyro(s, { t: 1000, gx: 0, gy: 0, gz: NaN })
+    const next = feedGhostGyro(s, { t: 1000, gx: 0, gy: NaN, gz: 0 })
     expect(next).toBe(before)
   })
 
   it('ignores non-finite t values', () => {
     const s = initialGhostState()
-    const next = feedGhostGyro(s, { t: NaN, gx: 0, gy: 0, gz: 1 })
+    const next = feedGhostGyro(s, { t: NaN, gx: 0, gy: -1, gz: 0 })
     expect(next).toBe(s)
   })
 
@@ -76,7 +76,7 @@ describe('feedGhostGyro', () => {
     let s = initialGhostState()
     s = feedGhostGyro(s, { t: 100, gx: 0, gy: 0, gz: 0 })
     const before = s
-    const next = feedGhostGyro(s, { t: 100, gx: 0, gy: 0, gz: 999 })  // dt = 0 → integral unchanged
+    const next = feedGhostGyro(s, { t: 100, gx: 0, gy: -999, gz: 0 })  // dt = 0 → integral unchanged
     expect(next.yawIntegral).toBe(before.yawIntegral)
     expect(next.lastT).toBe(100)
   })
@@ -88,7 +88,7 @@ describe('feedGhostGyro', () => {
   })
 
   it('updates omegaMag even on first sample', () => {
-    const s = feedGhostGyro(initialGhostState(), { t: 100, gx: 0, gy: 0, gz: 1.0 })
+    const s = feedGhostGyro(initialGhostState(), { t: 100, gx: 0, gy: -1.0, gz: 0 })
     expect(s.omegaMag).toBeCloseTo(1.0)
   })
 })
@@ -98,9 +98,8 @@ describe('computeShiftPx', () => {
     expect(computeShiftPx(0, 1920)).toBeCloseTo(0)
   })
 
-  it('returns negative shift for positive yaw (camera rotates right, overlay shifts left)', () => {
-    // Positive yaw (gz > 0) = device rotates counterclockwise from user POV (camera swings right)
-    // overlay should shift left (negative x) to show where previous shot was
+  it('returns negative shift for positive yawIntegral (camera swept right, overlay shifts left)', () => {
+    // Camera sweeps right → gy < 0 → yawIntegral > 0 → negative shift (ghost moves left, appears fixed in space)
     expect(computeShiftPx(0.1, 1920)).toBeLessThan(0)
   })
 

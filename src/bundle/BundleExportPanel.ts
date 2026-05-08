@@ -18,7 +18,7 @@ type PanelState =
   | { kind: 'loading' }
   | { kind: 'idle' }
   | { kind: 'exporting'; controller: AbortController }
-  | { kind: 'exported'; blob: Blob | null; filename: string; totalBytes: number }
+  | { kind: 'exported'; blob: Blob | null; filename: string; totalBytes: number; shareBlocked?: boolean }
   | { kind: 'failed'; error: string }
   | { kind: 'aborted' }
 
@@ -162,17 +162,19 @@ export class BundleExportPanel {
 
   private async transfer() {
     if (this.state.kind !== 'exported' || !this.state.blob) return
-    const { blob, filename } = this.state
+    const { blob, filename, shareBlocked } = this.state
+    if (this.capability.status !== 'supported' || shareBlocked) {
+      downloadBundle(blob, filename)
+      return
+    }
     try {
-      if (this.capability.status === 'supported') {
-        await shareBundle(blob, filename)
-      } else {
-        downloadBundle(blob, filename)
-      }
+      await shareBundle(blob, filename)
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return
       if (err instanceof DOMException && err.name === 'NotAllowedError') {
-        downloadBundle(blob, filename)
+        // Sharing blocked by the browser — surface a Download button so the user can
+        // trigger the download themselves (fresh user gesture, reliable on Android).
+        this.setState({ ...this.state, shareBlocked: true })
         return
       }
       throw err
@@ -184,7 +186,9 @@ export class BundleExportPanel {
       case 'loading': return 'Loading…'
       case 'idle': return 'Data is on-device only'
       case 'exporting': return 'Exporting…'
-      case 'exported': return this.state.blob ? 'Exported' : 'Previously exported — re-export to download again'
+      case 'exported':
+        if (this.state.shareBlocked) return 'Sharing not available — tap Download to save'
+        return this.state.blob ? 'Exported' : 'Previously exported — re-export to download again'
       case 'failed': return `Export failed: ${this.state.error}`
       case 'aborted': return 'Export aborted'
     }
@@ -206,6 +210,10 @@ export class BundleExportPanel {
     this.cancelBtn.hidden = !isExporting
     this.retryBtn.hidden = !(isFailed || isAborted || (isExported && !hasLiveBlob))
     this.transferBtn.hidden = !hasLiveBlob
+    if (this.state.kind === 'exported') {
+      const useDownload = this.capability.status !== 'supported' || this.state.shareBlocked
+      this.transferBtn.textContent = useDownload ? 'Download' : 'Share'
+    }
 
     if (this.state.kind === 'exported') {
       const guidance = transferGuidance(this.state.totalBytes)

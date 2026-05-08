@@ -161,7 +161,8 @@ export class BundleExportPanel {
     if (this.state.kind !== 'exported' || !this.state.blob) return
     this.transferBtn.disabled = true
     const capturedState = this.state
-    const { blob, filename, shareBlocked } = capturedState
+    const { blob: blobOrNull, filename, shareBlocked } = capturedState
+    const blob = blobOrNull!
     try {
       if (this.capability.status !== 'supported' || shareBlocked) {
         downloadBundle(blob, filename)

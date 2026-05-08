@@ -232,6 +232,32 @@ describe('BundleExportPanel — exporting flow', () => {
     expect(vi.mocked(downloadBundle)).toHaveBeenCalled()
   })
 
+  it('Download button remains functional after first download (idempotent)', async () => {
+    await putScan(db, makeScan())
+    await putSession(db, makeSession())
+    await saveCapture(db, { record: makeRecord(), imageBlob: new Blob(['img']), thumbnailBlob: new Blob(['th']) })
+
+    const assemble = vi.fn().mockResolvedValue({
+      ok: true, blob: makeBlob(), manifest: makeManifest(), filename: 'lib.mbibundle.zip',
+    } satisfies BundleAssemblyResult)
+
+    vi.mocked(shareBundle).mockRejectedValue(new DOMException('Permission denied', 'NotAllowedError'))
+
+    makePanel({ assemble, shareCapability: { status: 'supported' } })
+    await vi.waitFor(() => screen.getByRole('button', { name: /export bundle/i }))
+    await userEvent.click(screen.getByRole('button', { name: /export bundle/i }))
+
+    await vi.waitFor(() => screen.getByRole('button', { name: /share/i }))
+    await userEvent.click(screen.getByRole('button', { name: /share/i }))
+    await vi.waitFor(() => screen.getByRole('button', { name: /download/i }))
+
+    await userEvent.click(screen.getByRole('button', { name: /download/i }))
+    expect(vi.mocked(downloadBundle)).toHaveBeenCalledTimes(1)
+
+    await userEvent.click(screen.getByRole('button', { name: /download/i }))
+    expect(vi.mocked(downloadBundle)).toHaveBeenCalledTimes(2)
+  })
+
   it('shows error and retry after failed assembly', async () => {
     await putScan(db, makeScan())
     await putSession(db, makeSession())

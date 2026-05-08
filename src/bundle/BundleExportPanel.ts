@@ -18,7 +18,7 @@ type PanelState =
   | { kind: 'loading' }
   | { kind: 'idle' }
   | { kind: 'exporting'; controller: AbortController }
-  | { kind: 'exported'; blob: Blob | null; filename: string; totalBytes: number; shareBlocked?: boolean }
+  | { kind: 'exported'; blob: Blob | null; filename: string; totalBytes: number; shareBlocked?: true }
   | { kind: 'failed'; error: string }
   | { kind: 'aborted' }
 
@@ -62,10 +62,7 @@ export class BundleExportPanel {
     this.exportBtn = this.makeBtn('Export bundle', () => void this.startExport())
     this.cancelBtn = this.makeBtn('Cancel', () => this.cancel())
     this.retryBtn = this.makeBtn('Retry', () => void this.startExport())
-    this.transferBtn = this.makeBtn(
-      this.capability.status === 'supported' ? 'Share' : 'Download',
-      () => void this.transfer()
-    )
+    this.transferBtn = this.makeBtn('…', () => void this.transfer())
 
     this.root.append(this.statusEl, this.guidanceEl, this.recompressEl, this.exportBtn, this.cancelBtn, this.retryBtn, this.transferBtn)
     container.append(this.root)
@@ -162,22 +159,28 @@ export class BundleExportPanel {
 
   private async transfer() {
     if (this.state.kind !== 'exported' || !this.state.blob) return
-    const { blob, filename, shareBlocked } = this.state
-    if (this.capability.status !== 'supported' || shareBlocked) {
-      downloadBundle(blob, filename)
-      return
-    }
+    this.transferBtn.disabled = true
+    const capturedState = this.state
+    const { blob, filename, shareBlocked } = capturedState
     try {
+      if (this.capability.status !== 'supported' || shareBlocked) {
+        downloadBundle(blob, filename)
+        return
+      }
       await shareBundle(blob, filename)
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return
       if (err instanceof DOMException && err.name === 'NotAllowedError') {
         // Sharing blocked by the browser — surface a Download button so the user can
         // trigger the download themselves (fresh user gesture, reliable on Android).
-        this.setState({ ...this.state, shareBlocked: true })
+        if (this.state === capturedState) this.setState({ ...capturedState, shareBlocked: true })
         return
       }
-      throw err
+      if (this.state === capturedState) {
+        this.setState({ kind: 'failed', error: err instanceof Error ? err.message : String(err) })
+      }
+    } finally {
+      if (!this.destroyed) this.transferBtn.disabled = false
     }
   }
 
@@ -187,7 +190,7 @@ export class BundleExportPanel {
       case 'idle': return 'Data is on-device only'
       case 'exporting': return 'Exporting…'
       case 'exported':
-        if (this.state.shareBlocked) return 'Sharing not available — tap Download to save'
+        if (this.state.shareBlocked) return 'Sharing not available — select Download to save'
         return this.state.blob ? 'Exported' : 'Previously exported — re-export to download again'
       case 'failed': return `Export failed: ${this.state.error}`
       case 'aborted': return 'Export aborted'

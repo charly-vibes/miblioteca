@@ -1,4 +1,5 @@
 import type { BundleShareCapability, BundleTransferGuidance } from './types'
+import { debugLogger } from '../debug/logger'
 
 const MB = 1024 * 1024
 
@@ -37,10 +38,18 @@ export function transferGuidance(sizeBytes: number): BundleTransferGuidance {
 
 export async function shareBundle(blob: Blob, filename: string): Promise<void> {
   const file = new File([blob], filename, { type: 'application/zip' })
-  await navigator.share({ files: [file], title: filename })
+  debugLogger.log('share:attempt', { sizeBytes: blob.size })
+  try {
+    await navigator.share({ files: [file], title: filename })
+    debugLogger.log('share:result', { outcome: 'success' })
+  } catch (err) {
+    debugLogger.log('share:result', { outcome: 'error', error: err instanceof Error ? err.message : String(err) })
+    throw err
+  }
 }
 
 export function downloadBundle(blob: Blob, filename: string): void {
+  debugLogger.log('download:triggered', { sizeBytes: blob.size })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url

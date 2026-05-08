@@ -1,5 +1,6 @@
 import { initialGhostState, feedGhostGyro, computeShiftPx } from './ghostOverlay'
 import type { GhostOverlayState, GyroSample } from './ghostOverlay'
+import { debugLogger } from '../debug/logger'
 
 export type GyroLike = {
   onreading: (() => void) | null
@@ -29,6 +30,8 @@ export class GhostOverlayCanvas {
   private currentShiftPx = 0
   private hasSnapshot = false
   private destroyed = false
+  private firstRafFired = false
+  private lastOrientationLogMs = 0
   private readonly deps: Required<GhostOverlayCanvasDeps>
 
   constructor(viewfinder: HTMLElement, deps: GhostOverlayCanvasDeps) {
@@ -56,22 +59,33 @@ export class GhostOverlayCanvas {
     }
 
     this.rafId = this.deps.requestAnimationFrame(this.rafLoop)
+    debugLogger.log('ghost:created', {})
   }
 
   private onGyroReading() {
     const gyro = this.deps.gyro!
+    const now = this.deps.now()
     const sample: GyroSample = {
-      t: gyro.timestamp ?? this.deps.now(),
+      t: gyro.timestamp ?? now,
       gx: gyro.x ?? 0,
       gy: gyro.y ?? 0,
       gz: gyro.z ?? 0,
     }
     this.state = feedGhostGyro(this.state, sample)
+    const sinceLastLog = now - this.lastOrientationLogMs
+    if (this.lastOrientationLogMs === 0 || sinceLastLog >= 2000) {
+      debugLogger.log('sensor:orientation-sample', { gx: sample.gx, gy: sample.gy, gz: sample.gz })
+      this.lastOrientationLogMs = now
+    }
   }
 
   private rafLoop: FrameRequestCallback = () => {
     if (this.destroyed) return
     this.rafId = this.deps.requestAnimationFrame(this.rafLoop)
+    if (!this.firstRafFired) {
+      this.firstRafFired = true
+      debugLogger.log('ghost:render-tick', {})
+    }
 
     const shouldShow = this.hasSnapshot && this.state.omegaMag <= MOTION_GATE_RAD_S
     if (this.canvas.hidden !== !shouldShow) {
@@ -89,6 +103,7 @@ export class GhostOverlayCanvas {
   // Call after each capture to draw the thumbnail and reset yaw accumulation.
   // Pass null when grabFrame() fails — previous snapshot is retained unchanged.
   setSnapshot(imageBitmap: ImageBitmap | null) {
+    debugLogger.log('ghost:reference-frame-set', { hasImageData: imageBitmap != null })
     if (imageBitmap == null) return
     this.canvas.width = imageBitmap.width
     this.canvas.height = imageBitmap.height
@@ -107,5 +122,6 @@ export class GhostOverlayCanvas {
     this.deps.cancelAnimationFrame(this.rafId)
     this.deps.gyro?.stop()
     this.canvas.remove()
+    debugLogger.log('ghost:destroyed', {})
   }
 }

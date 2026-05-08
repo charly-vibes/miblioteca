@@ -47,6 +47,8 @@ export function detectSensorDeps(w: Window & typeof globalThis = window): Sensor
   }
 }
 
+import { debugLogger } from '../debug/logger'
+
 export async function probeSensors(deps: SensorProbeDeps): Promise<SensorProbeResult> {
   const hasGenericSensor =
     deps.hasAccelerometer ||
@@ -57,14 +59,19 @@ export async function probeSensors(deps: SensorProbeDeps): Promise<SensorProbeRe
   // On iOS Safari, neither Generic Sensor API nor DeviceMotionEvent works without
   // an explicit requestPermission() call triggered by a user gesture.
   if (!hasGenericSensor && (deps.requestMotionPermission || deps.requestOrientationPermission)) {
+    debugLogger.log('sensor:permission-requested', { api: 'ios-device-motion-orientation' })
     try {
       const results = await Promise.all([
         deps.requestMotionPermission?.() ?? Promise.resolve<'granted' | 'denied'>('granted'),
         deps.requestOrientationPermission?.() ?? Promise.resolve<'granted' | 'denied'>('granted'),
       ])
-      if (results.some((r) => r === 'denied')) {
+      const granted = results.every((r) => r === 'granted')
+      debugLogger.log('sensor:permission-result', { granted })
+      if (!granted) {
+        debugLogger.log('sensor:probe-result', { status: 'denied' })
         return { status: 'denied' }
       }
+      debugLogger.log('sensor:probe-result', { status: 'granted', via: 'ios-permission' })
       return {
         status: 'granted',
         capabilities: {
@@ -75,14 +82,18 @@ export async function probeSensors(deps: SensorProbeDeps): Promise<SensorProbeRe
         },
       }
     } catch {
+      debugLogger.log('sensor:permission-result', { granted: false, reason: 'exception' })
+      debugLogger.log('sensor:probe-result', { status: 'denied' })
       return { status: 'denied' }
     }
   }
 
   if (!hasGenericSensor) {
+    debugLogger.log('sensor:probe-result', { status: 'unavailable' })
     return { status: 'unavailable' }
   }
 
+  debugLogger.log('sensor:probe-result', { status: 'granted', via: 'generic-sensor' })
   return {
     status: 'granted',
     capabilities: {

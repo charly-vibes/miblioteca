@@ -412,6 +412,10 @@ export class CaptureView {
         const tiltDeg = this.opts.accel ? this.computeTiltDeg() : 0
         shutterQuality = qualityChecksFromMetrics(lv, over, under, this.steadinessState.steady, tiltDeg, meanLuma)
       }
+      this.logger.log('capture:shutter', {
+        index: this.captureIndex,
+        qualityChecks: shutterQuality ? qualityWarnings(shutterQuality) : [],
+      })
 
       const db = await openShelfwalkDb()
       const record = createCaptureRecord(
@@ -439,6 +443,7 @@ export class CaptureView {
         fetch: this.opts.uploadFetch ?? (async () => new Response(null, { status: 200 })),
         db,
       })
+      this.logger.log('capture:saved', { uploadState })
       if (uploadState !== 'uploaded') void requestUploadSync()
       if (this.ghostOverlay) {
         const bitmapFn = this.opts.createImageBitmap ?? ((b) => createImageBitmap(b))

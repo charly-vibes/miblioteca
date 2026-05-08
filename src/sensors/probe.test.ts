@@ -7,6 +7,7 @@ const NO_SENSORS: SensorProbeDeps = {
   hasGyroscope: false,
   hasAbsoluteOrientationSensor: false,
   hasGravitySensor: false,
+  hasDeviceMotionEvent: false,
 }
 
 const ALL_SENSORS: SensorProbeDeps = {
@@ -14,6 +15,7 @@ const ALL_SENSORS: SensorProbeDeps = {
   hasGyroscope: true,
   hasAbsoluteOrientationSensor: true,
   hasGravitySensor: true,
+  hasDeviceMotionEvent: true,
 }
 
 describe('probeSensors — Generic Sensor API (Chrome/Android)', () => {

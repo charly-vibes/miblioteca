@@ -21,6 +21,7 @@ export type SensorProbeDeps = {
   hasGyroscope: boolean
   hasAbsoluteOrientationSensor: boolean
   hasGravitySensor: boolean
+  hasDeviceMotionEvent: boolean
   // iOS Safari permission gates (undefined on non-iOS)
   requestMotionPermission?: () => Promise<'granted' | 'denied'>
   requestOrientationPermission?: () => Promise<'granted' | 'denied'>
@@ -36,6 +37,7 @@ export function detectSensorDeps(w: Window & typeof globalThis = window): Sensor
     hasGyroscope: typeof win['Gyroscope'] === 'function',
     hasAbsoluteOrientationSensor: typeof win['AbsoluteOrientationSensor'] === 'function',
     hasGravitySensor: typeof win['GravitySensor'] === 'function',
+    hasDeviceMotionEvent: typeof w.DeviceMotionEvent !== 'undefined',
     requestMotionPermission:
       typeof DevMotion?.requestPermission === 'function'
         ? () => DevMotion.requestPermission!()

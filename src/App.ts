@@ -9,6 +9,7 @@ import { parseRoute, navigateToSession, navigateHome, navigateToNewScan, type Ro
 import { detectSensorDeps } from './sensors/probe'
 import type { GyroLike } from './sensors/ghostOverlayCanvas'
 import type { AccelerometerLike } from './sensors/imuRecorder'
+import { DeviceMotionGyroAdapter, DeviceMotionAccelAdapter } from './sensors/deviceMotionAdapter'
 
 export type MibliotecaAppDeps = {
   openDb?: () => Promise<ShelfwalkDatabase>
@@ -53,10 +54,14 @@ export function mountMibliotecaApp(root: HTMLElement, deps: MibliotecaAppDeps = 
       const sensors = detectSensorDeps()
       const gyro = sensors.hasGyroscope
         ? (new Gyroscope({ frequency: 60 }) as unknown as GyroLike)
-        : null
+        : sensors.hasDeviceMotionEvent
+          ? new DeviceMotionGyroAdapter(window)
+          : null
       const accel = sensors.hasAccelerometer
         ? (new Accelerometer({ frequency: 60 }) as unknown as AccelerometerLike)
-        : null
+        : sensors.hasDeviceMotionEvent
+          ? new DeviceMotionAccelAdapter(window)
+          : null
       captureView = new CaptureView(root, { bootstrapResult: bootstrap, onBack: navigateHome, gyro, accel })
     } else if (route.kind === 'new-scan') {
       unmountScanManagement = mountScanManagementView(root, {

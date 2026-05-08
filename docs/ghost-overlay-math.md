@@ -577,3 +577,170 @@ Every `.mbibundle.zip` already includes the debug log for that session at `debug
 | Export log | Tap "Export logs" button (bottom-right corner) |
 | Replay page | `/debug-replay.html` |
 | Debug log in bundle | `debug.json` inside the `.mbibundle.zip` |
+
+---
+
+## Expected Test Results — Movement Page (`/movement.html`)
+
+The movement page is a 2×3 grid for calibration:
+
+```
+┌─────────┬─────────┬─────────┐
+│  1 red  │ 2 org.  │ 3 gold  │   ← top row
+├─────────┼─────────┼─────────┤
+│  6 blue │ 5 teal  │ 4 green │   ← bottom row
+└─────────┴─────────┴─────────┘
+```
+
+Recommended scan order: **1 → 2 → 3**, then **6 → 5 → 4** (snake/boustrophedon).
+
+---
+
+### Reference numbers (portrait, iPhone 14 Pro, screen at ~50 cm)
+
+| Parameter | Value |
+|---|---|
+| `displayWidth` | 393 px (CSS pixels) |
+| `displayHeight` | 852 px |
+| `hFov` | 65° (default assumption) |
+| `focalLength` | 196 / tan(32.5°) ≈ **308 px** |
+| Cell angular width at 50 cm\* | arctan(10 / 50) ≈ 11.3° ≈ **0.197 rad** |
+| Cell angular height at 50 cm\* | arctan(9.5 / 50) ≈ 10.8° ≈ **0.188 rad** |
+
+\* Based on a 13" laptop (30 × 19 cm usable area). Scale linearly for other setups:
+`angular_width_rad = arctan( cell_width_cm / distance_cm )`.
+
+---
+
+### Expected events and values per capture
+
+#### Capture 1 — cell 1 (first capture, no ghost yet)
+
+```json
+{ "event": "capture:shutter",
+  "ghost": null }
+```
+
+After capture 1, `ghost:reference-frame-set` fires and all integrals reset to 0.
+
+---
+
+#### Sweep right 1 → 2 (phone pans right)
+
+**Sign convention**: panning right → `gy < 0` → `yawIntegral > 0` → `shiftPx < 0` (ghost goes left).
+
+| Field | Expected sign | Rough magnitude |
+|---|---|---|
+| `gy` (sensor) | negative | 0.3 – 1.5 rad/s during sweep |
+| `yawIntegral` | positive | ~0.197 rad after one cell |
+| `shiftPx` | **negative** | ~−61 px (308 × 0.197) |
+| `pitchIntegral` | ~0 (phone stays level) | < 0.05 rad |
+| `shiftPy` | ~0 | < 15 px |
+
+When you stop moving to line up the shot:
+- `omegaMag` drops below **0.40 rad/s** → `ghost:visibility-changed { visible: true }`
+- `ghost:at-shutter` inside `capture:shutter` should show `visible: true`
+
+#### Capture 2 — cell 2
+
+```json
+{ "event": "capture:shutter",
+  "ghost": {
+    "shiftPx":     -61,      ← negative (ghost shifted left)
+    "shiftPy":       0,      ← near zero if phone held level
+    "yawIntegral": +0.197,   ← ~one cell worth of sweep
+    "pitchIntegral":  0,
+    "visible":     true,
+    "displayWidth":  393,
+    "displayHeight": 852
+  }
+}
+```
+
+After capture 2, all integrals reset to 0 and the ghost shows cell 2's frame.
+
+---
+
+#### Sweep right 2 → 3 (identical to 1 → 2)
+
+Same signs, same magnitudes. The ghost should shift left by ~−61 px again.
+
+#### Capture 3 — cell 3
+
+Same as capture 2: `shiftPx ≈ −61`, `shiftPy ≈ 0`, `visible: true`.
+
+---
+
+#### Sweep 3 → 6 (sweep left AND tilt down)
+
+After capture 3 the phone must move to cell 6 (bottom-left corner):
+
+- **Horizontal**: pan left ≈ 2 cells → `gy > 0` → `yawIntegral < 0` → `shiftPx > 0`
+- **Vertical**: tilt down to look at the bottom row → `gx < 0` → `pitchIntegral < 0` → `shiftPy < 0` (ghost moves up)
+
+| Field | Expected sign | Rough magnitude |
+|---|---|---|
+| `yawIntegral` | **negative** | ~ −0.394 rad (2 cells left) |
+| `shiftPx` | **positive** | ~+121 px |
+| `pitchIntegral` | **negative** | ~ −0.188 rad (1 row down) |
+| `shiftPy` | **negative** | ~−58 px |
+
+#### Capture 4 — cell 6
+
+```json
+{ "event": "capture:shutter",
+  "ghost": {
+    "shiftPx":     +121,     ← positive (ghost shifted right)
+    "shiftPy":      -58,     ← negative (ghost shifted up)
+    "yawIntegral": -0.394,
+    "pitchIntegral": -0.188,
+    "visible":     true
+  }
+}
+```
+
+---
+
+#### Sweeps 6 → 5 and 5 → 4 (bottom row, panning right)
+
+Mirror of the top row. Expected values are identical to the 1→2→3 sweeps:
+
+- `yawIntegral` positive ≈ +0.197 per cell
+- `shiftPx` negative ≈ −61 px
+- `pitchIntegral` near 0 (phone already at bottom-row angle)
+- `shiftPy` near 0
+
+---
+
+### What "looks wrong"
+
+| Symptom | Likely cause |
+|---|---|
+| `shiftPx` has the **wrong sign** (ghost moves with camera instead of opposite) | Axis inversion bug — `yawOmega` sign reversed |
+| `shiftPx` is tiny (< 10 px) despite large sweep | `displayWidth` fell back to canvas bitmap width (e.g. 1280) instead of CSS width; focal length is ~3× too large, shift is clamped |
+| `shiftPx` is huge (> 300 px) and clamps immediately | `displayWidth` is too small (0 → fell back to 0), shift formula divides by near-zero focal |
+| Ghost invisible throughout (`visible: false`) | `omegaMag` never drops below 0.40 — phone vibration or fast environment; or motion gate firing at wrong threshold |
+| Ghost **flickers** (visibility changes > 5× per section) | `omegaMag` hovering between 0.40 and 0.55 — hysteresis band too narrow |
+| `shiftPy` doesn't change even when tilting phone | `gx` returns null or sensor not available on the device |
+| Capture 2 `shiftPx` = 0 despite correct sweep | `setSnapshot` reset fired **after** `getDebugState` was called — check event order in log |
+
+---
+
+### Quick formula to verify your specific setup
+
+```
+expected_shiftPx = −(displayWidth / 2) / tan(hFov_rad / 2) × yawIntegral
+```
+
+If you know the physical cell width (`w_cm`) and your distance from the screen (`d_cm`):
+
+```
+yawIntegral ≈ arctan(w_cm / d_cm)          [in radians]
+expected_shiftPx ≈ −308 × arctan(w / d)    [for a 393px-wide display]
+```
+
+Example — 20 cm cell, 60 cm distance:
+```
+yawIntegral = arctan(20/60) = arctan(0.333) ≈ 0.322 rad
+expected_shiftPx = −308 × 0.322 ≈ −99 px
+```

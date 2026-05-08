@@ -222,42 +222,67 @@ describe('initialGhostState translation fields', () => {
 
 describe('feedGhostAccel', () => {
   const base = () => initialGhostState()
-  const sample = (overrides: Partial<{ ax: number; ay: number; interval_ms: number; betaDeg: number }> = {}) => ({
-    ax: 0, ay: 0, interval_ms: 100, betaDeg: 90, ...overrides,
+  const sample = (overrides: Partial<{ ax: number; ay: number; interval_ms: number; betaDeg: number; t: number }> = {}) => ({
+    ax: 0, ay: 0, interval_ms: 100, betaDeg: 90, t: 0, ...overrides,
   })
 
   it('integrates lateral acceleration into velocity and displacement', () => {
-    const s = feedGhostAccel(base(), sample({ ax: 1.0, interval_ms: 100 }))
-    // dt = 0.1s; velX = 0 + 1.0*0.1 = 0.1; dx_m = (0+0.1)/2 * 0.1 = 0.005
+    const s = feedGhostAccel(base(), sample({ ax: 1.0, interval_ms: 100, t: 0 }))
+    // First sample: lastAccelT=-Infinity → dt = min(interval_ms/1000, 0.1) = 0.1s
+    // velX = 0 + 1.0*0.1 = 0.1; dx_m = (0+0.1)/2 * 0.1 = 0.005
     expect(s.velX).toBeCloseTo(0.1)
     expect(s.dx_m).toBeCloseTo(0.005)
   })
 
   it('integrates vertical acceleration into velocity and displacement', () => {
-    const s = feedGhostAccel(base(), sample({ ay: 2.0, interval_ms: 100 }))
-    // dt = 0.1s (capped); velY = 2.0*0.1 = 0.2; dy_m = (0+0.2)/2 * 0.1 = 0.01
+    const s = feedGhostAccel(base(), sample({ ay: 2.0, interval_ms: 100, t: 0 }))
+    // dt = 0.1s; velY = 2.0*0.1 = 0.2; dy_m = (0+0.2)/2 * 0.1 = 0.01
     expect(s.velY).toBeCloseTo(0.2)
     expect(s.dy_m).toBeCloseTo(0.01)
   })
 
   it('uses trapezoidal integration (averages old and new velocity for position)', () => {
-    // Two samples: first builds velocity, second uses trapezoidal rule
-    const s1 = feedGhostAccel(base(), sample({ ax: 1.0, interval_ms: 100 }))
-    const s2 = feedGhostAccel(s1, sample({ ax: 1.0, interval_ms: 100 }))
+    // Two samples 100ms apart; second sample uses wallclock elapsed time
+    const s1 = feedGhostAccel(base(), sample({ ax: 1.0, interval_ms: 100, t: 0 }))
+    const s2 = feedGhostAccel(s1, sample({ ax: 1.0, interval_ms: 100, t: 100 }))
     // After s1: velX=0.1, dx=0.005
-    // After s2: velX=0.2, dx = 0.005 + (0.1+0.2)/2 * 0.1 = 0.005 + 0.015 = 0.02
+    // After s2: dt = (100-0)/1000 = 0.1s; velX=0.2, dx = 0.005 + (0.1+0.2)/2 * 0.1 = 0.02
     expect(s2.velX).toBeCloseTo(0.2)
     expect(s2.dx_m).toBeCloseTo(0.02)
   })
 
-  it('caps dt at 100ms to guard against stale interval values', () => {
-    const s = feedGhostAccel(base(), sample({ ax: 1.0, interval_ms: 5000 }))
-    expect(s.velX).toBeCloseTo(0.1)  // dt clamped to 0.1s, not 5s
+  it('caps first-sample dt at 100ms to guard against bogus interval_ms values', () => {
+    const s = feedGhostAccel(base(), sample({ ax: 1.0, interval_ms: 5000, t: 0 }))
+    expect(s.velX).toBeCloseTo(0.1)  // first sample: dt = min(5000/1000, 0.1) = 0.1s
+  })
+
+  it('uses wallclock elapsed time for subsequent samples, not device-reported interval_ms', () => {
+    const s1 = feedGhostAccel(base(), sample({ ax: 0, interval_ms: 16, t: 0 }))
+    // Second sample: wallclock says 200ms elapsed, device reports 16ms
+    const s2 = feedGhostAccel(s1, sample({ ax: 1.0, interval_ms: 16, t: 200 }))
+    // dt = min((200-0)/1000, 0.5) = 0.2s — wallclock wins over 16ms interval
+    expect(s2.velX).toBeCloseTo(1.0 * 0.2)
+  })
+
+  it('caps wallclock elapsed dt at 500ms to guard against phantom drift after backgrounding', () => {
+    const s1 = feedGhostAccel(base(), sample({ ax: 0, t: 0 }))
+    const s2 = feedGhostAccel(s1, sample({ ax: 1.0, t: 10000 }))  // 10s gap (app backgrounded)
+    expect(s2.velX).toBeCloseTo(1.0 * 0.5)  // capped at 0.5s, not 10s
+  })
+
+  it('records lastAccelT from sample.t', () => {
+    const s = feedGhostAccel(base(), sample({ t: 999 }))
+    expect(s.lastAccelT).toBe(999)
   })
 
   it('returns state unchanged for non-finite ax', () => {
     const s = base()
     expect(feedGhostAccel(s, sample({ ax: NaN }))).toBe(s)
+  })
+
+  it('returns state unchanged for non-finite t', () => {
+    const s = base()
+    expect(feedGhostAccel(s, sample({ t: Infinity }))).toBe(s)
   })
 
   it('returns state unchanged for non-finite betaDeg', () => {
@@ -266,9 +291,9 @@ describe('feedGhostAccel', () => {
   })
 
   it('zeros velocity and skips position update when phone is near-horizontal (|beta-90| > 30)', () => {
-    const sMoving = feedGhostAccel(base(), sample({ ax: 1.0, interval_ms: 100, betaDeg: 90 }))
+    const sMoving = feedGhostAccel(base(), sample({ ax: 1.0, interval_ms: 100, betaDeg: 90, t: 0 }))
     // Phone goes flat (beta=0) — gravity leaks into ax
-    const sFlat = feedGhostAccel(sMoving, sample({ ax: 9.8, interval_ms: 100, betaDeg: 0 }))
+    const sFlat = feedGhostAccel(sMoving, sample({ ax: 9.8, interval_ms: 100, betaDeg: 0, t: 100 }))
     expect(sFlat.velX).toBe(0)
     expect(sFlat.velY).toBe(0)
     // dx_m is retained (not zeroed by the guard)
@@ -276,24 +301,24 @@ describe('feedGhostAccel', () => {
   })
 
   it('accepts beta=90 (phone upright) without zeroing', () => {
-    const s = feedGhostAccel(base(), sample({ ax: 1.0, interval_ms: 100, betaDeg: 90 }))
+    const s = feedGhostAccel(base(), sample({ ax: 1.0, interval_ms: 100, betaDeg: 90, t: 0 }))
     expect(s.velX).toBeGreaterThan(0)
   })
 
   it('accepts beta=70 (|70-90|=20 < 30) without zeroing', () => {
-    const s = feedGhostAccel(base(), sample({ ax: 1.0, interval_ms: 100, betaDeg: 70 }))
+    const s = feedGhostAccel(base(), sample({ ax: 1.0, interval_ms: 100, betaDeg: 70, t: 0 }))
     expect(s.velX).toBeGreaterThan(0)
   })
 
   it('zeros velocity but returns same ref when velocity is already zero on horizontal guard', () => {
     const s = base()  // velX=velY=0
-    const next = feedGhostAccel(s, sample({ ax: 1.0, interval_ms: 100, betaDeg: 0 }))
+    const next = feedGhostAccel(s, sample({ ax: 1.0, interval_ms: 100, betaDeg: 0, t: 0 }))
     expect(next).toBe(s)  // same reference since nothing changed
   })
 
   it('preserves gyro fields (yawIntegral, omegaMag) when updating accel state', () => {
     const gyroState = { ...base(), yawIntegral: 1.5, omegaMag: 0.3 }
-    const s = feedGhostAccel(gyroState, sample({ ax: 0.5, interval_ms: 100 }))
+    const s = feedGhostAccel(gyroState, sample({ ax: 0.5, interval_ms: 100, t: 0 }))
     expect(s.yawIntegral).toBe(1.5)
     expect(s.omegaMag).toBe(0.3)
   })
@@ -301,14 +326,14 @@ describe('feedGhostAccel', () => {
 
 describe('zeroVelocity', () => {
   it('zeros velX and velY', () => {
-    const s = feedGhostAccel(initialGhostState(), { ax: 1.0, ay: 2.0, interval_ms: 100, betaDeg: 90 })
+    const s = feedGhostAccel(initialGhostState(), { ax: 1.0, ay: 2.0, interval_ms: 100, betaDeg: 90, t: 0 })
     const z = zeroVelocity(s)
     expect(z.velX).toBe(0)
     expect(z.velY).toBe(0)
   })
 
   it('retains dx_m and dy_m (position not reset on gate-close ZUPT)', () => {
-    const s = feedGhostAccel(initialGhostState(), { ax: 1.0, ay: 2.0, interval_ms: 100, betaDeg: 90 })
+    const s = feedGhostAccel(initialGhostState(), { ax: 1.0, ay: 2.0, interval_ms: 100, betaDeg: 90, t: 0 })
     const z = zeroVelocity(s)
     expect(z.dx_m).toBe(s.dx_m)
     expect(z.dy_m).toBe(s.dy_m)

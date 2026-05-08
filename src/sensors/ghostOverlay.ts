@@ -8,14 +8,16 @@ export type GyroSample = {
 export type AccelSample = {
   ax: number          // m/s², gravity-subtracted lateral acceleration (DeviceMotionEvent.acceleration.x)
   ay: number          // m/s², gravity-subtracted vertical acceleration
-  interval_ms: number // from DeviceMotionEvent.interval (ms)
+  interval_ms: number // from DeviceMotionEvent.interval (ms); used only for the first sample (no prior timestamp)
   betaDeg: number     // DeviceOrientationEvent.beta (0=flat, 90=upright facing wall)
+  t: number           // DOMHighResTimeStamp; used for elapsed-time guard on subsequent samples
 }
 
 export type GhostOverlayState = {
   readonly yawIntegral: number    // accumulated horizontal rotation (rad) since last reset
   readonly pitchIntegral: number  // accumulated vertical tilt (rad) since last reset
   readonly lastT: number          // ms of last gyro sample (-Infinity = no sample yet)
+  readonly lastAccelT: number     // ms of last accel sample (-Infinity = no sample yet); used for wallclock-elapsed dt guard
   readonly omegaMag: number       // |ω| = sqrt(gx²+gy²+gz²), rad/s
   readonly velX: number           // m/s, lateral velocity since last reset (device x-axis)
   readonly velY: number           // m/s, vertical velocity since last reset (device y-axis)
@@ -26,7 +28,7 @@ export type GhostOverlayState = {
 const DEFAULT_HFOV_DEG = 65
 
 export function initialGhostState(): GhostOverlayState {
-  return { yawIntegral: 0, pitchIntegral: 0, lastT: -Infinity, omegaMag: 0, velX: 0, velY: 0, dx_m: 0, dy_m: 0 }
+  return { yawIntegral: 0, pitchIntegral: 0, lastT: -Infinity, lastAccelT: -Infinity, omegaMag: 0, velX: 0, velY: 0, dx_m: 0, dy_m: 0 }
 }
 
 // scanAxis 'y' = portrait (gamma/device-y); 'x' = landscape (beta/device-x). Caller should
@@ -69,13 +71,19 @@ export function feedGhostAccel(
   state: GhostOverlayState,
   sample: AccelSample,
 ): GhostOverlayState {
-  if (!isFinite(sample.ax) || !isFinite(sample.ay) || !isFinite(sample.betaDeg) || !isFinite(sample.interval_ms)) return state
+  if (!isFinite(sample.ax) || !isFinite(sample.ay) || !isFinite(sample.betaDeg) || !isFinite(sample.interval_ms) || !isFinite(sample.t)) return state
   if (Math.abs(sample.betaDeg - 90) > 30) {
     // Phone near-horizontal: gravity leaks into ax/ay. Zero velocity but don't update position.
+    // Early return when already zeroed (avoids allocation).
     if (state.velX === 0 && state.velY === 0) return state
-    return { ...state, velX: 0, velY: 0 }
+    return { ...state, velX: 0, velY: 0, lastAccelT: sample.t }
   }
-  const dt = Math.min(sample.interval_ms / 1000, 0.1) // cap at 100ms
+  // Use wallclock elapsed time to avoid scale errors from device-reported nominal interval.
+  // First sample falls back to interval_ms (capped at 100ms). Subsequent samples cap at 500ms
+  // to guard against phantom drift after the app is backgrounded — matching feedGhostGyro's lastT guard.
+  const dt = state.lastAccelT === -Infinity
+    ? Math.min(sample.interval_ms / 1000, 0.1)
+    : Math.min((sample.t - state.lastAccelT) / 1000, 0.5)
   const newVelX = state.velX + sample.ax * dt
   const newVelY = state.velY + sample.ay * dt
   return {
@@ -84,6 +92,7 @@ export function feedGhostAccel(
     velY: newVelY,
     dx_m: state.dx_m + (state.velX + newVelX) / 2 * dt,
     dy_m: state.dy_m + (state.velY + newVelY) / 2 * dt,
+    lastAccelT: sample.t,
   }
 }
 
@@ -95,29 +104,30 @@ export function zeroVelocity(state: GhostOverlayState): GhostOverlayState {
   return { ...state, velX: 0, velY: 0 }
 }
 
-// shiftX = -(displayWidth/2) / tan(hFov/2) * yawIntegral, clamped to ±displayWidth/2.
+function focalLengthPx(displayWidth: number, hFovDeg: number): number {
+  return (displayWidth / 2) / Math.tan((hFovDeg * Math.PI) / 180 / 2)
+}
+
+// shiftX = -focal * yawIntegral, clamped to ±displayWidth/2.
 // displayWidth must be the CSS pixel width of the rendered element (not the bitmap width).
 // Camera sweeps right (gy < 0) → yawIntegral > 0 → negative shift (ghost moves left, appears fixed in space).
 export function computeShiftPx(yawIntegral: number, displayWidth: number, hFovDeg = DEFAULT_HFOV_DEG): number {
-  const hFovRad = (hFovDeg * Math.PI) / 180
-  const shift = -(displayWidth / 2) / Math.tan(hFovRad / 2) * yawIntegral
+  const shift = -focalLengthPx(displayWidth, hFovDeg) * yawIntegral
   const half = displayWidth / 2
   return Math.max(-half, Math.min(half, shift))
 }
 
 // shiftY = focal * pitchIntegral, clamped to ±displayHeight/2.
-// Uses the same focal length as computeShiftPx (square-pixel pinhole model).
 // Camera tilts top away (looks up) → pitchIntegral > 0 → positive shiftY (ghost moves down, appears fixed in space).
 export function computeShiftPy(pitchIntegral: number, displayWidth: number, displayHeight: number, hFovDeg = DEFAULT_HFOV_DEG): number {
-  const hFovRad = (hFovDeg * Math.PI) / 180
-  const focal = (displayWidth / 2) / Math.tan(hFovRad / 2)
-  const shift = focal * pitchIntegral
+  const shift = focalLengthPx(displayWidth, hFovDeg) * pitchIntegral
   const half = displayHeight / 2
   return Math.max(-half, Math.min(half, shift))
 }
 
 // Lateral translation shift from DeviceMotion integration (unclamped; canvas applies final clamp on combined total).
 // Camera moves right (+dx_m) → shelf appears to shift left → negative shiftPx (ghost moves left = fixed in space).
+// The minus sign is the AR correctness requirement: phone right → ghost left.
 export function computeTranslationShiftPx(
   dx_m: number,
   workingDistanceM: number,
@@ -125,13 +135,12 @@ export function computeTranslationShiftPx(
   hFovDeg = DEFAULT_HFOV_DEG,
 ): number {
   if (workingDistanceM <= 0) return 0
-  const hFovRad = (hFovDeg * Math.PI) / 180
-  const focal = (displayWidth / 2) / Math.tan(hFovRad / 2)
-  return -(dx_m / workingDistanceM) * focal
+  return -(dx_m / workingDistanceM) * focalLengthPx(displayWidth, hFovDeg)
 }
 
 // Vertical translation shift (unclamped; canvas applies final clamp on combined total).
 // Camera moves up (+dy_m) → shelf appears to shift down → positive shiftPy (ghost moves down = fixed in space).
+// Positive (no negation): contrast with Px — phone up (+dy_m) → ghost down, not left/right.
 export function computeTranslationShiftPy(
   dy_m: number,
   workingDistanceM: number,
@@ -139,7 +148,5 @@ export function computeTranslationShiftPy(
   hFovDeg = DEFAULT_HFOV_DEG,
 ): number {
   if (workingDistanceM <= 0) return 0
-  const hFovRad = (hFovDeg * Math.PI) / 180
-  const focal = (displayWidth / 2) / Math.tan(hFovRad / 2)
-  return (dy_m / workingDistanceM) * focal
+  return (dy_m / workingDistanceM) * focalLengthPx(displayWidth, hFovDeg)
 }

@@ -123,12 +123,16 @@ export class GhostOverlayCanvas {
 
   private onMotionReading() {
     const motion = this.deps.motion!
+    // Defense in depth: adapter already guards against null, but belt-and-suspenders.
+    // Stale non-zero velocity with ax=0 would silently accumulate displacement.
+    if (motion.x === null || motion.y === null) return
     const betaDeg = this.deps.getBeta?.() ?? 90
     const sample: AccelSample = {
-      ax: motion.x ?? 0,
-      ay: motion.y ?? 0,
-      interval_ms: motion.interval || 16,
+      ax: motion.x,
+      ay: motion.y,
+      interval_ms: motion.interval || 16,  // some browsers report 0; MotionLike types it as number but 0 is possible
       betaDeg,
+      t: this.deps.now(),
     }
     this.state = feedGhostAccel(this.state, sample)
   }

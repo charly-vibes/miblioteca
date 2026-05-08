@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { DeviceMotionGyroAdapter, DeviceMotionAccelAdapter } from './deviceMotionAdapter'
+import { DeviceMotionGyroAdapter, DeviceMotionAccelAdapter, DeviceMotionLinearAccelAdapter } from './deviceMotionAdapter'
 
 const DEG_TO_RAD = Math.PI / 180
 
@@ -131,5 +131,68 @@ describe('DeviceMotionAccelAdapter', () => {
     expect(adapter.x).toBeNull()
     expect(adapter.y).toBeNull()
     expect(adapter.z).toBeNull()
+  })
+})
+
+describe('DeviceMotionLinearAccelAdapter', () => {
+  let win: ReturnType<typeof makeWindow>
+  let adapter: DeviceMotionLinearAccelAdapter
+
+  beforeEach(() => {
+    win = makeWindow()
+    adapter = new DeviceMotionLinearAccelAdapter(win as unknown as Window)
+  })
+
+  it('registers listener on start and removes on stop', () => {
+    adapter.start()
+    expect(win.addEventListener).toHaveBeenCalledWith('devicemotion', expect.any(Function))
+    adapter.stop()
+    expect(win.removeEventListener).toHaveBeenCalledWith('devicemotion', expect.any(Function))
+  })
+
+  it('propagates gravity-subtracted x/y from e.acceleration', () => {
+    adapter.start()
+    win.dispatch('devicemotion', {
+      acceleration: { x: 0.5, y: -0.3 },
+      interval: 16.7,
+    })
+    expect(adapter.x).toBe(0.5)
+    expect(adapter.y).toBe(-0.3)
+    expect(adapter.interval).toBeCloseTo(16.7)
+  })
+
+  it('fires onreading when e.acceleration is non-null', () => {
+    const cb = vi.fn()
+    adapter.onreading = cb
+    adapter.start()
+    win.dispatch('devicemotion', { acceleration: { x: 1, y: 2 }, interval: 16 })
+    expect(cb).toHaveBeenCalledOnce()
+  })
+
+  it('does NOT fire onreading when e.acceleration is null', () => {
+    const cb = vi.fn()
+    adapter.onreading = cb
+    adapter.start()
+    win.dispatch('devicemotion', { acceleration: null, interval: 16 })
+    expect(cb).not.toHaveBeenCalled()
+  })
+
+  it('leaves x/y as null and skips onreading when e.acceleration is null', () => {
+    adapter.start()
+    win.dispatch('devicemotion', { acceleration: null, interval: 16 })
+    expect(adapter.x).toBeNull()
+    expect(adapter.y).toBeNull()
+  })
+
+  it('falls back to 16ms interval when e.interval is 0', () => {
+    adapter.start()
+    win.dispatch('devicemotion', { acceleration: { x: 0, y: 0 }, interval: 0 })
+    expect(adapter.interval).toBe(16)
+  })
+
+  it('uses actual interval when provided', () => {
+    adapter.start()
+    win.dispatch('devicemotion', { acceleration: { x: 0, y: 0 }, interval: 33 })
+    expect(adapter.interval).toBe(33)
   })
 })

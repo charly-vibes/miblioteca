@@ -44,11 +44,12 @@ export function feedGhostGyro(
   }
 }
 
-// shiftX = -(videoWidth/2) / tan(hFov/2) * yawIntegral, clamped to ±videoWidth/2.
+// shiftX = -(displayWidth/2) / tan(hFov/2) * yawIntegral, clamped to ±displayWidth/2.
+// displayWidth must be the CSS pixel width of the rendered element (not the bitmap width).
 // Camera sweeps right (gy < 0) → yawIntegral > 0 → negative shift (ghost moves left, appears fixed in space).
-export function computeShiftPx(yawIntegral: number, videoWidth: number, hFovDeg = DEFAULT_HFOV_DEG): number {
+export function computeShiftPx(yawIntegral: number, displayWidth: number, hFovDeg = DEFAULT_HFOV_DEG): number {
   const hFovRad = (hFovDeg * Math.PI) / 180
-  const shift = -(videoWidth / 2) / Math.tan(hFovRad / 2) * yawIntegral
-  const half = videoWidth / 2
+  const shift = -(displayWidth / 2) / Math.tan(hFovRad / 2) * yawIntegral
+  const half = displayWidth / 2
   return Math.max(-half, Math.min(half, shift))
 }

@@ -25,6 +25,7 @@ const MOTION_GATE_RAD_S = 0.5
 export class GhostOverlayCanvas {
   private readonly canvas: HTMLCanvasElement
   private readonly ctx: CanvasRenderingContext2D
+  private readonly viewfinder: HTMLElement
   private state: GhostOverlayState = initialGhostState()
   private rafId = 0
   private currentShiftPx = 0
@@ -32,9 +33,11 @@ export class GhostOverlayCanvas {
   private destroyed = false
   private firstRafFired = false
   private lastOrientationLogMs = 0
+  private lastShiftLogMs = 0
   private readonly deps: Required<GhostOverlayCanvasDeps>
 
   constructor(viewfinder: HTMLElement, deps: GhostOverlayCanvasDeps) {
+    this.viewfinder = viewfinder
     this.deps = {
       gyro: deps.gyro,
       requestAnimationFrame: deps.requestAnimationFrame ?? ((cb) => window.requestAnimationFrame(cb)),
@@ -71,10 +74,12 @@ export class GhostOverlayCanvas {
       gy: gyro.y ?? 0,
       gz: gyro.z ?? 0,
     }
-    this.state = feedGhostGyro(this.state, sample)
+    const orientationType = (typeof screen !== 'undefined' && screen.orientation?.type) || 'portrait-primary'
+    const scanAxis: 'x' | 'y' = orientationType.startsWith('landscape') ? 'x' : 'y'
+    this.state = feedGhostGyro(this.state, sample, scanAxis)
     const sinceLastLog = now - this.lastOrientationLogMs
-    if (this.lastOrientationLogMs === 0 || sinceLastLog >= 2000) {
-      debugLogger.log('sensor:orientation-sample', { gx: sample.gx, gy: sample.gy, gz: sample.gz })
+    if (this.lastOrientationLogMs === 0 || sinceLastLog >= 500) {
+      debugLogger.log('sensor:orientation-sample', { gx: sample.gx, gy: sample.gy, gz: sample.gz, scanAxis, omegaMag: this.state.omegaMag })
       this.lastOrientationLogMs = now
     }
   }
@@ -90,13 +95,22 @@ export class GhostOverlayCanvas {
     const shouldShow = this.hasSnapshot && this.state.omegaMag <= MOTION_GATE_RAD_S
     if (this.canvas.hidden !== !shouldShow) {
       this.canvas.hidden = !shouldShow
+      debugLogger.log('ghost:visibility-changed', { visible: shouldShow, omegaMag: this.state.omegaMag, yawIntegral: this.state.yawIntegral })
     }
     if (this.canvas.hidden) return
 
-    const shiftPx = computeShiftPx(this.state.yawIntegral, this.canvas.width)
+    // Use CSS display width so shiftPx is in CSS pixels, not bitmap pixels.
+    const displayWidth = this.viewfinder.clientWidth || this.canvas.width
+    const shiftPx = computeShiftPx(this.state.yawIntegral, displayWidth)
     if (shiftPx !== this.currentShiftPx) {
       this.canvas.style.transform = `translate3d(${shiftPx}px, 0, 0)`
       this.currentShiftPx = shiftPx
+    }
+
+    const now = this.deps.now()
+    if (now - this.lastShiftLogMs >= 500) {
+      debugLogger.log('ghost:shift', { shiftPx, yawIntegral: this.state.yawIntegral, displayWidth })
+      this.lastShiftLogMs = now
     }
   }
 

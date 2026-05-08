@@ -242,8 +242,7 @@ export async function assembleBundle(input: BundleAssemblyInput): Promise<Bundle
     const validationError = await validateArchive(blob, manifest)
     if (validationError) return fail(validationError)
 
-    const date = exportedAt.slice(0, 10)
-    const filename = bundleFilename(scan.shortCode, scan.shortCode, date)
+    const filename = bundleFilename(scan.shortCode, exportedAt)
     const bundleSha256 = await sha256Hex(await blobToBuffer(blob))
 
     await setSessionStates(db, sessions, {

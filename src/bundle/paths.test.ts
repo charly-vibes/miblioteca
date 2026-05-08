@@ -57,21 +57,15 @@ describe('sessionPreviewFramePath', () => {
 })
 
 describe('bundleFilename', () => {
-  it('uses scan label and short code with date', () => {
-    expect(bundleFilename('My Library', 'abc123', '2026-05-07')).toBe(
-      'my-library_abc123_2026-05-07.mbibundle.zip'
+  it('includes short code, date, and HH-MM from exportedAt', () => {
+    expect(bundleFilename('TB-9170', '2026-05-08T00:09:00.202Z')).toBe(
+      'TB-9170_2026-05-08_00-09.mbibundle.zip'
     )
   })
 
-  it('falls back to scan ID prefix when no label', () => {
-    expect(bundleFilename('', 'abc123', '2026-05-07')).toBe(
-      'scan_abc123_2026-05-07.mbibundle.zip'
-    )
-  })
-
-  it('strips non-filesystem-safe characters from label', () => {
-    expect(bundleFilename('Borges / Café (2026)', 'abc123', '2026-05-07')).toBe(
-      'borges-cafe-2026_abc123_2026-05-07.mbibundle.zip'
+  it('preserves short code casing', () => {
+    expect(bundleFilename('ABC123', '2026-05-07T14:30:00.000Z')).toBe(
+      'ABC123_2026-05-07_14-30.mbibundle.zip'
     )
   })
 })

@@ -37,14 +37,8 @@ export function sessionMetadataPath(sessionId: string): string {
   return `sessions/${sessionId}.json`
 }
 
-export function bundleFilename(scanLabel: string, shortCode: string, date: string): string {
-  const slug = scanLabel
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')  // strip diacritics
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-
-  const prefix = slug || 'scan'
-  return `${prefix}_${shortCode}_${date}.mbibundle.zip`
+export function bundleFilename(shortCode: string, exportedAt: string): string {
+  const date = exportedAt.slice(0, 10)
+  const time = exportedAt.slice(11, 16).replace(':', '-')
+  return `${shortCode}_${date}_${time}.mbibundle.zip`
 }

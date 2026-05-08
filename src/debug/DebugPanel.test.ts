@@ -65,8 +65,8 @@ describe('DebugPanel — enabled', () => {
     expect(blob.type).toBe('application/json')
 
     expect(capturedAnchor).not.toBeNull()
-    expect((capturedAnchor as HTMLAnchorElement).download).toMatch(/^miblioteca-debug-.+\.json$/)
-    expect((capturedAnchor as HTMLAnchorElement).href).toBe(mockUrl)
+    expect(capturedAnchor!.download).toMatch(/^miblioteca-debug-.+\.json$/)
+    expect(capturedAnchor!.href).toBe(mockUrl)
   })
 
   it('destroy() removes button from DOM', () => {

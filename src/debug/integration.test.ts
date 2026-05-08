@@ -129,7 +129,7 @@ describe('ghost overlay events', () => {
       cancelAnimationFrame: vi.fn(),
       now: () => 0,
     })
-    rafCb?.(0)
+    ;(rafCb as unknown as FrameRequestCallback)(0)
     expect(hasEvent('ghost:render-tick')).toBe(true)
   })
 

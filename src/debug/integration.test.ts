@@ -217,8 +217,21 @@ describe('share and download events', () => {
       createObjectURL: vi.fn().mockReturnValue('blob:test'),
       revokeObjectURL: vi.fn(),
     })
+    const a = document.createElement('a')
+    const clickSpy = vi.spyOn(a, 'click').mockImplementation(() => {
+      // do nothing
+    })
+    const createSpy = vi.spyOn(document, 'createElement').mockReturnValue(a)
+    const appendSpy = vi.spyOn(document.body, 'appendChild').mockImplementation(() => a)
+    const removeSpy = vi.spyOn(document.body, 'removeChild').mockImplementation(() => a)
+
     downloadBundle(new Blob(['data']), 'test.zip')
+
     expect(hasEvent('download:triggered')).toBe(true)
+    expect(createSpy).toHaveBeenCalledWith('a')
+    expect(clickSpy).toHaveBeenCalledOnce()
+    expect(appendSpy).toHaveBeenCalledWith(a)
+    expect(removeSpy).toHaveBeenCalledWith(a)
   })
 })
 

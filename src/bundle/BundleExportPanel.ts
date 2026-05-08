@@ -24,6 +24,7 @@ type PanelState =
 
 export class BundleExportPanel {
   private state: PanelState = { kind: 'loading' }
+  private destroyed = false
   private readonly opts: BundleExportPanelOptions
   private readonly capability: BundleShareCapability
 
@@ -42,6 +43,8 @@ export class BundleExportPanel {
 
     this.root = document.createElement('div')
     this.root.className = 'bundle-export-panel'
+    this.root.setAttribute('role', 'group')
+    this.root.setAttribute('aria-label', 'Bundle export')
 
     this.statusEl = document.createElement('p')
     this.statusEl.className = 'bundle-export-status'
@@ -119,6 +122,7 @@ export class BundleExportPanel {
   }
 
   private setState(s: PanelState) {
+    if (this.destroyed) return
     this.state = s
     this.render()
   }
@@ -218,6 +222,8 @@ export class BundleExportPanel {
   }
 
   destroy() {
+    this.destroyed = true
+    if (this.state.kind === 'exporting') this.state.controller.abort()
     this.root.remove()
   }
 }

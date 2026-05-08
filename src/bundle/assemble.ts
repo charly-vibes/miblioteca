@@ -155,6 +155,9 @@ export async function assembleBundle(input: BundleAssemblyInput): Promise<Bundle
       const imageBlob = await loadBlob(db, recordId)
       if (!imageBlob) return fail(`Image blob missing for record: ${recordId}`)
 
+      const abortBetweenBlobs = abortError(signal)
+      if (abortBetweenBlobs) return abort(abortBetweenBlobs)
+
       const thumbBlob = await loadThumbnail(db, recordId)
       if (!thumbBlob) return fail(`Thumbnail blob missing for record: ${recordId}`)
 
@@ -193,8 +196,12 @@ export async function assembleBundle(input: BundleAssemblyInput): Promise<Bundle
       const trace = await getTrace(db, session.id)
       if (!trace) continue
 
+      const traceBytes = new Uint8Array(trace.data)
+      const CHUNK = 8192
       let binary = ''
-      for (const b of new Uint8Array(trace.data)) binary += String.fromCharCode(b)
+      for (let i = 0; i < traceBytes.length; i += CHUNK) {
+        binary += String.fromCharCode(...traceBytes.subarray(i, i + CHUNK))
+      }
 
       payloads.push(
         await makeFileEntry(

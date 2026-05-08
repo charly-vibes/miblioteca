@@ -42,6 +42,7 @@ export class GhostOverlayCanvas {
     this.canvas = document.createElement('canvas')
     this.canvas.className = 'ghost-overlay'
     this.canvas.hidden = true
+    this.canvas.setAttribute('aria-hidden', 'true')
     viewfinder.append(this.canvas)
 
     const ctx = this.canvas.getContext('2d')
@@ -69,11 +70,8 @@ export class GhostOverlayCanvas {
   }
 
   private rafLoop: FrameRequestCallback = () => {
+    if (this.destroyed) return
     this.rafId = this.deps.requestAnimationFrame(this.rafLoop)
-    if (this.destroyed) {
-      this.deps.cancelAnimationFrame(this.rafId)
-      return
-    }
 
     const shouldShow = this.hasSnapshot && this.state.omegaMag <= MOTION_GATE_RAD_S
     if (this.canvas.hidden !== !shouldShow) {

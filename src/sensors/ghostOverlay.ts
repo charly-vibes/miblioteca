@@ -27,7 +27,7 @@ export function feedGhostGyro(state: GhostOverlayState, sample: GyroSample): Gho
     return { yawIntegral: state.yawIntegral, lastT: sample.t, omegaMag }
   }
 
-  const dt = (sample.t - state.lastT) / 1000 // ms → seconds
+  const dt = Math.min((sample.t - state.lastT) / 1000, 0.5) // ms → s, clamped to 500ms to guard against stale lastT after long pauses
   return {
     yawIntegral: state.yawIntegral + sample.gz * dt,
     lastT: sample.t,

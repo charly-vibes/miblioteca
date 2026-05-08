@@ -206,7 +206,7 @@ export class CaptureView {
     if (this.bundleExportPanel) return
     void openShelfwalkDb().then((db) => {
       if (this.bundleExportPanel) return
-      this.bundleExportPanel = new BundleExportPanel(this.root, {
+      this.bundleExportPanel = new BundleExportPanel(this.controls, {
         db,
         scanId: result.scan.id,
         appVersion: this.opts.appVersion ?? '0.0.0',

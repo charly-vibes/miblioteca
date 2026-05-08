@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Miblioteca · Movement Test</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #000;
+    }
+
+    /* ── 2×3 grid fills the screen ───────────────── */
+    #grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(2, 1fr);
+      width: 100dvw;
+      height: 100dvh;
+    }
+
+    .cell {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: clamp(4rem, 18vw, 14rem);
+      font-weight: 900;
+      letter-spacing: -0.04em;
+      user-select: none;
+      position: relative;
+    }
+
+    /* top row: 1 2 3 */
+    .c1 { background: #e74c3c; color: #fff; }
+    .c2 { background: #e67e22; color: #fff; }
+    .c3 { background: #c9b800; color: #fff; }   /* golden-yellow, white readable */
+    /* bottom row: 6 5 4 */
+    .c6 { background: #2980b9; color: #fff; }
+    .c5 { background: #16a085; color: #fff; }
+    .c4 { background: #27ae60; color: #fff; }
+
+    /* thin white hairlines between cells */
+    .cell { outline: 2px solid rgba(255,255,255,0.15); }
+
+    /* ── debug panel ─────────────────────────────── */
+    #dbg {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: rgba(0,0,0,0.82);
+      backdrop-filter: blur(6px);
+      color: #e6edf3;
+      font-size: 12px;
+      font-family: 'Cascadia Code', 'Fira Code', monospace;
+      padding: 10px 14px env(safe-area-inset-bottom);
+      display: none;
+      flex-direction: column;
+      gap: 6px;
+      z-index: 99;
+    }
+    #dbg.visible { display: flex; }
+
+    .dbg-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+    .dbg-label { color: #7d8590; }
+    .dbg-val { color: #58a6ff; min-width: 5ch; display: inline-block; text-align: right; }
+    .dbg-val.hot { color: #f0883e; }
+
+    .dbg-btns { display: flex; gap: 8px; }
+    button {
+      font-size: 11px; padding: 4px 10px; border-radius: 6px; border: 1px solid #30363d;
+      background: #21262d; color: #e6edf3; cursor: pointer;
+    }
+    button:active { background: #30363d; }
+    button.recording { border-color: #f85149; color: #f85149; }
+    button.recording:active { background: rgba(248,81,73,.15); }
+
+    /* ── help overlay (non-debug) ────────────────── */
+    #help {
+      position: fixed;
+      top: 12px; right: 12px;
+      background: rgba(0,0,0,0.6);
+      color: #e6edf3;
+      font-size: 11px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      backdrop-filter: blur(4px);
+      z-index: 50;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+
+<div id="grid">
+  <!-- top row -->
+  <div class="cell c1">1</div>
+  <div class="cell c2">2</div>
+  <div class="cell c3">3</div>
+  <!-- bottom row (snake/boustrophedon order) -->
+  <div class="cell c6">6</div>
+  <div class="cell c5">5</div>
+  <div class="cell c4">4</div>
+</div>
+
+<div id="help">Add ?debug to URL to record gyro</div>
+
+<div id="dbg">
+  <div class="dbg-row">
+    <span><span class="dbg-label">α(z) </span><span id="dAlpha" class="dbg-val">—</span>°</span>
+    <span><span class="dbg-label">β(x) </span><span id="dBeta"  class="dbg-val">—</span>°</span>
+    <span><span class="dbg-label">γ(y) </span><span id="dGamma" class="dbg-val">—</span>°</span>
+    <span><span class="dbg-label">|ω|  </span><span id="dOmega" class="dbg-val">—</span> rad/s</span>
+    <span><span class="dbg-label">samples </span><span id="dCount" class="dbg-val">0</span></span>
+  </div>
+  <div class="dbg-row dbg-btns">
+    <button id="btnRecord">⏺ Start recording</button>
+    <button id="btnExport" disabled>⬇ Export JSON</button>
+    <button id="btnClear">✕ Clear</button>
+  </div>
+  <div class="dbg-row" style="color:#7d8590; font-size:10px;">
+    Open camera app with <code style="color:#58a6ff">?debug</code> to record ghost overlay data on the same session
+  </div>
+</div>
+
+<script>
+  const isDebug = location.search.includes('debug');
+  if (!isDebug) {
+    document.getElementById('help').style.display = 'block';
+  } else {
+    document.getElementById('help').style.display = 'none';
+    document.getElementById('dbg').classList.add('visible');
+    startDebug();
+  }
+
+  function startDebug() {
+    const elAlpha = document.getElementById('dAlpha');
+    const elBeta  = document.getElementById('dBeta');
+    const elGamma = document.getElementById('dGamma');
+    const elOmega = document.getElementById('dOmega');
+    const elCount = document.getElementById('dCount');
+    const btnRecord = document.getElementById('btnRecord');
+    const btnExport = document.getElementById('btnExport');
+    const btnClear  = document.getElementById('btnClear');
+
+    let recording = false;
+    let samples = [];
+    let prevAlpha = null, prevBeta = null, prevGamma = null, prevTs = null;
+
+    function fmt(v) { return v == null ? '—' : v.toFixed(1); }
+
+    window.addEventListener('deviceorientation', (e) => {
+      const alpha = e.alpha; // z-axis (compass yaw)
+      const beta  = e.beta;  // x-axis (forward tilt)
+      const gamma = e.gamma; // y-axis (side tilt)
+      const ts    = performance.now();
+
+      elAlpha.textContent = fmt(alpha);
+      elBeta.textContent  = fmt(beta);
+      elGamma.textContent = fmt(gamma);
+
+      // approximate angular velocity
+      let omega = null;
+      if (prevAlpha != null && prevTs != null) {
+        const dt = (ts - prevTs) / 1000;
+        if (dt > 0) {
+          const dAlpha = angleDiff(alpha, prevAlpha);
+          const dBeta  = (beta  - prevBeta)  * Math.PI / 180;
+          const dGamma = (gamma - prevGamma) * Math.PI / 180;
+          omega = Math.sqrt(dAlpha**2 + dBeta**2 + dGamma**2) / dt;
+          elOmega.textContent = omega.toFixed(3);
+          elOmega.className = 'dbg-val' + (omega > 0.55 ? ' hot' : '');
+        }
+      }
+
+      prevAlpha = alpha; prevBeta = beta; prevGamma = gamma; prevTs = ts;
+
+      if (recording) {
+        samples.push({ ts: Date.now(), alpha, beta, gamma, omega });
+        elCount.textContent = samples.length;
+      }
+    });
+
+    btnRecord.addEventListener('click', () => {
+      recording = !recording;
+      if (recording) {
+        samples = [];
+        elCount.textContent = '0';
+        btnRecord.textContent = '⏹ Stop recording';
+        btnRecord.classList.add('recording');
+        btnExport.disabled = true;
+      } else {
+        btnRecord.textContent = '⏺ Start recording';
+        btnRecord.classList.remove('recording');
+        btnExport.disabled = samples.length === 0;
+      }
+    });
+
+    btnExport.addEventListener('click', () => {
+      const payload = {
+        type: 'movement-page-gyro',
+        recordedAt: new Date().toISOString(),
+        userAgent: navigator.userAgent,
+        samples
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url  = URL.createObjectURL(blob);
+      const a    = Object.assign(document.createElement('a'), {
+        href: url,
+        download: `movement-gyro-${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+      });
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    btnClear.addEventListener('click', () => {
+      samples = [];
+      elCount.textContent = '0';
+      btnExport.disabled = true;
+      if (recording) {
+        recording = false;
+        btnRecord.textContent = '⏺ Start recording';
+        btnRecord.classList.remove('recording');
+      }
+    });
+
+    // request permission on iOS 13+
+    if (typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function') {
+      DeviceOrientationEvent.requestPermission().catch(() => {
+        // add a tap-to-enable button if permission is required
+        const btn = Object.assign(document.createElement('button'), { textContent: 'Enable gyro' });
+        btn.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:200;font-size:16px;padding:12px 24px;';
+        btn.addEventListener('click', () => {
+          DeviceOrientationEvent.requestPermission().then(s => {
+            if (s === 'granted') btn.remove();
+          });
+        });
+        document.body.appendChild(btn);
+      });
+    }
+  }
+
+  function angleDiff(a, b) {
+    // shortest angular difference on a 0-360 circle, converted to radians
+    if (a == null || b == null) return 0;
+    let d = ((a - b) + 360) % 360;
+    if (d > 180) d -= 360;
+    return d * Math.PI / 180;
+  }
+</script>
+</body>
+</html>

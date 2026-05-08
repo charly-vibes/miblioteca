@@ -6,6 +6,9 @@ import { createMockScanFetch } from './tracer/mockScanApi'
 import { getSession, getScan, openShelfwalkDb, type ShelfwalkDatabase } from './tracer/persistence'
 import type { BootstrapResult } from './tracer/bootstrap'
 import { parseRoute, navigateToSession, navigateHome, navigateToNewScan, type Route } from './router'
+import { detectSensorDeps } from './sensors/probe'
+import type { GyroLike } from './sensors/ghostOverlayCanvas'
+import type { AccelerometerLike } from './sensors/imuRecorder'
 
 export type MibliotecaAppDeps = {
   openDb?: () => Promise<ShelfwalkDatabase>
@@ -47,7 +50,14 @@ export function mountMibliotecaApp(root: HTMLElement, deps: MibliotecaAppDeps = 
       const bootstrap = await loadBootstrapForSession(db, route.sessionId)
       if (gen !== generation || disposed) return
       if (!bootstrap) { navigateHome(); return }
-      captureView = new CaptureView(root, { bootstrapResult: bootstrap, onBack: navigateHome })
+      const sensors = detectSensorDeps()
+      const gyro = sensors.hasGyroscope
+        ? (new Gyroscope({ frequency: 60 }) as unknown as GyroLike)
+        : null
+      const accel = sensors.hasAccelerometer
+        ? (new Accelerometer({ frequency: 60 }) as unknown as AccelerometerLike)
+        : null
+      captureView = new CaptureView(root, { bootstrapResult: bootstrap, onBack: navigateHome, gyro, accel })
     } else if (route.kind === 'new-scan') {
       unmountScanManagement = mountScanManagementView(root, {
         openDb: getDb,

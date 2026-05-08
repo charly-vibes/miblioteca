@@ -1,5 +1,17 @@
 # Project Context
 
+- [Purpose](#purpose)
+- [Implementation Status](#implementation-status)
+- [Tech Stack](#tech-stack)
+- [Project Conventions](#project-conventions)
+  - [Code Style](#code-style)
+  - [Architecture Patterns](#architecture-patterns)
+  - [Testing Strategy](#testing-strategy)
+  - [Git Workflow](#git-workflow)
+- [Domain Context](#domain-context)
+- [Important Constraints](#important-constraints)
+- [Backend API Contracts](#backend-api-contracts)
+
 ## Purpose
 
 mibilioteca is a TypeScript PWA for capturing bookshelf spine photos to enable
@@ -11,8 +23,8 @@ session via a shared join token.
 
 ## Implementation Status
 
-Pre-implementation. Research phase only. No application code exists yet.
-The tech stack and patterns below are the agreed-upon target, not current reality.
+The project is in active development. The tech stack and patterns below are the
+agreed-upon target.
 
 ## Tech Stack
 
@@ -27,6 +39,7 @@ The tech stack and patterns below are the agreed-upon target, not current realit
 - Plain Canvas / WebGL for on-device quality checks (no OpenCV.js in MVP)
 - **HTTPS** required everywhere — sensors, camera, service worker, wake lock all need
   a secure context
+- **Backend API** — see [Backend API Contracts](#backend-api-contracts-out-of-scope-for-capture-client--must-implement) for details
 
 ## Project Conventions
 

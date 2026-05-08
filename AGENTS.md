@@ -1,3 +1,6 @@
+# mibilioteca
+TypeScript PWA for bookshelf spine capture (capture side only).
+
 <!-- OPENSPEC:START -->
 # OpenSpec Instructions
 
@@ -24,10 +27,33 @@ This project uses **wai** to track the *why* behind decisions — research,
 reasoning, and design choices that shaped the code. Run `wai status` first
 to orient yourself.
 
+Detected workflow tools:
+- **wai** — research, reasoning, and design decisions
+- **beads** — issue tracking (tasks, bugs, dependencies). CLI command: **`bd`** (not `beads`)
+- **openspec** — specifications and change proposals (see `openspec/AGENTS.md`)
+
+> **CRITICAL**: Apply TDD and Tidy First throughout — not just when writing code:
+> - **Planning/task creation**: each ticket should map to a red→green→refactor cycle; refactoring tasks must be separate tickets from feature tasks.
+> - **Design**: define the test shape (inputs/outputs) before designing the implementation.
+> - **Implementation**: write the failing test first, then make it pass, then tidy in a separate commit.
+
+> **When beginning research or creating a ticket**: run `wai search "<topic>"` to check for existing patterns before writing new content.
+> **Ro5**: The Rule of 5 skill is installed. Run `/ro5` after key phase transitions — implement, research, design — for iterative quality review.
+
+## First Time Here?
+
+Run `just setup` to install deps and set up mkcert HTTPS certificates.
+Then follow the Quick Start below.
+
 ## Quick Start
 
-1. `wai sync` — ensure agent tools are projected
-2. `wai status` — see active projects, phase, and suggestions
+1. `wai status` — see active projects, phase, and suggestions
+2. `bd ready` — find available work items
+3. `wai sync` — re-project skills if `.claude/commands/` looks stale
+
+Do not advance the wai phase (`wai phase next`) without at least one completed
+artifact for the current phase. Research phase needs `wai add research` entries;
+design phase needs `wai add design` entries.
 
 When context reaches ~40%: stop and tell the user — responses degrade past
 this point. Recommend `wai close` then `/clear` to resume cleanly.
@@ -53,6 +79,7 @@ context before starting research or creating tickets.
 > **Before research or ticket creation**: always run `wai search "<topic>"` to
 > check for known patterns. Do not rediscover what is already documented.
 <!-- WAI:REFLECT:REF:END -->
+
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
 ## Beads Issue Tracker
@@ -86,7 +113,7 @@ bd close <id>         # Complete work
 4. **PUSH TO REMOTE** - This is MANDATORY:
    ```bash
    git pull --rebase
-   bd dolt push
+   bd dolt push  # skip if no dolt remote configured (data preserved in git)
    git push
    git status  # MUST show "up to date with origin"
    ```

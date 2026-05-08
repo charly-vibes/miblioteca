@@ -226,8 +226,8 @@ export class CaptureView {
     this.cameraState = s
     if (s.kind === 'granted') {
       this.video.srcObject = s.stream
-      if (this.opts.gyro !== undefined) {
-        this.ghostOverlay = new GhostOverlayCanvas(this.viewfinder, { gyro: this.opts.gyro ?? null })
+      if (this.opts.gyro) {
+        this.ghostOverlay = new GhostOverlayCanvas(this.viewfinder, { gyro: this.opts.gyro })
       }
       this.startAccel()
       this.startQualityPoll()

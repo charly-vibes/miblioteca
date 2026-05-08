@@ -42,7 +42,7 @@ export class DebugLogger {
   }
 
   export(): string {
-    if (!this.enabled) return '{"meta":{},"events":[]}'
+    if (!this.enabled) return JSON.stringify({ meta: {}, events: [] })
 
     const events: DebugEntry[] = []
     if (this.count < CAPACITY) {

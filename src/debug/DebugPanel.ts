@@ -33,15 +33,17 @@ export class DebugPanel {
 
   private handleClick = (): void => {
     const json = this.logger.export()
-    const ts = new Date().toISOString().replace(/[:.]/g, '-')
+    const ts = new Date().toISOString().replace(/[T:.]/g, '-')
     const filename = `miblioteca-debug-${ts}.json`
     const blob = new Blob([json], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
     a.download = filename
+    document.body.appendChild(a)
     a.click()
-    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   }
 
   destroy(): void {

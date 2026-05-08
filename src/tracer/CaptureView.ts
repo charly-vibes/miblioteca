@@ -2,6 +2,7 @@ import { initCamera } from '../camera/cameraInit'
 import { BundleExportPanel } from '../bundle/BundleExportPanel'
 import { DebugPanel } from '../debug/DebugPanel'
 import { debugLogger } from '../debug/logger'
+import type { DebugLogger } from '../debug/logger'
 import { checkStorageBudget } from '../pwa/storageBudget'
 import type { StorageBudgetManager, StorageBudgetStatus } from '../pwa/storageBudget'
 import { requestUploadSync } from '../pwa/syncRegistration'
@@ -42,6 +43,7 @@ export type CaptureViewOptions = {
   pollIntervalMs?: number
   /** Called when user taps the back button to return to sessions list. */
   onBack?: () => void
+  logger?: DebugLogger
 }
 
 type BootstrapState =
@@ -72,6 +74,7 @@ export class CaptureView {
   private readonly store
   private readonly mockFetch
   private readonly opts: CaptureViewOptions
+  private readonly logger: DebugLogger
   private ghostOverlay: GhostOverlayCanvas | null = null
   private steadinessState: SteadinessState = initialSteadinessState()
   private activeWarnings: QualityWarning[] = []
@@ -102,6 +105,7 @@ export class CaptureView {
 
   constructor(container: HTMLElement, opts: CaptureViewOptions = {}) {
     this.opts = opts
+    this.logger = opts.logger ?? debugLogger
     this.store = createLocalStorageTracerBulletStore(window.localStorage)
     this.mockFetch = createMockScanFetch(() => Date.now())
 
@@ -173,7 +177,7 @@ export class CaptureView {
     container.append(this.root)
 
     this.render()
-    if (debugLogger.enabled) this.setupDebug()
+    if (this.logger.enabled) this.setupDebug()
     void this.init()
   }
 
@@ -184,24 +188,24 @@ export class CaptureView {
   }
 
   private setupDebug(): void {
-    debugLogger.log('share:api-check', {
+    this.logger.log('share:api-check', {
       available: typeof navigator?.share === 'function',
       canShare: typeof navigator?.canShare === 'function',
       isSecureContext: location.protocol === 'https:',
     })
     this.onVisibilityChange = () => {
-      debugLogger.log('lifecycle:visibility-changed', { state: document.visibilityState })
+      this.logger.log('lifecycle:visibility-changed', { state: document.visibilityState })
     }
     this.onUnhandledRejection = (ev: PromiseRejectionEvent) => {
-      debugLogger.log('error:uncaught', { message: String(ev.reason), type: 'unhandledrejection' })
+      this.logger.log('error:uncaught', { message: String(ev.reason) })
     }
     this.onWindowError = (ev: ErrorEvent) => {
-      debugLogger.log('error:uncaught', { message: ev.message, source: ev.filename, type: 'error' })
+      this.logger.log('error:uncaught', { message: ev.message, source: ev.filename, stack: ev.error?.stack })
     }
     document.addEventListener('visibilitychange', this.onVisibilityChange)
     window.addEventListener('unhandledrejection', this.onUnhandledRejection)
     window.addEventListener('error', this.onWindowError)
-    this.debugPanel = new DebugPanel(document.body, debugLogger)
+    this.debugPanel = new DebugPanel(document.body, this.logger)
   }
 
   private async init() {

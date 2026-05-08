@@ -5,6 +5,7 @@ import { CaptureView } from './CaptureView'
 import type { CaptureSnapshotResult } from './CaptureView'
 import type { BootstrapResult } from './bootstrap'
 import type { AccelerometerLike } from '../sensors/imuRecorder'
+import { DebugLogger } from '../debug/logger'
 import * as persistence from './persistence'
 
 const MOCK_SNAPSHOT: CaptureSnapshotResult = {
@@ -417,6 +418,47 @@ describe('CaptureView — debug mode', () => {
   it('does not render an export logs button when debug mode is disabled', () => {
     new CaptureView(container, { captureSnapshot: mockCaptureSnapshot, uploadFetch: mockUploadFetch(200) })
     expect(screen.queryByRole('button', { name: /export logs/i })).not.toBeInTheDocument()
+  })
+})
+
+describe('CaptureView — debug mode (enabled)', () => {
+  let logger: DebugLogger
+  let view: CaptureView | null = null
+
+  beforeEach(() => {
+    logger = new DebugLogger(new URLSearchParams('debug'))
+  })
+
+  afterEach(() => {
+    view?.destroy()
+    view = null
+  })
+
+  it('renders Export logs button when logger is enabled', () => {
+    view = new CaptureView(container, { captureSnapshot: mockCaptureSnapshot, uploadFetch: mockUploadFetch(200), logger })
+    expect(screen.getByRole('button', { name: /export logs/i })).toBeInTheDocument()
+  })
+
+  it('emits share:api-check on construction', () => {
+    view = new CaptureView(container, { captureSnapshot: mockCaptureSnapshot, uploadFetch: mockUploadFetch(200), logger })
+    const { events } = JSON.parse(logger.export()) as { events: Array<{ type: string }> }
+    expect(events.some((e) => e.type === 'share:api-check')).toBe(true)
+  })
+
+  it('removes Export logs button on destroy()', () => {
+    view = new CaptureView(container, { captureSnapshot: mockCaptureSnapshot, uploadFetch: mockUploadFetch(200), logger })
+    expect(screen.getByRole('button', { name: /export logs/i })).toBeInTheDocument()
+    view.destroy()
+    expect(screen.queryByRole('button', { name: /export logs/i })).not.toBeInTheDocument()
+  })
+
+  it('registers and cleans up visibilitychange listener on destroy()', () => {
+    const addSpy = vi.spyOn(document, 'addEventListener')
+    const removeSpy = vi.spyOn(document, 'removeEventListener')
+    view = new CaptureView(container, { captureSnapshot: mockCaptureSnapshot, uploadFetch: mockUploadFetch(200), logger })
+    expect(addSpy).toHaveBeenCalledWith('visibilitychange', expect.any(Function))
+    view.destroy()
+    expect(removeSpy).toHaveBeenCalledWith('visibilitychange', expect.any(Function))
   })
 })
 

@@ -100,7 +100,8 @@
 <script>
 // ─── Constants matching the app ──────────────────────────────────────────────
 const HFOV_DEG = 65;
-const MOTION_GATE = 0.5; // rad/s
+const MOTION_GATE_SHOW = 0.40; // rad/s — ghost appears below this
+const MOTION_GATE_HIDE = 0.55; // rad/s — ghost hides above this (hysteresis)
 
 // ─── File handling ────────────────────────────────────────────────────────────
 const dropZone = document.getElementById('drop-zone');
@@ -155,7 +156,9 @@ function render(data) {
   const sections = times.slice(1).map((endT, i) => {
     const startT = times[i];
     const slice = arr => arr.filter(e => e.t > startT && e.t <= endT);
-    return { i, startT, endT, sensor: slice(sensorAll), shift: slice(shiftAll), vis: slice(visAll) };
+    // captureAtEnd = the capture event that bounds the END of this section (null for last section)
+    const captureAtEnd = i < captures.length ? captures[i] : null;
+    return { i, startT, endT, sensor: slice(sensorAll), shift: slice(shiftAll), vis: slice(visAll), captureAtEnd };
   });
 
   const content = document.getElementById('content');
@@ -181,7 +184,7 @@ function masterTimeline(events, captures, visAll, duration) {
   const panel = makePanel('Session Overview', []);
   const body = panel.querySelector('.panel-body');
 
-  body.innerHTML = `<div class="chart-label">Event timeline · captures (orange) · ghost visibility (blue=visible, red=hidden) · |ω| sparkline (gray) · gate (0.5 rad/s, red dashed)</div>`;
+  body.innerHTML = `<div class="chart-label">Event timeline · captures (orange) · ghost visibility (blue=visible, red=hidden) · |ω| sparkline (gray) · gate show/hide (${MOTION_GATE_SHOW}/${MOTION_GATE_HIDE} rad/s, dashed)</div>`;
   const cv = makeCanvas(72);
   body.appendChild(cv);
 
@@ -218,10 +221,14 @@ function masterTimeline(events, captures, visAll, duration) {
     ctx.strokeStyle = 'rgba(125,133,144,.6)'; ctx.lineWidth = 1;
     polyline(ctx, sensorAll, e => tX(e.t), e => 68 - Math.min(e.payload.omegaMag / maxOmega, 1) * 58);
 
-    // Gate line
-    ctx.strokeStyle = 'rgba(248,81,73,.5)'; ctx.setLineDash([3,3]);
-    const gy = 68 - (MOTION_GATE / maxOmega) * 58;
-    ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke();
+    // Gate lines (show = faint, hide = solid)
+    ctx.setLineDash([3,3]);
+    ctx.strokeStyle = 'rgba(248,81,73,.35)'; ctx.lineWidth = 1;
+    const gyShow = 68 - (MOTION_GATE_SHOW / maxOmega) * 58;
+    ctx.beginPath(); ctx.moveTo(0, gyShow); ctx.lineTo(W, gyShow); ctx.stroke();
+    ctx.strokeStyle = 'rgba(248,81,73,.7)'; ctx.lineWidth = 1;
+    const gyHide = 68 - (MOTION_GATE_HIDE / maxOmega) * 58;
+    ctx.beginPath(); ctx.moveTo(0, gyHide); ctx.lineTo(W, gyHide); ctx.stroke();
     ctx.setLineDash([]);
 
     // Capture markers
@@ -239,7 +246,7 @@ function masterTimeline(events, captures, visAll, duration) {
 
 // ─── Section card ─────────────────────────────────────────────────────────────
 function sectionCard(s, captures, duration) {
-  const { i, startT, endT, sensor, shift, vis } = s;
+  const { i, startT, endT, sensor, shift, vis, captureAtEnd } = s;
 
   const durS = ((endT - startT) / 1000).toFixed(1);
   const last = shift.at(-1)?.payload;
@@ -307,26 +314,48 @@ function sectionCard(s, captures, duration) {
   const gyroCv = makeCanvas(110);
   gyroCol.appendChild(gyroCv);
   gyroCol.innerHTML += '<div class="legend">' + [
-    legend_('gy scan axis (rad/s)', '#58a6ff'),
+    legend_('gy yaw axis (rad/s)', '#58a6ff'),
+    legend_('gx pitch axis (rad/s)', '#3fb950'),
     legend_('|ω| magnitude', '#7d8590'),
-    legend_('motion gate (0.5)', '#f85149'),
+    legend_(`gate show/hide (${MOTION_GATE_SHOW}/${MOTION_GATE_HIDE})`, '#f85149'),
   ].join('') + '</div>';
   grid.appendChild(gyroCol);
 
   // Shift chart
   const shiftCol = document.createElement('div');
   shiftCol.className = 'chart-col';
-  shiftCol.innerHTML = `<div class="chart-label">Ghost shift px · red zone = ghost hidden (motion gate)</div>`;
+  shiftCol.innerHTML = `<div class="chart-label">Ghost shift px · X=yaw · Y=pitch · red zone = ghost hidden</div>`;
   const shiftCv = makeCanvas(110);
   shiftCol.appendChild(shiftCv);
   shiftCol.innerHTML += '<div class="legend">' + [
-    legend_('shiftPx (actual)', '#e6edf3'),
+    legend_('shiftPx (yaw)', '#e6edf3'),
+    legend_('shiftPy (pitch)', '#3fb950'),
     legend_('ghost hidden', 'rgba(248,81,73,.3)'),
     legend_('±displayWidth/2', '#30363d'),
   ].join('') + '</div>';
   grid.appendChild(shiftCol);
 
   body.appendChild(grid);
+
+  // Ghost at capture row
+  const ghostAtCapture = captureAtEnd?.payload?.ghost ?? null;
+  if (ghostAtCapture !== null) {
+    const gcDiv = document.createElement('div');
+    gcDiv.style.cssText = 'padding:10px 14px;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:8px;align-items:center';
+    const visLabel = ghostAtCapture.visible
+      ? `<span class="pill green">visible</span>`
+      : `<span class="pill red">hidden (moving)</span>`;
+    const pxLabel = (v, name) => `<span class="pill" title="${name}">${name} ${v >= 0 ? '+' : ''}${v.toFixed(1)}px</span>`;
+    const radLabel = (v, name) => `<span class="pill" title="${name}">${name} ${(v * 180 / Math.PI).toFixed(1)}°</span>`;
+    gcDiv.innerHTML =
+      `<span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-right:4px">Ghost at shutter</span>` +
+      visLabel +
+      pxLabel(ghostAtCapture.shiftPx, 'X') +
+      pxLabel(ghostAtCapture.shiftPy, 'Y') +
+      radLabel(ghostAtCapture.yawIntegral, 'yaw') +
+      radLabel(ghostAtCapture.pitchIntegral, 'pitch');
+    body.appendChild(gcDiv);
+  }
 
   // AR diagram
   if (last) {
@@ -380,16 +409,23 @@ function drawGyro(cv, sensor, vis, startT, endT) {
   ctx.strokeStyle = '#21262d'; ctx.lineWidth = 1;
   hline(ctx, H/2, W);
 
-  // Gate threshold (omega)
-  ctx.strokeStyle = 'rgba(248,81,73,.5)'; ctx.setLineDash([3,3]);
-  hline(ctx, omY(MOTION_GATE), W);
+  // Gate thresholds (show + hide hysteresis)
+  ctx.setLineDash([3,3]);
+  ctx.strokeStyle = 'rgba(248,81,73,.35)'; ctx.lineWidth = 1;
+  hline(ctx, omY(MOTION_GATE_SHOW), W);
+  ctx.strokeStyle = 'rgba(248,81,73,.7)'; ctx.lineWidth = 1;
+  hline(ctx, omY(MOTION_GATE_HIDE), W);
   ctx.setLineDash([]);
 
   // |ω| area
   ctx.strokeStyle = 'rgba(125,133,144,.55)'; ctx.lineWidth = 1;
   polyline(ctx, sensor, e => tX(e.t), e => omY(e.payload.omegaMag));
 
-  // gy
+  // gx (pitch)
+  ctx.strokeStyle = 'rgba(63,185,80,.8)'; ctx.lineWidth = 1.5;
+  polyline(ctx, sensor, e => tX(e.t), e => gyY(e.payload.gx ?? 0));
+
+  // gy (yaw)
   ctx.strokeStyle = '#58a6ff'; ctx.lineWidth = 1.5;
   polyline(ctx, sensor, e => tX(e.t), e => gyY(e.payload.gy));
 
@@ -429,7 +465,11 @@ function drawShift(cv, shift, vis, startT, endT) {
   ctx.strokeStyle = '#21262d'; ctx.lineWidth = 1;
   hline(ctx, H/2, W);
 
-  // shiftPx
+  // shiftPy (pitch) — draw first so yaw is on top
+  ctx.strokeStyle = 'rgba(63,185,80,.8)'; ctx.lineWidth = 1.5;
+  polyline(ctx, shift, e => tX(e.t), e => shY(e.payload.shiftPy ?? 0));
+
+  // shiftPx (yaw)
   ctx.strokeStyle = '#e6edf3'; ctx.lineWidth = 2;
   polyline(ctx, shift, e => tX(e.t), e => shY(e.payload.shiftPx));
 

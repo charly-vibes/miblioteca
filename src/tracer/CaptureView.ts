@@ -415,6 +415,7 @@ export class CaptureView {
       this.logger.log('capture:shutter', {
         index: this.captureIndex,
         qualityChecks: shutterQuality ? qualityWarnings(shutterQuality) : [],
+        ghost: this.ghostOverlay?.getDebugState() ?? null,
       })
 
       const db = await openShelfwalkDb()

@@ -20,7 +20,10 @@ export type GhostOverlayCanvasDeps = {
   now?: () => DOMHighResTimeStamp
 }
 
-const MOTION_GATE_RAD_S = 0.5
+// Hysteresis prevents rapid toggling when hand tremor hovers near the threshold.
+// Show the ghost when movement drops below SHOW, hide it when it rises above HIDE.
+const MOTION_GATE_SHOW_RAD_S = 0.40
+const MOTION_GATE_HIDE_RAD_S = 0.55
 
 export class GhostOverlayCanvas {
   private readonly canvas: HTMLCanvasElement
@@ -93,7 +96,12 @@ export class GhostOverlayCanvas {
       debugLogger.log('ghost:render-tick', {})
     }
 
-    const shouldShow = this.hasSnapshot && this.state.omegaMag <= MOTION_GATE_RAD_S
+    const currentlyHidden = this.canvas.hidden
+    const shouldShow = this.hasSnapshot && (
+      currentlyHidden
+        ? this.state.omegaMag <= MOTION_GATE_SHOW_RAD_S
+        : this.state.omegaMag <= MOTION_GATE_HIDE_RAD_S
+    )
     if (this.canvas.hidden !== !shouldShow) {
       this.canvas.hidden = !shouldShow
       debugLogger.log('ghost:visibility-changed', { visible: shouldShow, omegaMag: this.state.omegaMag, yawIntegral: this.state.yawIntegral })
@@ -146,6 +154,21 @@ export class GhostOverlayCanvas {
     this.canvas.style.transform = 'translate3d(0, 0, 0)'
     this.hasSnapshot = true
     this.canvas.hidden = false
+  }
+
+  // Returns a snapshot of the current ghost state for debug logging at shutter time.
+  getDebugState(): { shiftPx: number; shiftPy: number; yawIntegral: number; pitchIntegral: number; visible: boolean; displayWidth: number; displayHeight: number } {
+    const displayWidth = this.viewfinder.clientWidth || this.canvas.width
+    const displayHeight = this.viewfinder.clientHeight || this.canvas.height
+    return {
+      shiftPx: this.currentShiftPx,
+      shiftPy: this.currentShiftPy,
+      yawIntegral: this.state.yawIntegral,
+      pitchIntegral: this.state.pitchIntegral,
+      visible: !this.canvas.hidden,
+      displayWidth,
+      displayHeight,
+    }
   }
 
   // Call when the camera session ends or the view unmounts.

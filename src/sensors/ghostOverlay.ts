@@ -17,7 +17,13 @@ export function initialGhostState(): GhostOverlayState {
   return { yawIntegral: 0, lastT: -Infinity, omegaMag: 0 }
 }
 
-export function feedGhostGyro(state: GhostOverlayState, sample: GyroSample): GhostOverlayState {
+// scanAxis 'y' = portrait (gamma/device-y); 'x' = landscape (beta/device-x). Caller should
+// derive from screen.orientation.type: portrait-* → 'y', landscape-* → 'x'.
+export function feedGhostGyro(
+  state: GhostOverlayState,
+  sample: GyroSample,
+  scanAxis: 'x' | 'y' = 'y',
+): GhostOverlayState {
   if (!isFinite(sample.gz) || !isFinite(sample.gx) || !isFinite(sample.gy) || !isFinite(sample.t)) return state
   if (sample.t < state.lastT) return state
 
@@ -28,10 +34,11 @@ export function feedGhostGyro(state: GhostOverlayState, sample: GyroSample): Gho
   }
 
   const dt = Math.min((sample.t - state.lastT) / 1000, 0.5) // ms → s, clamped to 500ms to guard against stale lastT after long pauses
-  // Portrait phones sweep left/right around their y-axis (gy/gamma). Negate so that
-  // sweeping right (gy < 0) produces positive yawIntegral → ghost shifts left (appears fixed in space).
+  const omega = scanAxis === 'x' ? sample.gx : sample.gy
+  // Portrait: phone sweeps right → gy < 0 (right-hand rule, W3C DeviceMotion)
+  // Negate: positive yawIntegral → negative pixel shift → ghost moves left (appears fixed)
   return {
-    yawIntegral: state.yawIntegral - sample.gy * dt,
+    yawIntegral: state.yawIntegral - omega * dt,
     lastT: sample.t,
     omegaMag,
   }

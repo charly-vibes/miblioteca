@@ -91,6 +91,25 @@ describe('feedGhostGyro', () => {
     const s = feedGhostGyro(initialGhostState(), { t: 100, gx: 0, gy: -1.0, gz: 0 })
     expect(s.omegaMag).toBeCloseTo(1.0)
   })
+
+  it('integrates gx instead of gy when scanAxis is "x" (landscape orientation)', () => {
+    const s0 = initialGhostState()
+    const s1 = feedGhostGyro(s0, { t: 0, gx: 0, gy: 0, gz: 0 }, 'x')
+    const s2 = feedGhostGyro(s1, { t: 200, gx: -5.0, gy: 0, gz: 0 }, 'x') // gx=-5.0 → -(-5)*0.2 = +1.0 rad
+    expect(s2.yawIntegral).toBeCloseTo(1.0)
+  })
+
+  it('produces a plausible pixel shift at a realistic scanning rate (debug log baseline)', () => {
+    // Debug log shows gy ≈ −0.35 rad/s during real scanning; verify the result is on-screen-visible
+    const s0 = initialGhostState()
+    const s1 = feedGhostGyro(s0, { t: 0, gx: 0, gy: 0, gz: 0 })
+    const s2 = feedGhostGyro(s1, { t: 200, gx: 0, gy: -0.35, gz: 0 }) // yawIntegral ≈ 0.07 rad
+    expect(s2.yawIntegral).toBeCloseTo(0.07)
+    // At 1920px, 65° hFOV: shift ≈ −106px — clearly visible and not clamped
+    const shift = computeShiftPx(s2.yawIntegral, 1920)
+    expect(Math.abs(shift)).toBeGreaterThan(50)
+    expect(Math.abs(shift)).toBeLessThan(200)
+  })
 })
 
 describe('computeShiftPx', () => {

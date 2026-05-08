@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { execSync } from 'node:child_process'
 import { defineConfig } from 'vitest/config'
 import { VitePWA } from 'vite-plugin-pwa'
 import { loadDevHttpsConfig } from './src/dev/https'
@@ -6,9 +7,31 @@ import { loadDevHttpsConfig } from './src/dev/https'
 const isProd = process.env.NODE_ENV === 'production'
 const base = isProd ? '/miblioteca/' : '/'
 
+let gitCommit = 'unknown'
+try { gitCommit = execSync('git rev-parse --short HEAD').toString().trim() } catch {}
+const versionPayload = JSON.stringify({ commit: gitCommit })
+
+const versionPlugin = {
+  name: 'version-json',
+  configureServer(server: import('vite').ViteDevServer) {
+    server.middlewares.use('/version.json', (_req, res) => {
+      res.setHeader('Content-Type', 'application/json')
+      res.end(versionPayload)
+    })
+  },
+  generateBundle() {
+    // @ts-expect-error emitFile is injected by Rollup
+    this.emitFile({ type: 'asset', fileName: 'version.json', source: versionPayload })
+  },
+}
+
 export default defineConfig(({ command, mode }) => ({
   base,
+  define: {
+    __GIT_COMMIT__: JSON.stringify(gitCommit),
+  },
   plugins: [
+    versionPlugin,
     VitePWA({
       strategies: 'injectManifest',
       srcDir: 'src',

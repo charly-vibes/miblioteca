@@ -58,6 +58,7 @@ export class GhostOverlayCanvas {
   private firstRafFired = false
   private lastOrientationLogMs = 0
   private lastShiftLogMs = 0
+  private lastMotionLogMs = 0
   private workingDistanceCm = 60
   private readonly deps: Required<Omit<GhostOverlayCanvasDeps, 'motion' | 'getBeta'>> & Pick<GhostOverlayCanvasDeps, 'motion' | 'getBeta'>
 
@@ -127,14 +128,25 @@ export class GhostOverlayCanvas {
     // Stale non-zero velocity with ax=0 would silently accumulate displacement.
     if (motion.x === null || motion.y === null) return
     const betaDeg = this.deps.getBeta?.() ?? 90
+    const now = this.deps.now()
     const sample: AccelSample = {
       ax: motion.x,
       ay: motion.y,
       interval_ms: motion.interval || 16,  // some browsers report 0; MotionLike types it as number but 0 is possible
       betaDeg,
-      t: this.deps.now(),
+      t: now,
     }
     this.state = feedGhostAccel(this.state, sample)
+    if (now - this.lastMotionLogMs >= 500) {
+      debugLogger.log('ghost:motion-sample', {
+        ax: motion.x, ay: motion.y,
+        usingRawAccel: (motion as { usingRawAccel?: boolean }).usingRawAccel ?? false,
+        betaDeg, interval_ms: motion.interval,
+        dx_cm: this.state.dx_m * 100, dy_cm: this.state.dy_m * 100,
+        velX: this.state.velX, velY: this.state.velY,
+      })
+      this.lastMotionLogMs = now
+    }
   }
 
   private rafLoop: FrameRequestCallback = () => {

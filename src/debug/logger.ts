@@ -54,6 +54,7 @@ export class DebugLogger {
     return JSON.stringify({
       meta: {
         exportedAt: new Date().toISOString(),
+        commit: __GIT_COMMIT__,
         userAgent: navigator.userAgent,
         url: location.href,
         sessionMs: performance.now() - this.startTime,

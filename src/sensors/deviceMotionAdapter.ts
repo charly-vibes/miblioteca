@@ -68,12 +68,17 @@ export class DeviceMotionAccelAdapter implements AccelerometerLike {
   }
 }
 
-// Wraps DeviceMotionEvent.acceleration (gravity-subtracted) as MotionLike for translation tracking.
+// Wraps DeviceMotionEvent linear acceleration as MotionLike for translation tracking.
+// Prefers gravity-subtracted `acceleration`; falls back to `accelerationIncludingGravity` when
+// the device doesn't support hardware gravity subtraction (common on Firefox Android).
+// The betaDeg guard in feedGhostAccel handles gravity leakage when the phone tilts.
 export class DeviceMotionLinearAccelAdapter implements MotionLike {
   onreading: (() => void) | null = null
   x: number | null = null
   y: number | null = null
   interval = 16  // default ~60 Hz until first event
+  /** True when falling back to accelerationIncludingGravity (gravity not subtracted by hardware). */
+  usingRawAccel = false
 
   private readonly win: Window
   private readonly handler: (e: DeviceMotionEvent) => void
@@ -81,8 +86,9 @@ export class DeviceMotionLinearAccelAdapter implements MotionLike {
   constructor(win: Window) {
     this.win = win
     this.handler = (e: DeviceMotionEvent) => {
-      const a = e.acceleration  // gravity-subtracted; null if unavailable or hardware doesn't support it.
-                                 // Some Android devices return non-null but non-zero at rest (no hw subtraction).
+      // Prefer hardware gravity-subtracted; fall back to raw (betaDeg guard handles gravity leakage).
+      const a = e.acceleration ?? e.accelerationIncludingGravity
+      this.usingRawAccel = !e.acceleration
       if (!a) {
         this.x = null
         this.y = null

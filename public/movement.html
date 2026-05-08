@@ -109,6 +109,9 @@
 
 <div id="dbg">
   <div class="dbg-row">
+    <span><span class="dbg-label">ver </span><span id="dVersion" class="dbg-val" style="color:#7d8590">…</span></span>
+  </div>
+  <div class="dbg-row">
     <span><span class="dbg-label">α(z) </span><span id="dAlpha" class="dbg-val">—</span>°</span>
     <span><span class="dbg-label">β(x) </span><span id="dBeta"  class="dbg-val">—</span>°</span>
     <span><span class="dbg-label">γ(y) </span><span id="dGamma" class="dbg-val">—</span>°</span>
@@ -136,14 +139,20 @@
   }
 
   function startDebug() {
-    const elAlpha = document.getElementById('dAlpha');
-    const elBeta  = document.getElementById('dBeta');
-    const elGamma = document.getElementById('dGamma');
-    const elOmega = document.getElementById('dOmega');
-    const elCount = document.getElementById('dCount');
+    const elAlpha   = document.getElementById('dAlpha');
+    const elBeta    = document.getElementById('dBeta');
+    const elGamma   = document.getElementById('dGamma');
+    const elOmega   = document.getElementById('dOmega');
+    const elCount   = document.getElementById('dCount');
+    const elVersion = document.getElementById('dVersion');
     const btnRecord = document.getElementById('btnRecord');
     const btnExport = document.getElementById('btnExport');
     const btnClear  = document.getElementById('btnClear');
+
+    fetch('./version.json').then(r => r.json()).then(v => {
+      elVersion.textContent = v.commit || '?';
+      elVersion.style.color = '#58a6ff';
+    }).catch(() => { elVersion.textContent = 'n/a'; });
 
     let recording = false;
     let samples = [];

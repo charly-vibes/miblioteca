@@ -28,9 +28,17 @@ describe('feedGhostGyro', () => {
   it('integrates gz * dt on subsequent samples', () => {
     const s0 = initialGhostState()
     const s1 = feedGhostGyro(s0, { t: 0, gx: 0, gy: 0, gz: 0 })          // first sample
-    const s2 = feedGhostGyro(s1, { t: 1000, gx: 0, gy: 0, gz: 1.0 })     // +1.0 rad/s * 1s = +1.0 rad
+    const s2 = feedGhostGyro(s1, { t: 200, gx: 0, gy: 0, gz: 5.0 })      // +5.0 rad/s * 0.2s = +1.0 rad
     expect(s2.yawIntegral).toBeCloseTo(1.0)
-    expect(s2.lastT).toBe(1000)
+    expect(s2.lastT).toBe(200)
+  })
+
+  it('clamps dt to 500ms so stale lastT does not cause a large yaw spike', () => {
+    const s0 = initialGhostState()
+    const s1 = feedGhostGyro(s0, { t: 0, gx: 0, gy: 0, gz: 0 })
+    // 10 second gap (e.g. gyro resumed after pause): dt clamped to 0.5s, not 10s
+    const s2 = feedGhostGyro(s1, { t: 10000, gx: 0, gy: 0, gz: 2.0 })
+    expect(s2.yawIntegral).toBeCloseTo(1.0)    // 2.0 * 0.5 = 1.0, not 20.0
   })
 
   it('accumulates across multiple samples', () => {

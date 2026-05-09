@@ -7,6 +7,7 @@ import {
   computeShiftPy,
   computeTranslationShiftPx,
   computeTranslationShiftPy,
+  clampYawToViewport,
   motionGateVisible,
   capToViewport,
 } from './ghostOverlay'
@@ -168,8 +169,8 @@ export class GhostOverlayCanvas {
       motionGateVisible(this.state.omegaMag, currentlyHidden, MOTION_GATE_SHOW_RAD_S, MOTION_GATE_HIDE_RAD_S)
     if (this.canvas.hidden !== !shouldShow) {
       this.canvas.hidden = !shouldShow
-      // Secondary ZUPT: zero velocity when gate closes so drift doesn't accumulate during still periods.
-      if (!shouldShow) this.state = zeroVelocity(this.state)
+      // Secondary ZUPT: zero velocity and reset yaw/pitch on gate close to prevent jump on reappear.
+      if (!shouldShow) this.state = { ...zeroVelocity(this.state), yawIntegral: 0, pitchIntegral: 0 }
       debugLogger.log('ghost:visibility-changed', { visible: shouldShow, omegaMag: this.state.omegaMag, yawIntegral: this.state.yawIntegral })
     }
     if (this.canvas.hidden) return
@@ -203,6 +204,13 @@ export class GhostOverlayCanvas {
       this.canvas.style.transform = `translate3d(${shiftPx}px, ${shiftPy}px, 0)`
       this.currentShiftPx = shiftPx
       this.currentShiftPy = shiftPy
+    }
+
+    // Clamp yawIntegral to the viewport boundary so yaw never accumulates past the edge.
+    // Prevents the ghost from jumping when panning back after hitting the display limit.
+    const clampedYaw = clampYawToViewport(this.state.yawIntegral)
+    if (clampedYaw !== this.state.yawIntegral) {
+      this.state = { ...this.state, yawIntegral: clampedYaw }
     }
 
     const now = this.deps.now()

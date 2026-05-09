@@ -599,8 +599,8 @@ function resimPanel(motionAll, shiftAll, visAll, captures, duration) {
   controls.className = 'resim-controls';
   controls.innerHTML = `
     <div class="resim-group">
-      <label>Max Tilt (°) <span class="val" id="resim-tilt-val">45</span></label>
-      <input type="range" id="resim-tilt" min="10" max="80" step="1" value="45">
+      <label>Max Tilt (°) <span class="val" id="resim-tilt-val">30</span> <small>(raw accel=30°, hw-subtracted=45°)</small></label>
+      <input type="range" id="resim-tilt" min="10" max="80" step="1" value="30">
     </div>
     <div class="resim-group">
       <label>Gate Show (rad/s) <span class="val" id="resim-show-val">0.40</span></label>

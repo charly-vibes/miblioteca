@@ -8,6 +8,7 @@ import {
   computeShiftPy,
   computeTranslationShiftPx,
   computeTranslationShiftPy,
+  clampYawToViewport,
   motionGateVisible,
   capToViewport,
 } from './ghostOverlay'
@@ -475,5 +476,37 @@ describe('capToViewport', () => {
 
   it('GIVEN viewport is negative THEN returns clientWidth uncapped', () => {
     expect(capToViewport(500, -1)).toBe(500)
+  })
+})
+
+describe('clampYawToViewport', () => {
+  it('GIVEN yaw within bounds THEN returns unchanged', () => {
+    const maxYaw = Math.tan((65 * Math.PI / 180) / 2)
+    expect(clampYawToViewport(0.1)).toBe(0.1)
+    expect(clampYawToViewport(maxYaw - 0.001)).toBeCloseTo(maxYaw - 0.001)
+  })
+
+  it('GIVEN yaw exceeds +tan(hFov/2) THEN clamps to maximum', () => {
+    const maxYaw = Math.tan((65 * Math.PI / 180) / 2)
+    expect(clampYawToViewport(100)).toBeCloseTo(maxYaw)
+  })
+
+  it('GIVEN yaw below -tan(hFov/2) THEN clamps to minimum', () => {
+    const maxYaw = Math.tan((65 * Math.PI / 180) / 2)
+    expect(clampYawToViewport(-100)).toBeCloseTo(-maxYaw)
+  })
+
+  it('GIVEN yaw at clamp boundary THEN computeShiftPx produces exactly ±displayWidth/2', () => {
+    const displayWidth = 1920
+    expect(computeShiftPx(clampYawToViewport(100), displayWidth)).toBeCloseTo(-displayWidth / 2)
+    expect(computeShiftPx(clampYawToViewport(-100), displayWidth)).toBeCloseTo(displayWidth / 2)
+  })
+
+  it('GIVEN custom hFovDeg THEN clamp uses that FOV', () => {
+    const maxYaw90 = Math.tan((90 * Math.PI / 180) / 2)
+    const maxYaw65 = Math.tan((65 * Math.PI / 180) / 2)
+    expect(clampYawToViewport(100, 90)).toBeCloseTo(maxYaw90)
+    expect(clampYawToViewport(100, 65)).toBeCloseTo(maxYaw65)
+    expect(maxYaw90).toBeGreaterThan(maxYaw65)
   })
 })

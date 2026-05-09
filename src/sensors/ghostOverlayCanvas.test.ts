@@ -422,9 +422,9 @@ describe('GhostOverlayCanvas rotation + translation additive', () => {
     motion.x = 0; motion.y = 0
     motion.fire()
 
-    // Pan right (gy < 0) + translate right (ax > 0)
+    // Slow pan right (gy < 0, below hide threshold) + translate right (ax > 0)
     setTime(200)
-    gyro.timestamp = 200; gyro.y = -1.0; gyro.x = 0; gyro.z = 0
+    gyro.timestamp = 200; gyro.y = -0.3; gyro.x = 0; gyro.z = 0
     gyro.fire()
     motion.x = 0.5
     motion.fire()
@@ -437,6 +437,71 @@ describe('GhostOverlayCanvas rotation + translation additive', () => {
     // Combined shift is more negative than either component alone
     expect(state.shiftPx).toBeLessThan(state.rotShiftPx)
     expect(state.shiftPx).toBeLessThan(state.transShiftPx)
+    viewfinder.remove()
+  })
+})
+
+describe('GhostOverlayCanvas gate-close yaw reset (2yu)', () => {
+  beforeEach(() => vi.restoreAllMocks())
+
+  it('GIVEN yaw accumulated WHEN gate closes THEN yawIntegral and pitchIntegral reset to 0', () => {
+    const gyro = makeGyro()
+    const { overlay, viewfinder, tick, setTime } = makeFullOverlay({ gyro })
+    overlay.setSnapshot(makeBitmap(640, 480))
+
+    // Slow pan — omegaMag=0.3 < 0.40 show threshold, gate stays open
+    setTime(0)
+    gyro.timestamp = 0; gyro.x = 0; gyro.y = 0; gyro.z = 0
+    gyro.fire()
+    tick()
+
+    setTime(200)
+    gyro.timestamp = 200; gyro.y = -0.3; gyro.x = 0; gyro.z = 0
+    gyro.fire()
+    tick()
+
+    const before = overlay.getDebugState()
+    expect(before.yawIntegral).not.toBe(0)
+
+    // Spike omegaMag above hide threshold to close the gate
+    setTime(300)
+    gyro.timestamp = 300; gyro.x = 0; gyro.y = 0; gyro.z = 2.0
+    gyro.fire()
+    tick()
+
+    const after = overlay.getDebugState()
+    expect(after.yawIntegral).toBe(0)
+    expect(after.pitchIntegral).toBe(0)
+    // Velocity also zeroed; displacement retained
+    expect(after.velX).toBe(0)
+    viewfinder.remove()
+  })
+})
+
+describe('GhostOverlayCanvas yaw viewport clamp (3cg)', () => {
+  beforeEach(() => vi.restoreAllMocks())
+
+  it('GIVEN sustained pan past display edge THEN yawIntegral is clamped to tan(hFov/2) after render tick', () => {
+    const gyro = makeGyro()
+    const { overlay, viewfinder, tick, setTime } = makeFullOverlay({ gyro })
+    overlay.setSnapshot(makeBitmap(640, 480))
+
+    // First gyro sample
+    setTime(0)
+    gyro.timestamp = 0; gyro.x = 0; gyro.y = 0; gyro.z = 0
+    gyro.fire()
+    tick()
+
+    // Very fast sustained pan — builds up yaw far beyond display boundary
+    setTime(5000)
+    gyro.timestamp = 5000; gyro.y = -10.0; gyro.x = 0; gyro.z = 0
+    gyro.fire()
+    tick()
+
+    const state = overlay.getDebugState()
+    const maxYaw = Math.tan((65 * Math.PI / 180) / 2)
+    // yawIntegral must not exceed the viewport boundary
+    expect(Math.abs(state.yawIntegral)).toBeLessThanOrEqual(maxYaw + 0.001)
     viewfinder.remove()
   })
 })

@@ -121,6 +121,15 @@ export function computeShiftPx(yawIntegral: number, displayWidth: number, hFovDe
   return Math.max(-half, Math.min(half, shift))
 }
 
+// Clamps yawIntegral to the range that computeShiftPx would not further clamp.
+// displayWidth cancels out: maxYaw = tan(hFov/2).
+// Apply in the RAF loop after rendering so yaw never accumulates past the visible boundary,
+// preventing the ghost from jumping when panning back from the edge.
+export function clampYawToViewport(yawIntegral: number, hFovDeg = DEFAULT_HFOV_DEG): number {
+  const maxYaw = Math.tan((hFovDeg * Math.PI / 180) / 2)
+  return Math.max(-maxYaw, Math.min(maxYaw, yawIntegral))
+}
+
 // shiftY = focal * pitchIntegral, clamped to ±displayHeight/2.
 // Camera tilts top away (looks up) → pitchIntegral > 0 → positive shiftY (ghost moves down, appears fixed in space).
 export function computeShiftPy(pitchIntegral: number, displayWidth: number, displayHeight: number, hFovDeg = DEFAULT_HFOV_DEG): number {

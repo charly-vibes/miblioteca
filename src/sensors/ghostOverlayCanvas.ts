@@ -39,6 +39,7 @@ export type GhostOverlayCanvasDeps = {
   gyro: GyroLike | null
   motion?: MotionLike | null
   getBeta?: () => number   // returns current DeviceOrientationEvent.beta; default 90 (phone upright)
+  distanceCm?: number      // working distance to subject in cm; clamped to [20, 150]; default 60
   requestAnimationFrame?: (cb: FrameRequestCallback) => number
   cancelAnimationFrame?: (id: number) => void
   now?: () => DOMHighResTimeStamp
@@ -65,7 +66,7 @@ export class GhostOverlayCanvas {
   private lastMotionLogMs = 0
   private workingDistanceCm = 60
   private snapshotBeta = 90  // DeviceOrientationEvent.beta at the time of the last setSnapshot
-  private readonly deps: Required<Omit<GhostOverlayCanvasDeps, 'motion' | 'getBeta'>> & Pick<GhostOverlayCanvasDeps, 'motion' | 'getBeta'>
+  private readonly deps: Required<Omit<GhostOverlayCanvasDeps, 'motion' | 'getBeta' | 'distanceCm'>> & Pick<GhostOverlayCanvasDeps, 'motion' | 'getBeta'>
 
   constructor(viewfinder: HTMLElement, deps: GhostOverlayCanvasDeps) {
     this.viewfinder = viewfinder
@@ -78,10 +79,8 @@ export class GhostOverlayCanvas {
       now: deps.now ?? (() => performance.now()),
     }
 
-    // Parse working distance from ?distance=<cm> URL param (clamp to [20, 150] cm).
-    const distParam = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('distance') : null
-    const parsed = distParam ? Number(distParam) : NaN
-    this.workingDistanceCm = Number.isFinite(parsed) && parsed >= 20 && parsed <= 150 ? parsed : 60
+    const d = deps.distanceCm ?? 60
+    this.workingDistanceCm = Number.isFinite(d) && d >= 20 && d <= 150 ? d : 60
 
     this.canvas = document.createElement('canvas')
     this.canvas.className = 'ghost-overlay'

@@ -273,10 +273,13 @@ export class CaptureView {
     this.render()
     if (s.kind === 'granted' && this.opts.gyro) {
       window.addEventListener('deviceorientation', this.orientationHandler)
+      const distParam = new URLSearchParams(location.search).get('distance')
+      const distanceCm = distParam ? Number(distParam) : undefined
       this.ghostOverlay = new GhostOverlayCanvas(this.viewfinder, {
         gyro: this.opts.gyro,
         motion: this.opts.motion,
         getBeta: () => this.betaDeg,
+        distanceCm,
       })
     }
   }

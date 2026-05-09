@@ -7,6 +7,8 @@ import {
   computeShiftPy,
   computeTranslationShiftPx,
   computeTranslationShiftPy,
+  motionGateVisible,
+  capToViewport,
 } from './ghostOverlay'
 import type { GhostOverlayState, GyroSample, AccelSample } from './ghostOverlay'
 import { debugLogger } from '../debug/logger'
@@ -162,11 +164,8 @@ export class GhostOverlayCanvas {
     }
 
     const currentlyHidden = this.canvas.hidden
-    const shouldShow = this.hasSnapshot && (
-      currentlyHidden
-        ? this.state.omegaMag <= MOTION_GATE_SHOW_RAD_S
-        : this.state.omegaMag <= MOTION_GATE_HIDE_RAD_S
-    )
+    const shouldShow = this.hasSnapshot &&
+      motionGateVisible(this.state.omegaMag, currentlyHidden, MOTION_GATE_SHOW_RAD_S, MOTION_GATE_HIDE_RAD_S)
     if (this.canvas.hidden !== !shouldShow) {
       this.canvas.hidden = !shouldShow
       // Secondary ZUPT: zero velocity when gate closes so drift doesn't accumulate during still periods.
@@ -234,11 +233,9 @@ export class GhostOverlayCanvas {
     const vw = this.viewfinder.clientWidth
     const vh = this.viewfinder.clientHeight
     if (typeof window === 'undefined') return { w: vw, h: vh }
-    const maxW = window.innerWidth
-    const maxH = window.innerHeight
     return {
-      w: maxW > 0 ? Math.min(vw, maxW) : vw,
-      h: maxH > 0 ? Math.min(vh, maxH) : vh,
+      w: capToViewport(vw, window.innerWidth),
+      h: capToViewport(vh, window.innerHeight),
     }
   }
 

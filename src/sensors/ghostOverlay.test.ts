@@ -8,6 +8,8 @@ import {
   computeShiftPy,
   computeTranslationShiftPx,
   computeTranslationShiftPy,
+  motionGateVisible,
+  capToViewport,
 } from './ghostOverlay'
 
 describe('initialGhostState', () => {
@@ -422,5 +424,56 @@ describe('computeTranslationShiftPy', () => {
     const px = Math.abs(computeTranslationShiftPx(0.05, 0.6, 390))
     const py = Math.abs(computeTranslationShiftPy(0.05, 0.6, 390))
     expect(px).toBeCloseTo(py)
+  })
+})
+
+describe('motionGateVisible', () => {
+  it('GIVEN hidden ghost and omegaMag below show threshold THEN returns true (show)', () => {
+    expect(motionGateVisible(0.30, true, 0.40, 0.55)).toBe(true)
+  })
+
+  it('GIVEN hidden ghost and omegaMag above show threshold THEN returns false (stay hidden)', () => {
+    expect(motionGateVisible(0.50, true, 0.40, 0.55)).toBe(false)
+  })
+
+  it('GIVEN visible ghost and omegaMag below hide threshold THEN returns true (stay visible)', () => {
+    expect(motionGateVisible(0.50, false, 0.40, 0.55)).toBe(true)
+  })
+
+  it('GIVEN visible ghost and omegaMag above hide threshold THEN returns false (hide)', () => {
+    expect(motionGateVisible(0.60, false, 0.40, 0.55)).toBe(false)
+  })
+
+  it('GIVEN omegaMag in hysteresis band (0.40 < omega < 0.55) THEN hidden stays hidden, visible stays visible', () => {
+    const omega = 0.45
+    expect(motionGateVisible(omega, true, 0.40, 0.55)).toBe(false)
+    expect(motionGateVisible(omega, false, 0.40, 0.55)).toBe(true)
+  })
+
+  it('GIVEN omegaMag exactly at show threshold THEN shows (<=)', () => {
+    expect(motionGateVisible(0.40, true, 0.40, 0.55)).toBe(true)
+  })
+
+  it('GIVEN omegaMag exactly at hide threshold THEN stays visible (<=)', () => {
+    expect(motionGateVisible(0.55, false, 0.40, 0.55)).toBe(true)
+  })
+})
+
+describe('capToViewport', () => {
+  it('GIVEN clientWidth > viewport THEN returns viewport (Firefox Android workaround)', () => {
+    expect(capToViewport(875, 414)).toBe(414)
+  })
+
+  it('GIVEN clientWidth <= viewport THEN returns clientWidth unchanged', () => {
+    expect(capToViewport(414, 414)).toBe(414)
+    expect(capToViewport(300, 414)).toBe(300)
+  })
+
+  it('GIVEN viewport is 0 (jsdom) THEN returns clientWidth uncapped', () => {
+    expect(capToViewport(875, 0)).toBe(875)
+  })
+
+  it('GIVEN viewport is negative THEN returns clientWidth uncapped', () => {
+    expect(capToViewport(500, -1)).toBe(500)
   })
 })

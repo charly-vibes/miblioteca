@@ -154,3 +154,18 @@ export function computeTranslationShiftPy(
   if (workingDistanceM <= 0) return 0
   return (dy_m / workingDistanceM) * focalLengthPx(displayWidth, hFovDeg)
 }
+
+export function motionGateVisible(
+  omegaMag: number,
+  currentlyHidden: boolean,
+  showThreshold = 0.40,
+  hideThreshold = 0.55,
+): boolean {
+  return currentlyHidden
+    ? omegaMag <= showThreshold
+    : omegaMag <= hideThreshold
+}
+
+export function capToViewport(clientDim: number, viewportDim: number): number {
+  return viewportDim > 0 ? Math.min(clientDim, viewportDim) : clientDim
+}

@@ -331,12 +331,15 @@ function sectionCard(s, captures, duration) {
   gyroCol.innerHTML = `<div class="chart-label">Gyro scan axis (gy, blue) · |ω| (gray) · gate 0.5 rad/s (red dashed)</div>`;
   const gyroCv = makeCanvas(110);
   gyroCol.appendChild(gyroCv);
-  gyroCol.innerHTML += '<div class="legend">' + [
+  const gyroLegend = document.createElement('div');
+  gyroLegend.className = 'legend';
+  gyroLegend.innerHTML = [
     legend_('gy yaw axis (rad/s)', '#58a6ff'),
     legend_('gx pitch axis (rad/s)', '#3fb950'),
     legend_('|ω| magnitude', '#7d8590'),
     legend_(`gate show/hide (${MOTION_GATE_SHOW}/${MOTION_GATE_HIDE})`, '#f85149'),
-  ].join('') + '</div>';
+  ].join('');
+  gyroCol.appendChild(gyroLegend);
   grid.appendChild(gyroCol);
 
   // Shift chart
@@ -345,12 +348,15 @@ function sectionCard(s, captures, duration) {
   shiftCol.innerHTML = `<div class="chart-label">Ghost shift px · X=yaw · Y=pitch · red zone = ghost hidden</div>`;
   const shiftCv = makeCanvas(110);
   shiftCol.appendChild(shiftCv);
-  shiftCol.innerHTML += '<div class="legend">' + [
+  const shiftLegend = document.createElement('div');
+  shiftLegend.className = 'legend';
+  shiftLegend.innerHTML = [
     legend_('shiftPx (yaw)', '#e6edf3'),
     legend_('shiftPy (pitch)', '#3fb950'),
     legend_('ghost hidden', 'rgba(248,81,73,.3)'),
     legend_('±displayWidth/2', '#30363d'),
-  ].join('') + '</div>';
+  ].join('');
+  shiftCol.appendChild(shiftLegend);
   grid.appendChild(shiftCol);
 
   body.appendChild(grid);
@@ -382,13 +388,16 @@ function sectionCard(s, captures, duration) {
     arDiv.innerHTML = `<div class="chart-label">AR overlap diagram — angular space, end of section</div>`;
     const arCv = makeCanvas(90);
     arDiv.appendChild(arCv);
-    arDiv.innerHTML += '<div class="legend" style="margin-top:8px">' + [
+    const arLegend = document.createElement('div');
+    arLegend.className = 'legend';
+    arLegend.style.marginTop = '8px';
+    arLegend.innerHTML = [
       legend_('Previous photo FOV', 'rgba(240,136,62,.5)'),
       legend_('Current camera FOV', 'rgba(88,166,255,.5)'),
       legend_('Overlap', 'rgba(63,185,80,.5)'),
     ].join('') + `<span style="margin-left:auto;font-size:11px;color:var(--muted)">` +
-      `Δyaw=${yawDeg}° · FOV=${HFOV_DEG}° · display=${last.displayWidth}px</span>` +
-      '</div>';
+      `Δyaw=${yawDeg}° · FOV=${HFOV_DEG}° · display=${last.displayWidth}px</span>`;
+    arDiv.appendChild(arLegend);
     body.appendChild(arDiv);
 
     queueDraw(() => {
@@ -613,11 +622,14 @@ function resimPanel(motionAll, shiftAll, visAll, captures, duration) {
   betaCol.innerHTML = `<div class="chart-label">betaDeg timeline · green band = accepted · red = ZUPT fires</div>`;
   const betaCv = makeCanvas(100);
   betaCol.appendChild(betaCv);
-  betaCol.innerHTML += '<div class="legend">' + [
+  const betaLegend = document.createElement('div');
+  betaLegend.className = 'legend';
+  betaLegend.innerHTML = [
     legend_('betaDeg', '#58a6ff'),
     legend_('Acceptance band (90±maxTilt)', 'rgba(63,185,80,.2)'),
     legend_('Capture', '#f0883e'),
-  ].join('') + '</div>';
+  ].join('');
+  betaCol.appendChild(betaLegend);
   grid.appendChild(betaCol);
 
   const transCol = document.createElement('div');
@@ -625,12 +637,15 @@ function resimPanel(motionAll, shiftAll, visAll, captures, duration) {
   transCol.innerHTML = `<div class="chart-label">Translation dx_cm · actual (dim) vs simulated (bright) · resets at captures</div>`;
   const transCv = makeCanvas(100);
   transCol.appendChild(transCv);
-  transCol.innerHTML += '<div class="legend">' + [
+  const transLegend = document.createElement('div');
+  transLegend.className = 'legend';
+  transLegend.innerHTML = [
     legend_('Actual dx_cm', 'rgba(88,166,255,.4)'),
     legend_('Simulated dx_cm', '#58a6ff'),
     legend_('Actual dy_cm', 'rgba(63,185,80,.3)'),
     legend_('Simulated dy_cm', '#3fb950'),
-  ].join('') + '</div>';
+  ].join('');
+  transCol.appendChild(transLegend);
   grid.appendChild(transCol);
 
   body.appendChild(grid);

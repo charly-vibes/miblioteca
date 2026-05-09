@@ -35,11 +35,21 @@ export type MotionLike = {
   stop(): void
 }
 
+export type GhostFrame = {
+  t: DOMHighResTimeStamp    // absolute timestamp from deps.now()
+  yawRad: number            // yawIntegral at this tick
+  pitchRad: number          // gyro pitch integral in rad; used for data collection only — rendering (pitchShiftPx) is 0 until pitch is implemented
+  shiftPx: number           // horizontal canvas shift in CSS px
+  pitchShiftPx: number      // vertical shift (always 0 until pitch is implemented)
+  gateOpen: boolean         // true when ghost overlay is visible
+}
+
 export type GhostOverlayCanvasDeps = {
   gyro: GyroLike | null
   motion?: MotionLike | null
   getBeta?: () => number   // returns current DeviceOrientationEvent.beta; default 90 (phone upright)
   distanceCm?: number      // working distance to subject in cm; clamped to [20, 150]; default 60
+  onFrame?: (frame: GhostFrame) => void  // fired each RAF tick after shift is computed
   requestAnimationFrame?: (cb: FrameRequestCallback) => number
   cancelAnimationFrame?: (id: number) => void
   now?: () => DOMHighResTimeStamp
@@ -66,7 +76,7 @@ export class GhostOverlayCanvas {
   private lastMotionLogMs = 0
   private workingDistanceCm = 60
   private snapshotBeta = 90  // DeviceOrientationEvent.beta at the time of the last setSnapshot
-  private readonly deps: Required<Omit<GhostOverlayCanvasDeps, 'motion' | 'getBeta' | 'distanceCm'>> & Pick<GhostOverlayCanvasDeps, 'motion' | 'getBeta'>
+  private readonly deps: Required<Omit<GhostOverlayCanvasDeps, 'motion' | 'getBeta' | 'distanceCm' | 'onFrame'>> & Pick<GhostOverlayCanvasDeps, 'motion' | 'getBeta' | 'onFrame'>
 
   constructor(viewfinder: HTMLElement, deps: GhostOverlayCanvasDeps) {
     this.viewfinder = viewfinder
@@ -74,6 +84,7 @@ export class GhostOverlayCanvas {
       gyro: deps.gyro,
       motion: deps.motion,
       getBeta: deps.getBeta,
+      onFrame: deps.onFrame,
       requestAnimationFrame: deps.requestAnimationFrame ?? ((cb) => window.requestAnimationFrame(cb)),
       cancelAnimationFrame: deps.cancelAnimationFrame ?? ((id) => window.cancelAnimationFrame(id)),
       now: deps.now ?? (() => performance.now()),
@@ -169,7 +180,14 @@ export class GhostOverlayCanvas {
     if (this.canvas.hidden !== !shouldShow) {
       this.canvas.hidden = !shouldShow
       // Secondary ZUPT: zero velocity and reset yaw/pitch on gate close to prevent jump on reappear.
-      if (!shouldShow) this.state = { ...zeroVelocity(this.state), yawIntegral: 0, pitchIntegral: 0 }
+      if (!shouldShow) {
+        this.state = { ...zeroVelocity(this.state), yawIntegral: 0, pitchIntegral: 0 }
+        this.deps.onFrame?.({
+          t: this.deps.now(),
+          yawRad: 0, pitchRad: 0, shiftPx: 0,
+          pitchShiftPx: 0, gateOpen: false,
+        })
+      }
       debugLogger.log('ghost:visibility-changed', { visible: shouldShow, omegaMag: this.state.omegaMag, yawIntegral: this.state.yawIntegral })
     }
     if (this.canvas.hidden) return
@@ -228,6 +246,15 @@ export class GhostOverlayCanvas {
       })
       this.lastShiftLogMs = now
     }
+
+    this.deps.onFrame?.({
+      t: now,
+      yawRad: this.state.yawIntegral,
+      pitchRad: this.state.pitchIntegral,
+      shiftPx,
+      pitchShiftPx: 0,
+      gateOpen: true,
+    })
   }
 
   // Returns viewfinder CSS dimensions capped at the visual viewport.

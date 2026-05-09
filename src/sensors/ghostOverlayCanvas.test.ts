@@ -530,3 +530,65 @@ describe('GhostOverlayCanvas viewport cap', () => {
     viewfinder.remove()
   })
 })
+
+describe('GhostOverlayCanvas onFrame callback', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('GIVEN no onFrame in deps WHEN tick fires THEN no crash', () => {
+    const { overlay, tick } = makeFullOverlay()
+    overlay.setSnapshot(makeBitmap())
+    expect(() => tick()).not.toThrow()
+    overlay.destroy()
+  })
+
+  it('GIVEN onFrame provided WHEN tick fires with gate open THEN callback receives correct fields', () => {
+    const frames: import('./ghostOverlayCanvas').GhostFrame[] = []
+    let now = 0
+    const raf = { cb: null as FrameRequestCallback | null }
+    const viewfinder = document.createElement('div')
+    document.body.appendChild(viewfinder)
+    makeCanvas()
+    const overlay = new GhostOverlayCanvas(viewfinder, {
+      gyro: null,
+      onFrame: (f) => frames.push(f),
+      requestAnimationFrame: (cb) => { raf.cb = cb; return 1 },
+      cancelAnimationFrame: vi.fn(),
+      now: () => now,
+    })
+    overlay.setSnapshot(makeBitmap(400, 800))
+    now = 42
+    raf.cb?.(0)
+
+    expect(frames).toHaveLength(1)
+    expect(frames[0].t).toBe(42)
+    expect(frames[0].gateOpen).toBe(true)
+    expect(frames[0].pitchShiftPx).toBe(0)
+    expect(typeof frames[0].shiftPx).toBe('number')
+    expect(typeof frames[0].yawRad).toBe('number')
+    expect(typeof frames[0].pitchRad).toBe('number')
+    overlay.destroy()
+    viewfinder.remove()
+  })
+
+  it('GIVEN onFrame provided WHEN no snapshot has been set THEN callback is not fired', () => {
+    const frames: import('./ghostOverlayCanvas').GhostFrame[] = []
+    const raf = { cb: null as FrameRequestCallback | null }
+    const viewfinder = document.createElement('div')
+    document.body.appendChild(viewfinder)
+    makeCanvas()
+    const overlay = new GhostOverlayCanvas(viewfinder, {
+      gyro: null,
+      onFrame: (f) => frames.push(f),
+      requestAnimationFrame: (cb) => { raf.cb = cb; return 1 },
+      cancelAnimationFrame: vi.fn(),
+      now: () => 0,
+    })
+    // no setSnapshot → gate stays closed (hasSnapshot=false)
+    raf.cb?.(0)
+    expect(frames).toHaveLength(0)
+    overlay.destroy()
+    viewfinder.remove()
+  })
+})

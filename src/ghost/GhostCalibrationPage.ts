@@ -1,5 +1,7 @@
-import type { GhostFrame } from '../sensors/ghostOverlayCanvas'
-import type { Phase } from './types'
+import type { GhostFrame, GyroLike } from '../sensors/ghostOverlayCanvas'
+import { initialGhostState, feedGhostGyro, computeShiftPx } from '../sensors/ghostOverlay'
+import type { GhostOverlayState } from '../sensors/ghostOverlay'
+import type { Phase, SensorFrame, CalibrationCycle } from './types'
 
 const DOT_PX = 24
 const DOT_COLOR = '#FF3B30'
@@ -16,6 +18,10 @@ export type WindowLike = {
 export type CalibrationPageDeps = {
   getUserMedia?: (constraints: MediaStreamConstraints) => Promise<MediaStream>
   win?: WindowLike
+  gyro?: GyroLike | null
+  requestAnimationFrame?: (cb: FrameRequestCallback) => number
+  cancelAnimationFrame?: (id: number) => void
+  now?: () => number
 }
 
 function injectPulseStyle(doc: Document): void {
@@ -53,6 +59,11 @@ function fmt(n: number): string {
   return n.toFixed(3).padStart(8)
 }
 
+function msToMMSS(ms: number): string {
+  const s = Math.floor(ms / 1000)
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
+}
+
 export class GhostCalibrationPage {
   private readonly videoEl: HTMLVideoElement
   private readonly warnBannerEl: HTMLElement
@@ -60,6 +71,9 @@ export class GhostCalibrationPage {
   private readonly rectangleEl: HTMLElement
   private readonly centerDotEl: HTMLElement
   private readonly hintEl: HTMLElement
+  private readonly recordingIndicatorEl: HTMLElement
+  private readonly timerSpanEl: HTMLSpanElement
+  private readonly stopBtnEl: HTMLButtonElement
 
   private phase: Phase = 'idle'
   private latestFrame: GhostFrame | null = null
@@ -70,6 +84,23 @@ export class GhostCalibrationPage {
   private readonly motionHandler: EventListenerOrEventListenerObject
   private readonly win: WindowLike
 
+  private readonly gyro: GyroLike | null
+  private readonly raf: (cb: FrameRequestCallback) => number
+  private readonly caf: (id: number) => void
+  private readonly nowFn: () => number
+
+  private cycles: CalibrationCycle[] = []
+  private currentCycle: Partial<CalibrationCycle> | null = null
+  private ghostState: GhostOverlayState = initialGhostState()
+  private latestShiftPx = 0
+  private recordingStartedAt = 0
+  private recordingRafId = 0
+
+  // Rectangle initial geometry (computed once, used for position updates)
+  private readonly rectInitLeft: number
+  private readonly rectW: number
+  private readonly rectH: number
+
   constructor(
     private readonly root: HTMLElement,
     deps: CalibrationPageDeps = {}
@@ -77,6 +108,11 @@ export class GhostCalibrationPage {
     this.win = deps.win ?? (typeof window !== 'undefined'
       ? window
       : { addEventListener: () => {}, removeEventListener: () => {}, innerWidth: 375, innerHeight: 667 })
+
+    this.gyro = deps.gyro ?? null
+    this.raf = deps.requestAnimationFrame ?? (cb => (typeof window !== 'undefined' ? window.requestAnimationFrame(cb) : 0))
+    this.caf = deps.cancelAnimationFrame ?? (id => { if (typeof window !== 'undefined') window.cancelAnimationFrame(id) })
+    this.nowFn = deps.now ?? (() => (typeof performance !== 'undefined' ? performance.now() : 0))
 
     const doc = root.ownerDocument ?? document
     injectPulseStyle(doc)
@@ -120,6 +156,10 @@ export class GhostCalibrationPage {
     const rx = Math.round((vw - rw) / 2)
     const ry = Math.round((vh - rh) / 2)
 
+    this.rectInitLeft = rx
+    this.rectW = rw
+    this.rectH = rh
+
     this.rectangleEl = doc.createElement('div')
     this.rectangleEl.setAttribute('data-testid', 'calibration-rectangle')
     Object.assign(this.rectangleEl.style, {
@@ -160,6 +200,37 @@ export class GhostCalibrationPage {
       whiteSpace: 'nowrap',
     })
 
+    this.recordingIndicatorEl = doc.createElement('div')
+    this.recordingIndicatorEl.setAttribute('data-testid', 'recording-indicator')
+    Object.assign(this.recordingIndicatorEl.style, {
+      position: 'fixed', top: '0.5rem', right: '0.5rem',
+      display: 'flex', alignItems: 'center', gap: '0.4rem',
+      color: '#fff', fontFamily: 'monospace', fontSize: '0.9rem', zIndex: '6',
+    })
+    this.recordingIndicatorEl.hidden = true
+    const redDot = doc.createElement('span')
+    Object.assign(redDot.style, {
+      width: '10px', height: '10px', borderRadius: '50%',
+      background: DOT_COLOR, display: 'inline-block',
+    })
+    this.timerSpanEl = doc.createElement('span')
+    this.timerSpanEl.textContent = '00:00'
+    this.recordingIndicatorEl.appendChild(redDot)
+    this.recordingIndicatorEl.appendChild(this.timerSpanEl)
+
+    this.stopBtnEl = doc.createElement('button')
+    this.stopBtnEl.textContent = 'Stop'
+    this.stopBtnEl.setAttribute('data-testid', 'stop-btn')
+    this.stopBtnEl.hidden = true
+    Object.assign(this.stopBtnEl.style, {
+      position: 'fixed', bottom: `${Math.round(vh * 0.12)}px`, left: '50%',
+      transform: 'translateX(-50%)',
+      padding: '0.6rem 2rem', background: '#c00', color: '#fff',
+      border: 'none', borderRadius: '0.4rem',
+      fontFamily: 'sans-serif', fontSize: '1rem', cursor: 'pointer', zIndex: '6',
+    })
+    this.stopBtnEl.addEventListener('click', () => this.onDotTap())
+
     const overlay = doc.createElement('div')
     Object.assign(overlay.style, { position: 'fixed', inset: '0', zIndex: '2' })
     overlay.appendChild(this.rectangleEl)
@@ -169,6 +240,8 @@ export class GhostCalibrationPage {
     root.appendChild(this.warnBannerEl)
     root.appendChild(this.telemetryEl)
     root.appendChild(overlay)
+    root.appendChild(this.recordingIndicatorEl)
+    root.appendChild(this.stopBtnEl)
 
     this.motionHandler = (ev: Event) => {
       const e = ev as DeviceMotionEvent
@@ -188,7 +261,68 @@ export class GhostCalibrationPage {
     }
     this.win.addEventListener('devicemotion', this.motionHandler)
 
+    if (this.gyro) {
+      this.gyro.onreading = () => this.onGyroReading()
+      this.gyro.onerror = null
+      this.gyro.start()
+    }
+
     void this.startCamera(deps.getUserMedia)
+  }
+
+  private onGyroReading(): void {
+    const g = this.gyro!
+    const t = g.timestamp ?? this.nowFn()
+    const gx = g.x ?? 0
+    const gy = g.y ?? 0
+    const gz = g.z ?? 0
+
+    this.ghostState = feedGhostGyro(this.ghostState, { t, gx, gy, gz }, 'y')
+    this.latestShiftPx = computeShiftPx(this.ghostState.yawIntegral, this.win.innerWidth || 375)
+
+    this.latestFrame = {
+      t: this.nowFn(),
+      yawRad: this.ghostState.yawIntegral,
+      pitchRad: this.ghostState.pitchIntegral,
+      shiftPx: this.latestShiftPx,
+      pitchShiftPx: 0,
+      gateOpen: true,
+    }
+    this.renderTelemetry()
+
+    if (this.phase === 'recording' && this.currentCycle?.frames) {
+      const frame: SensorFrame = {
+        t: this.nowFn() - this.recordingStartedAt,
+        gx, gy, gz,
+        ax: this.sensorVals.ax,
+        ay: this.sensorVals.ay,
+        az: this.sensorVals.az,
+      }
+      this.currentCycle.frames.push(frame)
+    }
+  }
+
+  private readonly recordingRafLoop: FrameRequestCallback = () => {
+    if (this.phase !== 'recording' || this.destroyed) return
+    this.recordingRafId = this.raf(this.recordingRafLoop)
+
+    const shiftPx = this.latestShiftPx
+    this.rectangleEl.style.left = `${this.rectInitLeft + Math.round(shiftPx)}px`
+
+    const elapsed = this.nowFn() - this.recordingStartedAt
+    this.timerSpanEl.textContent = msToMMSS(elapsed)
+
+    if (this.currentCycle?.ghostFrames) {
+      const ghostFrame: GhostFrame = {
+        t: elapsed,
+        yawRad: this.ghostState.yawIntegral,
+        pitchRad: this.ghostState.pitchIntegral,
+        shiftPx,
+        pitchShiftPx: 0,
+        gateOpen: true,
+      }
+      this.currentCycle.ghostFrames.push(ghostFrame)
+    }
   }
 
   private async startCamera(getUserMedia?: CalibrationPageDeps['getUserMedia']): Promise<void> {
@@ -226,6 +360,7 @@ export class GhostCalibrationPage {
 
   private onCenterTap(): void {
     if (this.phase === 'idle') this.transitionToRecording()
+    else if (this.phase === 'repositioning') this.transitionToCaptured()
   }
 
   private onDotTap(): void {
@@ -237,20 +372,64 @@ export class GhostCalibrationPage {
     this.phase = 'recording'
     this.hintEl.textContent = 'RECORDING — tap any dot to stop'
     this.centerDotEl.classList.remove('ghost-center-dot')
+
+    const vw = this.win.innerWidth || 375
+    const vh = this.win.innerHeight || 667
+    this.recordingStartedAt = this.nowFn()
+    this.ghostState = initialGhostState()
+    this.latestShiftPx = 0
+
+    this.currentCycle = {
+      id: crypto.randomUUID(),
+      startedAt: this.recordingStartedAt,
+      rectangleSize: { width: this.rectW, height: this.rectH },
+      startPosition: { x: Math.round(vw / 2), y: Math.round(vh / 2) },
+      frames: [],
+      ghostFrames: [],
+    }
+
+    this.recordingIndicatorEl.hidden = false
+    this.stopBtnEl.hidden = false
+    this.recordingRafId = this.raf(this.recordingRafLoop)
   }
 
   private transitionToRepositioning(): void {
     this.phase = 'repositioning'
+    this.caf(this.recordingRafId)
+    this.recordingRafId = 0
+
+    const endedAt = this.nowFn()
+    if (this.currentCycle) {
+      this.currentCycle.endedAt = endedAt
+      const left = parseInt(this.rectangleEl.style.left, 10)
+      const top = parseInt(this.rectangleEl.style.top, 10)
+      this.currentCycle.algorithmPosition = {
+        x: left + this.rectW / 2,
+        y: top + this.rectH / 2,
+      }
+    }
+
+    this.recordingIndicatorEl.hidden = true
+    this.stopBtnEl.hidden = true
     this.hintEl.textContent = 'DRAG rectangle to its true position, then tap Confirm'
+  }
+
+  private transitionToCaptured(): void {
+    this.phase = 'captured'
   }
 
   getPhase(): Phase { return this.phase }
   getCenterDot(): HTMLElement { return this.centerDotEl }
   getTelemetryEl(): HTMLElement { return this.telemetryEl }
+  getCurrentCycle(): Partial<CalibrationCycle> | null { return this.currentCycle }
+  getCycles(): CalibrationCycle[] { return this.cycles }
 
   destroy(): void {
     this.destroyed = true
+    this.caf(this.recordingRafId)
+    if (this.gyro) this.gyro.onreading = null
     this.win.removeEventListener('devicemotion', this.motionHandler)
+    this.gyro?.stop()
     this.stream?.getTracks().forEach(t => t.stop())
     this.root.replaceChildren()
   }

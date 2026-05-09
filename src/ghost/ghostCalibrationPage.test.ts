@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { GhostCalibrationPage } from './GhostCalibrationPage'
 import type { WindowLike } from './GhostCalibrationPage'
+import type { GyroLike } from '../sensors/ghostOverlayCanvas'
 
 function makeWin(innerWidth = 800, innerHeight = 600): WindowLike & {
   dispatch(type: string, event: unknown): void
@@ -156,5 +157,148 @@ describe('GhostCalibrationPage — state transitions', () => {
     const page = new GhostCalibrationPage(container, { win })
     page.getCenterDot().click()
     expect(page.getCenterDot().classList.contains('ghost-center-dot')).toBe(false)
+  })
+
+  it('recording phase: corner dot tap → repositioning', () => {
+    const page = new GhostCalibrationPage(container, { win })
+    page.getCenterDot().click()
+    const rect = container.querySelector('[data-testid="calibration-rectangle"]')!
+    const corners = [...rect.querySelectorAll('[role="button"]')].filter(d => d !== page.getCenterDot())
+    ;(corners[0] as HTMLElement).click()
+    expect(page.getPhase()).toBe('repositioning')
+  })
+
+  it('stop button tap → repositioning', () => {
+    const page = new GhostCalibrationPage(container, { win })
+    page.getCenterDot().click()
+    const stopBtn = container.querySelector<HTMLElement>('[data-testid="stop-btn"]')!
+    stopBtn.click()
+    expect(page.getPhase()).toBe('repositioning')
+  })
+})
+
+function makeGyro(x = 0, y = 0.1, z = 0): GyroLike & { trigger(): void } {
+  const g: GyroLike & { trigger(): void } = {
+    onreading: null,
+    onerror: null,
+    x, y, z,
+    timestamp: 0,
+    start: vi.fn(),
+    stop: vi.fn(),
+    trigger() { g.onreading?.() },
+  }
+  return g
+}
+
+describe('GhostCalibrationPage — RECORDING phase', () => {
+  it('accumulates SensorFrames on gyro readings during RECORDING', () => {
+    const gyro = makeGyro(0.05, 0.1, 0.02)
+    const page = new GhostCalibrationPage(container, { win, gyro })
+    expect(gyro.start).toHaveBeenCalled()
+
+    page.getCenterDot().click()  // → recording
+    expect(page.getCurrentCycle()?.frames).toHaveLength(0)
+
+    gyro.trigger()
+    gyro.trigger()
+    gyro.trigger()
+    expect(page.getCurrentCycle()?.frames).toHaveLength(3)
+  })
+
+  it('SensorFrame contains correct gx/gy/gz from gyro', () => {
+    const gyro = makeGyro(0.1, 0.2, 0.3)
+    const page = new GhostCalibrationPage(container, { win, gyro })
+    page.getCenterDot().click()
+    gyro.trigger()
+    const frame = page.getCurrentCycle()?.frames?.[0]!
+    expect(frame.gx).toBeCloseTo(0.1)
+    expect(frame.gy).toBeCloseTo(0.2)
+    expect(frame.gz).toBeCloseTo(0.3)
+  })
+
+  it('does NOT accumulate SensorFrames before RECORDING starts', () => {
+    const gyro = makeGyro()
+    const page = new GhostCalibrationPage(container, { win, gyro })
+    gyro.trigger()
+    gyro.trigger()
+    expect(page.getCurrentCycle()).toBeNull()
+  })
+
+  it('does NOT accumulate SensorFrames after RECORDING ends', () => {
+    const gyro = makeGyro()
+    const caf = vi.fn()
+    const page = new GhostCalibrationPage(container, { win, gyro, cancelAnimationFrame: caf })
+    page.getCenterDot().click()
+    gyro.trigger()
+    ;(container.querySelector<HTMLElement>('[data-testid="stop-btn"]'))!.click()
+    const countAtStop = page.getCurrentCycle()?.frames?.length ?? 0
+    gyro.trigger()
+    expect(page.getCurrentCycle()?.frames?.length).toBe(countAtStop)
+  })
+
+  it('RAF tick updates rectangle left position by shiftPx', () => {
+    // feedGhostGyro needs 2 readings: first sets lastT, second integrates yaw
+    const gyro = makeGyro(0, 0.5, 0)  // gy = 0.5 rad/s
+    let rafCb: FrameRequestCallback | null = null
+    const raf = vi.fn((cb: FrameRequestCallback) => { rafCb = cb; return 1 })
+    const page = new GhostCalibrationPage(container, { win: makeWin(800, 600), gyro, requestAnimationFrame: raf, cancelAnimationFrame: vi.fn() })
+    const rect = container.querySelector<HTMLElement>('[data-testid="calibration-rectangle"]')!
+    const initialLeft = parseInt(rect.style.left, 10)
+
+    page.getCenterDot().click()
+    gyro.timestamp = 0
+    gyro.trigger()          // first reading: sets lastT = 0
+    gyro.timestamp = 100    // 100 ms later → dt = 0.1 s → yaw += 0.5 * 0.1 = 0.05 rad
+    gyro.trigger()          // second reading: integrates yaw → shiftPx becomes non-zero
+    rafCb!(0)               // RAF tick → updates rectangle left
+
+    const newLeft = parseInt(rect.style.left, 10)
+    expect(newLeft).not.toBe(initialLeft)
+  })
+
+  it('RAF tick accumulates GhostFrames', () => {
+    const gyro = makeGyro()
+    let rafCb: FrameRequestCallback | null = null
+    const raf = vi.fn((cb: FrameRequestCallback) => { rafCb = cb; return 1 })
+    const page = new GhostCalibrationPage(container, { win, gyro, requestAnimationFrame: raf, cancelAnimationFrame: vi.fn() })
+    page.getCenterDot().click()
+    rafCb!(0)
+    rafCb!(0)
+    expect(page.getCurrentCycle()?.ghostFrames?.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('recording indicator is shown during RECORDING and hidden on stop', () => {
+    const page = new GhostCalibrationPage(container, { win })
+    const indicator = container.querySelector<HTMLElement>('[data-testid="recording-indicator"]')!
+    expect(indicator.hidden).toBe(true)
+    page.getCenterDot().click()
+    expect(indicator.hidden).toBe(false)
+    ;(container.querySelector<HTMLElement>('[data-testid="stop-btn"]'))!.click()
+    expect(indicator.hidden).toBe(true)
+  })
+
+  it('telemetry updates yaw/shift after gyro readings during RECORDING', () => {
+    const gyro = makeGyro(0, 0.5, 0)
+    const page = new GhostCalibrationPage(container, { win: makeWin(800, 600), gyro })
+    page.getCenterDot().click()
+    gyro.timestamp = 0; gyro.trigger()         // sets lastT
+    gyro.timestamp = 100; gyro.trigger()       // integrates yaw → shiftPx non-zero
+    const telemetry = page.getTelemetryEl()
+    expect(telemetry.textContent).not.toContain('Yaw: 0.0°')
+  })
+
+  it('transitionToRepositioning captures algorithmPosition from rectangle', () => {
+    const gyro = makeGyro(0, 0.5, 0)
+    let rafCb: FrameRequestCallback | null = null
+    const raf = vi.fn((cb: FrameRequestCallback) => { rafCb = cb; return 1 })
+    const page = new GhostCalibrationPage(container, { win: makeWin(800, 600), gyro, requestAnimationFrame: raf, cancelAnimationFrame: vi.fn() })
+    page.getCenterDot().click()
+    gyro.trigger()
+    rafCb!(0)  // rectangle moves
+    ;(container.querySelector<HTMLElement>('[data-testid="stop-btn"]'))!.click()
+    const pos = page.getCurrentCycle()?.algorithmPosition
+    expect(pos).toBeDefined()
+    expect(typeof pos!.x).toBe('number')
+    expect(typeof pos!.y).toBe('number')
   })
 })

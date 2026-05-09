@@ -71,6 +71,18 @@
     /* ── no-data ──────────────────────────────────── */
     .no-data { padding: 14px; color: var(--muted); font-size: 13px; }
 
+    /* ── resim controls ──────────────────────────── */
+    .resim-controls { display: flex; flex-wrap: wrap; gap: 16px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+    .resim-group { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 140px; }
+    .resim-group label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+    .resim-group .val { font-size: 12px; font-weight: 600; color: var(--text); font-family: monospace; }
+    .resim-group input[type=range] { width: 100%; accent-color: var(--blue); }
+    .resim-summary { padding: 10px 14px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 16px; }
+    .resim-summary .metric { display: flex; flex-direction: column; gap: 2px; }
+    .resim-summary .metric b { color: var(--text); font-size: 14px; font-family: monospace; }
+    .resim-summary .metric.bad b { color: var(--red); }
+    .resim-summary .metric.good b { color: var(--green); }
+
     @media (max-width: 600px) {
       .charts-grid { grid-template-columns: 1fr; }
       .chart-col { border-right: none; border-bottom: 1px solid var(--border); }
@@ -166,6 +178,12 @@ function render(data) {
 
   // Master timeline
   content.appendChild(masterTimeline(events, captures, visAll, duration));
+
+  // Re-simulation panel (betaDeg + translation with adjustable thresholds)
+  const motionAll = byType['ghost:motion-sample'] ?? [];
+  if (motionAll.length > 0) {
+    content.appendChild(resimPanel(motionAll, shiftAll, visAll, captures, duration));
+  }
 
   // Section cards
   for (const s of sections) content.appendChild(sectionCard(s, captures, duration));
@@ -559,6 +577,235 @@ function drawAR(cv, yawIntegral, displayWidth) {
     ctx.fillStyle = '#30363d'; ctx.fillRect(x, barY + barH + 2, 1, 4);
     ctx.fillStyle = '#7d8590'; ctx.fillText(`${deg >= 0 ? '+' : ''}${deg.toFixed(0)}°`, x, H - 2);
   }
+}
+
+// ─── Re-Simulation Panel ─────────────────────────────────────────────────────
+function resimPanel(motionAll, shiftAll, visAll, captures, duration) {
+  const panel = makePanel('Tilt & Translation Re-Simulator', []);
+  const body = panel.querySelector('.panel-body');
+  body.style.padding = '0';
+
+  // Controls
+  const controls = document.createElement('div');
+  controls.className = 'resim-controls';
+  controls.innerHTML = `
+    <div class="resim-group">
+      <label>Max Tilt (°) <span class="val" id="resim-tilt-val">45</span></label>
+      <input type="range" id="resim-tilt" min="10" max="80" step="1" value="45">
+    </div>
+    <div class="resim-group">
+      <label>Gate Show (rad/s) <span class="val" id="resim-show-val">0.40</span></label>
+      <input type="range" id="resim-show" min="0.1" max="1.5" step="0.05" value="0.40">
+    </div>
+    <div class="resim-group">
+      <label>Gate Hide (rad/s) <span class="val" id="resim-hide-val">0.55</span></label>
+      <input type="range" id="resim-hide" min="0.1" max="2.0" step="0.05" value="0.55">
+    </div>
+  `;
+  body.appendChild(controls);
+
+  // Charts
+  const grid = document.createElement('div');
+  grid.className = 'charts-grid';
+
+  const betaCol = document.createElement('div');
+  betaCol.className = 'chart-col';
+  betaCol.innerHTML = `<div class="chart-label">betaDeg timeline · green band = accepted · red = ZUPT fires</div>`;
+  const betaCv = makeCanvas(100);
+  betaCol.appendChild(betaCv);
+  betaCol.innerHTML += '<div class="legend">' + [
+    legend_('betaDeg', '#58a6ff'),
+    legend_('Acceptance band (90±maxTilt)', 'rgba(63,185,80,.2)'),
+    legend_('Capture', '#f0883e'),
+  ].join('') + '</div>';
+  grid.appendChild(betaCol);
+
+  const transCol = document.createElement('div');
+  transCol.className = 'chart-col';
+  transCol.innerHTML = `<div class="chart-label">Translation dx_cm · actual (dim) vs simulated (bright) · resets at captures</div>`;
+  const transCv = makeCanvas(100);
+  transCol.appendChild(transCv);
+  transCol.innerHTML += '<div class="legend">' + [
+    legend_('Actual dx_cm', 'rgba(88,166,255,.4)'),
+    legend_('Simulated dx_cm', '#58a6ff'),
+    legend_('Actual dy_cm', 'rgba(63,185,80,.3)'),
+    legend_('Simulated dy_cm', '#3fb950'),
+  ].join('') + '</div>';
+  grid.appendChild(transCol);
+
+  body.appendChild(grid);
+
+  // Summary area
+  const summary = document.createElement('div');
+  summary.className = 'resim-summary';
+  summary.id = 'resim-summary';
+  body.appendChild(summary);
+
+  function simulate(maxTiltDeg, gateShow, gateHide) {
+    let velX = 0, velY = 0, dx_m = 0, dy_m = 0, lastT = -Infinity;
+    let gateHidden = false, zuptCount = 0, passCount = 0;
+    const segments = [];
+
+    const captureTimes = captures.map(c => c.t);
+    let capIdx = 0;
+
+    for (const ev of motionAll) {
+      while (capIdx < captureTimes.length && ev.t > captureTimes[capIdx]) {
+        velX = 0; velY = 0; dx_m = 0; dy_m = 0; lastT = -Infinity;
+        capIdx++;
+      }
+
+      const { ax, ay, betaDeg, interval_ms } = ev.payload;
+      const omegaMag = shiftAll.find(s => Math.abs(s.t - ev.t) < 200)?.payload?.omegaMag ?? 0;
+
+      if (gateHidden) {
+        if (omegaMag <= gateShow) { gateHidden = false; }
+      } else {
+        if (omegaMag > gateHide) { gateHidden = true; velX = 0; velY = 0; }
+      }
+
+      const tiltOk = Math.abs(betaDeg - 90) <= maxTiltDeg;
+      if (!tiltOk) {
+        velX = 0; velY = 0;
+        zuptCount++;
+      } else if (!gateHidden) {
+        const dt = lastT === -Infinity
+          ? Math.min(interval_ms / 1000, 0.1)
+          : Math.min((ev.t - lastT) / 1000, 0.5);
+        const nVelX = velX + ax * dt;
+        const nVelY = velY + ay * dt;
+        dx_m += (velX + nVelX) / 2 * dt;
+        dy_m += (velY + nVelY) / 2 * dt;
+        velX = nVelX;
+        velY = nVelY;
+        passCount++;
+      }
+      lastT = ev.t;
+
+      segments.push({ t: ev.t, dx_cm: dx_m * 100, dy_cm: dy_m * 100, betaDeg, zupt: !tiltOk, gateVis: !gateHidden });
+    }
+
+    return { segments, zuptCount, passCount, finalDx: dx_m * 100, finalDy: dy_m * 100 };
+  }
+
+  function drawResim() {
+    const maxTiltDeg = +document.getElementById('resim-tilt').value;
+    const gateShow = +document.getElementById('resim-show').value;
+    const gateHide = +document.getElementById('resim-hide').value;
+
+    document.getElementById('resim-tilt-val').textContent = maxTiltDeg;
+    document.getElementById('resim-show-val').textContent = gateShow.toFixed(2);
+    document.getElementById('resim-hide-val').textContent = gateHide.toFixed(2);
+
+    const result = simulate(maxTiltDeg, gateShow, gateHide);
+    const { segments, zuptCount, passCount, finalDx, finalDy } = result;
+
+    const actualFinalDx = motionAll.at(-1)?.payload?.dx_cm ?? 0;
+    const actualFinalDy = motionAll.at(-1)?.payload?.dy_cm ?? 0;
+
+    const simGood = Math.abs(finalDx) > 1;
+    summary.innerHTML = [
+      `<div class="metric ${Math.abs(actualFinalDx) < 0.5 ? 'bad' : ''}"><span>Actual dx</span><b>${actualFinalDx.toFixed(2)} cm</b></div>`,
+      `<div class="metric ${simGood ? 'good' : 'bad'}"><span>Simulated dx</span><b>${finalDx.toFixed(2)} cm</b></div>`,
+      `<div class="metric"><span>Actual dy</span><b>${actualFinalDy.toFixed(2)} cm</b></div>`,
+      `<div class="metric"><span>Simulated dy</span><b>${finalDy.toFixed(2)} cm</b></div>`,
+      `<div class="metric ${zuptCount > passCount ? 'bad' : ''}"><span>ZUPT fires</span><b>${zuptCount}/${motionAll.length}</b></div>`,
+      `<div class="metric ${passCount < 5 ? 'bad' : 'good'}"><span>Samples passed</span><b>${passCount}/${motionAll.length}</b></div>`,
+    ].join('');
+
+    // betaDeg chart
+    const bW = betaCv.parentElement.clientWidth - 28;
+    betaCv.width = bW; betaCv.height = 100;
+    const bCtx = betaCv.getContext('2d');
+    const t0 = motionAll[0].t, tEnd = motionAll.at(-1).t;
+    const bX = t => ((t - t0) / (tEnd - t0)) * bW;
+    const bY = deg => 96 - (deg / 180) * 88;
+
+    bCtx.fillStyle = '#0d1117'; bCtx.fillRect(0, 0, bW, 100);
+
+    // Acceptance band
+    const bandTop = bY(90 + maxTiltDeg);
+    const bandBot = bY(90 - maxTiltDeg);
+    bCtx.fillStyle = 'rgba(63,185,80,.12)';
+    bCtx.fillRect(0, bandTop, bW, bandBot - bandTop);
+
+    // 90° reference
+    bCtx.strokeStyle = '#30363d'; bCtx.lineWidth = 1;
+    hline(bCtx, bY(90), bW);
+    bCtx.setLineDash([3, 3]);
+    bCtx.strokeStyle = 'rgba(63,185,80,.5)'; bCtx.lineWidth = 1;
+    hline(bCtx, bandTop, bW); hline(bCtx, bandBot, bW);
+    bCtx.setLineDash([]);
+
+    // ZUPT markers
+    bCtx.fillStyle = 'rgba(248,81,73,.4)';
+    for (const s of segments) {
+      if (s.zupt) bCtx.fillRect(bX(s.t) - 1, 0, 2, 100);
+    }
+
+    // betaDeg line
+    bCtx.strokeStyle = '#58a6ff'; bCtx.lineWidth = 1.5;
+    polyline(bCtx, segments, s => bX(s.t), s => bY(s.betaDeg));
+
+    // Capture markers
+    bCtx.strokeStyle = '#f0883e'; bCtx.lineWidth = 1.5;
+    for (const c of captures) {
+      const x = bX(c.t);
+      if (x > 0 && x < bW) { bCtx.beginPath(); bCtx.moveTo(x, 4); bCtx.lineTo(x, 96); bCtx.stroke(); }
+    }
+
+    // Labels
+    bCtx.fillStyle = '#7d8590'; bCtx.font = '9px monospace'; bCtx.textAlign = 'left';
+    bCtx.fillText('180°', 2, 10); bCtx.fillText('90°', 2, bY(90) + 3); bCtx.fillText('0°', 2, 96);
+
+    // Translation chart
+    const tW = transCv.parentElement.clientWidth - 28;
+    transCv.width = tW; transCv.height = 100;
+    const tCtx = transCv.getContext('2d');
+    const tX2 = t => ((t - t0) / (tEnd - t0)) * tW;
+
+    tCtx.fillStyle = '#0d1117'; tCtx.fillRect(0, 0, tW, 100);
+
+    const maxDisp = Math.max(
+      1,
+      ...segments.map(s => Math.abs(s.dx_cm)),
+      ...segments.map(s => Math.abs(s.dy_cm)),
+      ...motionAll.map(e => Math.abs(e.payload.dx_cm)),
+      ...motionAll.map(e => Math.abs(e.payload.dy_cm)),
+    );
+    const dY = v => 50 - (v / maxDisp) * 42;
+
+    // Zero line
+    tCtx.strokeStyle = '#21262d'; tCtx.lineWidth = 1;
+    hline(tCtx, 50, tW);
+
+    // Actual (dim)
+    tCtx.strokeStyle = 'rgba(88,166,255,.4)'; tCtx.lineWidth = 1;
+    polyline(tCtx, motionAll, e => tX2(e.t), e => dY(e.payload.dx_cm));
+    tCtx.strokeStyle = 'rgba(63,185,80,.3)'; tCtx.lineWidth = 1;
+    polyline(tCtx, motionAll, e => tX2(e.t), e => dY(e.payload.dy_cm));
+
+    // Simulated (bright)
+    tCtx.strokeStyle = '#58a6ff'; tCtx.lineWidth = 2;
+    polyline(tCtx, segments, s => tX2(s.t), s => dY(s.dx_cm));
+    tCtx.strokeStyle = '#3fb950'; tCtx.lineWidth = 2;
+    polyline(tCtx, segments, s => tX2(s.t), s => dY(s.dy_cm));
+
+    // Labels
+    tCtx.fillStyle = '#7d8590'; tCtx.font = '9px monospace'; tCtx.textAlign = 'left';
+    tCtx.fillText(`+${maxDisp.toFixed(1)}cm`, 2, 10);
+    tCtx.fillText('0', 2, 53);
+    tCtx.fillText(`-${maxDisp.toFixed(1)}cm`, 2, 96);
+  }
+
+  queueDraw(() => {
+    drawResim();
+    document.getElementById('resim-tilt').addEventListener('input', drawResim);
+    document.getElementById('resim-show').addEventListener('input', drawResim);
+    document.getElementById('resim-hide').addEventListener('input', drawResim);
+  });
+
+  return panel;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

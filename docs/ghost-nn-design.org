@@ -1,0 +1,553 @@
+#+TITLE: Neural Network Ghost Overlay: Design Exercise
+#+DATE: 2026-05-10
+#+AUTHOR: charly vibes
+
+* Overview
+
+This document is a design exercise exploring the replacement (or augmentation) of
+the hand-crafted physics pipeline in ~GhostOverlayCanvas~ with a neural network.
+It covers: what would change, recommended architecture, the interface contract,
+training data sources (real and synthetic), and inline training feasibility.
+
+Nothing here is a commitment to implement. Treat it as an architectural blueprint.
+
+* 1. Current Pipeline — What Exists
+
+** 1.1 Source files
+
+| File | Role |
+|------+------|
+| ~src/sensors/ghostOverlay.ts~ | Sensor fusion + projection math |
+| ~src/sensors/ghostOverlayCanvas.ts~ | Canvas rendering, RAF loop |
+| ~src/ghost/GhostCalibrationPage.ts~ | Calibration UI + data capture |
+| ~src/ghost/types.ts~ | TypeScript interfaces |
+| ~src/sensors/deviceMotionAdapter.ts~ | DeviceMotion/GenericSensor adapters |
+| ~src/sensors/imuMath.ts~ | Quaternion helpers, displacement estimation |
+| ~src/sensors/imuTrace.ts~ | IMU buffer serialization |
+
+** 1.2 Pipeline: stage by stage
+
+The pipeline transforms raw sensor events into a pixel offset ~(shiftPx, shiftPy)~
+applied via ~transform: translate3d(...)~ on the ghost canvas.
+
+*** Stage 1 — Gyroscope integration (rotation component)
+
+#+BEGIN_SRC
+yawIntegral  += -gy * dt          # portrait: device-y maps to yaw
+pitchIntegral += gx * dt          # device-x maps to pitch
+omegaMag = √(gx² + gy² + gz²)    # total angular speed
+dt_clamped = min(dt, 500 ms)      # guard against stale samples
+#+END_SRC
+
+Function: ~feedGhostGyro()~ → ~GhostOverlayState~
+
+*** Stage 2 — Accelerometer integration (translation component)
+
+The accelerometer path is significantly harder because acceleration must be
+double-integrated to get displacement. Noise accumulates at O(t²).
+
+*ZUPT gate* (Zero-Velocity Update):
+
+#+BEGIN_SRC
+if accelMag < 0.10 m/s²:
+    vel *= exp(-dt / 0.20 s)      # exponential decay, τ = 200 ms
+else:
+    velX_new = velX + ax * dt
+    velY_new = velY + ay * dt
+    dx_m += (velX + velX_new) / 2 * dt   # trapezoidal rule
+    dy_m += (velY + velY_new) / 2 * dt
+#+END_SRC
+
+*Beta guard* (tilt safety):
+- Hardware gravity-subtracted accel: allowed within ±45° of vertical
+- Raw accel (no gravity compensation): ±30°
+- Outside range → gate = ~'tilt'~, accel is zeroed
+
+Gate values: ~'pass' | 'zupt' | 'tilt' | 'beta-null'~
+
+*** Stage 3 — Projection (pixels from radians + metres)
+
+#+BEGIN_SRC
+focalLengthPx = (displayWidth / 2) / tan(hFov / 2)   # pinhole camera model
+
+# Rotation component
+shiftX_rot  = -focalLengthPx * yawIntegral
+shiftY_rot  =  focalLengthPx * pitchIntegral
+
+# Translation parallax component
+shiftX_trans = -(dx_m / workingDistanceM) * focalLengthPx
+shiftY_trans =  (dy_m / workingDistanceM) * focalLengthPx
+
+# Final clamped output
+shiftPx = clamp(shiftX_rot + shiftX_trans, ±displayWidth/2)
+shiftPy = clamp(shiftY_rot + shiftY_trans, ±displayHeight/2)
+#+END_SRC
+
+Functions: ~computeShiftPx()~, ~computeShiftPy()~,
+~computeTranslationShiftPx()~, ~computeTranslationShiftPy()~
+
+*** Stage 4 — Motion gate (hysteresis)
+
+#+BEGIN_SRC
+show ghost  when: omegaMag ≤ 0.40 rad/s  (and currently hidden)
+hide ghost  when: omegaMag ≥ 0.55 rad/s  (and currently shown)
+#+END_SRC
+
+** 1.3 Known failure modes
+
+These are the problems the NN could improve:
+
+| Failure | Root cause | Current mitigation |
+|---------+------------+--------------------|
+| Gyro drift accumulates over time | Integration without absolute reference | ZUPT resets at snapshot |
+| Accel double-integration noise | O(t²) error growth | ZUPT gate, tilt guard |
+| Fixed ZUPT threshold | Device-agnostic constant (0.10 m/s²) | None |
+| Pinhole model ignores lens distortion | Assumes ideal optics | None |
+| Hard motion gate thresholds | Don't adapt to user's natural stillness | None |
+| Coordinate frame sensitivity | Portrait/landscape remap is fragile | Beta guard |
+
+** 1.4 Key constants
+
+| Constant | Value | Role |
+|----------+-------+------|
+| ~DEFAULT_HFOV_DEG~ | 65° | Horizontal field of view |
+| ~ZUPT_THRESHOLD_MS2~ | 0.10 m/s² | Accel magnitude gate |
+| ~ZUPT_TAU_S~ | 0.20 s | Exponential velocity decay |
+| ~dt_max_gyro~ | 500 ms | Gyro time-gap clamp |
+| ~dt_max_accel~ | 500 ms | Accel time-gap clamp |
+| ~MOTION_GATE_SHOW_RAD_S~ | 0.40 rad/s | Lower hysteresis bound |
+| ~MOTION_GATE_HIDE_RAD_S~ | 0.55 rad/s | Upper hysteresis bound |
+| ~workingDistanceCm~ | 60 cm (default, [20–150]) | Parallax scale |
+
+* 2. Architecture Recommendation
+
+** 2.1 End-to-end vs hybrid
+
+*Don't replace the physics model — correct it.*
+
+An end-to-end NN that maps raw sensors directly to pixel shifts would:
+- Require thousands of diverse labeled samples
+- Be a black box with no interpretable fallback
+- Overfit to one device/environment easily
+
+A *hybrid residual corrector* avoids all of these problems.
+
+#+BEGIN_SRC
+Sensor stream
+      │
+      ├──→ [Physics pipeline]  ──────────────────────→ coarse_shift (x, y)
+      │                                                         │
+      └──→ [GRU corrector] ←──── concat(sensor_window, coarse_shift)
+                     │
+                     ↓  (Δx, Δy)  residual correction
+
+final_shift = coarse_shift + Δshift
+#+END_SRC
+
+Why this works:
+- Physics model handles ~90% of the motion correctly; the NN only learns the residual
+- Makes the NN data-efficient: 5–10 calibration cycles are enough to fine-tune
+- Interpretable: disabling the NN leaves a deterministic, correct fallback
+- The physics pipeline is already a feature extractor
+
+** 2.2 Model
+
+*GRU (Gated Recurrent Unit) with a sliding window of K=16 sensor samples.*
+
+GRU is preferred over LSTM for this use case:
+- Fewer parameters (~2× fewer gates) → faster inference in JS
+- Better on short sequences (K=16 at 100 Hz = 160 ms window)
+- Empirically matches LSTM on motion tasks at this scale
+
+#+BEGIN_SRC
+Input shape:   [1, 16, 9]   (batch=1, timesteps=16, features=9)
+GRU hidden:    32 units
+Output layer:  Linear(32 → 2), unbounded (regression)
+Total params:  ~3 200
+Model size:    <12 KB (float32), <6 KB (float16)
+JS inference:  <0.5 ms per frame on mid-range mobile
+#+END_SRC
+
+For the 9 input features per timestep:
+
+| Feature | Value | Notes |
+|---------+-------+-------|
+| ~gx~ | rad/s | raw gyro x |
+| ~gy~ | rad/s | raw gyro y |
+| ~gz~ | rad/s | raw gyro z |
+| ~ax~ | m/s² | gravity-corrected accel x |
+| ~ay~ | m/s² | gravity-corrected accel y |
+| ~betaNorm~ | [−1, 1] | (betaDeg − 90) / 90 — normalised tilt |
+| ~dtMs~ | ms | sample interval (jitter signal) |
+| ~coarseShiftX~ | px / displayWidth | physics output, normalised |
+| ~coarseShiftY~ | px / displayHeight | physics output, normalised |
+
+** 2.3 Loss function
+
+During training:
+
+#+BEGIN_SRC
+L = MSE(predicted_final_shift, groundTruth_shift)
+  = MSE(coarse_shift + Δshift, groundTruth_shift)
+#+END_SRC
+
+The physics residual ~(coarse − groundTruth)~ should be small, so the NN starts near
+zero prediction and only needs to shrink the residual.
+
+For online fine-tuning, also consider Huber loss (less sensitive to large outliers
+in noisy ground-truth labels).
+
+* 3. Interface Contract
+
+All types are expressed in TypeScript. The NN is a drop-in alongside the existing pipeline.
+
+#+BEGIN_SRC typescript
+/** One normalised sensor sample in the sliding window. */
+interface GhostNNSample {
+  gx: number;         // rad/s
+  gy: number;         // rad/s
+  gz: number;         // rad/s
+  ax: number;         // m/s²  (gravity-subtracted when available)
+  ay: number;         // m/s²
+  betaNorm: number;   // (betaDeg - 90) / 90, clamped to [-1, 1]
+  dtMs: number;       // sample interval in ms
+  coarseShiftXNorm: number;   // coarseShiftX / displayWidth
+  coarseShiftYNorm: number;   // coarseShiftY / displayHeight
+}
+
+interface GhostNNInput {
+  /** Last K samples, chronological order (oldest first). Padded with zeros at start. */
+  sensorWindow: GhostNNSample[];  // length K = 16
+  focalPx: number;                // camera intrinsic (for denormalisation)
+  displayWidth: number;
+  displayHeight: number;
+}
+
+interface GhostNNOutput {
+  /** Additive correction to the physics coarse shift, in pixels. */
+  deltaShiftX: number;
+  deltaShiftY: number;
+  /** 0–1. Can drive the motion gate instead of hard threshold. */
+  confidence: number;
+}
+
+interface GhostNNModel {
+  /** Run inference synchronously. Must complete in < 2 ms. */
+  predict(input: GhostNNInput): GhostNNOutput;
+  /**
+   * Online update: adjust model to reduce error on this single observation.
+   * Returns training loss. May be a no-op if model is frozen.
+   */
+  update(input: GhostNNInput, groundTruthShift: [number, number]): number;
+  /** Serialise weights to ArrayBuffer for persistence. */
+  exportWeights(): ArrayBuffer;
+  /** Load weights from a prior exportWeights() call. */
+  importWeights(weights: ArrayBuffer): void;
+}
+#+END_SRC
+
+Integration point in ~GhostOverlayCanvas~:
+
+#+BEGIN_SRC typescript
+// Existing code produces coarseShift.
+// Add one line to apply the correction:
+const nn = getGhostNNModel();    // injected dep, same pattern as getOrientation
+if (nn) {
+  const correction = nn.predict(buildNNInput(sensorWindow, coarseShift, ...));
+  finalShiftX = coarseShift.x + correction.deltaShiftX;
+  finalShiftY = coarseShift.y + correction.deltaShiftY;
+}
+#+END_SRC
+
+* 4. Training Data
+
+** 4.1 Ground truth sources
+
+Ground truth is the *actual* pixel displacement of the shelf relative to the camera
+at each moment. Three sources, in decreasing effort and increasing quality:
+
+*** Source A — Calibration cycles (available now, zero extra work)
+
+~CalibrationCycle~ already captures:
+- ~algorithmPosition~: where the physics model placed the ghost
+- ~groundTruthPosition~: where the user dragged it to (the label)
+- ~deltaPixels~: signed error = groundTruth − algorithm
+- ~frames[]: SensorFrame[]~: full sensor log at ≥60 Hz
+- ~ghostFrames[]: GhostFrame[]~: full render log
+
+One calibration cycle = one sequence of (sensor_window → error) pairs.
+Running 10–20 calibration cycles yields ~20 000 training pairs with no additional work.
+
+Limitation: ground truth is per-cycle endpoint, not per-frame.
+Interpolation (linear or polynomial) can approximate per-frame labels.
+
+*** Source B — Optical flow between ghost frame and live feed (medium effort)
+
+At each animation frame, compute dense or sparse Lucas-Kanade optical flow between:
+- The ghost canvas snapshot
+- The live camera frame
+
+The mean flow vector is the displacement error at that frame — continuous, per-frame labels.
+
+Requires: ~ImageData~ from the camera feed (already available in current architecture)
+and a WebAssembly Lucas-Kanade implementation (~50 KB).
+
+Quality: medium — degrades on featureless shelves, low light, or fast motion.
+
+*** Source C — ArUco fiducial markers (high effort, highest quality)
+
+Place small printed markers on the shelf edge. Detect them in both the ghost and live
+frames; solve the 2D homography to get exact pixel displacement.
+
+Quality: sub-pixel accuracy.
+Requirement: printed markers — not suitable for end-user calibration, only lab data.
+
+*** Summary
+
+| Source | Effort | Quality | Per-frame? | Online? |
+|--------+--------+---------+------------+---------|
+| Calibration cycles | Zero | Medium | No (endpoint only) | Yes |
+| Optical flow | Medium | Medium | Yes | Yes |
+| ArUco markers | High | Very high | Yes | No |
+
+** 4.2 Existing data structures
+
+These TypeScript interfaces already exist in ~src/ghost/types.ts~:
+
+#+BEGIN_SRC typescript
+interface SensorFrame {
+  t: number;
+  gx: number; gy: number; gz: number;
+  ax: number; ay: number; az: number;
+  betaDeg?: number;
+  gate?: 'pass' | 'zupt' | 'tilt' | 'beta-null';
+  velX?: number; velY?: number;
+  dx_cm?: number; dy_cm?: number;
+}
+
+interface CalibrationCycle {
+  id: string;
+  startedAt: number; endedAt?: number;
+  rectangleSize: { width: number; height: number };
+  startPosition: { x: number; y: number };
+  algorithmPosition: { x: number; y: number };
+  groundTruthPosition: { x: number; y: number };
+  deltaPixels: { x: number; y: number };
+  returnYawRad: number; returnPitchRad: number;
+  frames: SensorFrame[];
+  ghostFrames: GhostFrame[];
+}
+
+interface CalibrationExport {
+  exportedAt: string;            // ISO 8601
+  deviceInfo: {
+    viewportWidth: number; viewportHeight: number;
+    devicePixelRatio: number; userAgent: string;
+  };
+  orientation?: string;
+  hFovDeg: number; focalLengthPx: number;
+  cycles: CalibrationCycle[];
+}
+#+END_SRC
+
+The ~CalibrationExport~ JSON is already being serialised and downloaded from the debug page.
+This is directly usable as a training dataset.
+
+* 5. Synthetic Training Data
+
+** 5.1 Rationale
+
+The physics pipeline *is* a perfect simulator of itself.
+Given a known ground-truth trajectory, we can:
+1. Compute what a perfect sensor would read
+2. Corrupt it with realistic noise
+3. Run the physics pipeline → coarse shift
+4. Compute residual = groundTruth − coarse
+5. Use (noisy_sensors, coarse_shift, residual) as a training pair
+
+This generates unlimited data without any real calibration sessions.
+
+** 5.2 Generator pseudocode
+
+#+BEGIN_SRC typescript
+interface SyntheticConfig {
+  durationMs: number;        // e.g. 2000
+  sampleRateHz: number;      // e.g. 100
+  maxYawRateDeg: number;     // e.g. 45 deg/s
+  maxTranslationCm: number;  // e.g. 15 cm
+  workingDistanceCm: number; // e.g. 60 cm
+  noise: NoiseConfig;
+}
+
+interface NoiseConfig {
+  gyroWhiteNoiseDegS: number;    // e.g. 0.02 deg/s / sqrt(Hz)
+  gyroDriftDegS2: number;        // e.g. 0.005 deg/s per second
+  accelNoiseMs2: number;         // e.g. 0.05 m/s²
+  quantizationHz: number;        // sensor polling rate jitter
+}
+
+function generateSyntheticBatch(config: SyntheticConfig, count: number): TrainingPair[] {
+  return Array.from({ length: count }, () => {
+    // 1. Sample a random 3-DOF trajectory (yaw, pitch, lateral translation)
+    const trajectory = sampleMotionTrajectory(config);
+
+    // 2. Derive ideal sensor readings from trajectory derivative
+    const idealSensors = trajectoryToSensors(trajectory, config.sampleRateHz);
+
+    // 3. Add realistic noise
+    const noisySensors = applyNoise(idealSensors, config.noise);
+
+    // 4. Run physics pipeline
+    const coarseShifts = runPhysicsPipeline(noisySensors, config.workingDistanceCm);
+
+    // 5. Ground truth from trajectory (exact projection, no noise)
+    const groundTruth = trajectoryToPixelShifts(trajectory, config);
+
+    // 6. Build K=16 sliding windows of (noisySensors + coarseShift)
+    return buildTrainingPairs(noisySensors, coarseShifts, groundTruth);
+  }).flat();
+}
+#+END_SRC
+
+** 5.3 Motion trajectory sampling
+
+Parameterize trajectories by motion type. Sample one type randomly per sequence:
+
+| Type | Yaw | Pitch | Translation |
+|------+-----+-------+-------------|
+| Pure yaw | ±30°/s | ~0 | ~0 |
+| Yaw + tilt | ±20°/s | ±10°/s | ~0 |
+| Lateral walk | ~0 | ~0 | ±10 cm |
+| Combined | ±15°/s | ±8°/s | ±8 cm |
+| Stationary (ZUPT test) | <0.5°/s | <0.5°/s | <1 cm |
+
+Also vary:
+- Working distance: 30, 45, 60, 80, 100, 150 cm
+- Device tilt (betaDeg): 45°, 60°, 75°, 85°
+- Noise level: low / medium / high (to cover device diversity)
+- Sequence duration: 0.5 s, 1 s, 2 s, 4 s
+
+A grid over 4 motion types × 6 distances × 4 tilts × 3 noise levels × 4 durations
+= 1 152 configuration buckets. Generate 10 sequences each = ~11 500 sequences → ~1 million
+training pairs.
+
+** 5.4 Noise model
+
+Based on consumer MEMS IMU characteristics (matches typical mobile device):
+
+#+BEGIN_SRC
+# Gyroscope
+gyro_output = gyro_true + white_noise + drift_ramp
+
+white_noise ~ N(0, σ_g)         σ_g = 0.02 deg/s / √Hz
+drift       += N(0, σ_d) * dt   σ_d = 0.005 deg/s²
+
+# Accelerometer
+accel_output = accel_true + white_noise + low_freq_bias
+
+white_noise ~ N(0, σ_a)         σ_a = 0.05 m/s²
+bias        ~ uniform(-0.03, 0.03) m/s²  (per sequence, constant)
+
+# Timing jitter
+dt ~ Normal(nominal_dt, 0.5 ms)
+#+END_SRC
+
+* 6. Inline (Online) Training
+
+** 6.1 Is it feasible?
+
+Yes. The model is small enough (~3 200 parameters) that a single gradient update on
+one sample takes <5 ms in TensorFlow.js with WebGL backend.
+
+However, online training in the browser requires careful design to avoid:
+- Catastrophic forgetting (overwriting good weights)
+- Overfitting to the current device/user immediately
+- Blocking the RAF loop
+
+** 6.2 Recommended approach: lazy episodic update
+
+Don't update every frame. Update at the end of a calibration cycle, once:
+
+#+BEGIN_SRC
+1. User completes a calibration cycle → groundTruth is known.
+2. Retrieve the buffered sensor window + coarse shifts from that cycle.
+3. Compute target residuals: target = groundTruth - coarseShift (per frame).
+4. Run 1–5 gradient descent steps on this episode.
+5. Persist weights to IndexedDB.
+6. On next app open, load weights from IndexedDB.
+#+END_SRC
+
+Use a *learning rate scheduler*: start at lr=0.01 (first calibration, weights random),
+decay to lr=0.001 after 5 cycles. This prevents thrashing on subsequent updates.
+
+** 6.3 Warm-start from synthetic data
+
+Ship the app with weights pre-trained on synthetic data:
+- Baked in as a base64-encoded ArrayBuffer in the bundle (~12 KB)
+- Provides reasonable correction immediately on first install
+- Online fine-tuning personalises from there
+
+Analogy: the synthetic data is the "prior"; user calibration cycles are the "likelihood".
+
+** 6.4 Privacy consideration
+
+Sensor data never leaves the device. All training happens in the browser (TensorFlow.js).
+No server-side infrastructure required.
+
+* 7. Integration Plan (if this is ever built)
+
+** Phase 1 — Offline training harness (no app changes)
+
+1. Export a ~CalibrationExport~ JSON from the debug page (already works)
+2. Write a Python script that:
+   - Loads the JSON
+   - Interpolates per-frame labels from endpoint ground truth
+   - Trains a GRU(32) using PyTorch or Keras
+   - Exports to TensorFlow.js ~model.json~ + ~weights.bin~
+
+Deliverable: a trained model file, evaluated offline.
+
+** Phase 2 — Passive inference (no training in browser)
+
+1. Bundle the TF.js model into the app
+2. Add ~GhostNNModel~ interface + TF.js adapter
+3. Inject as a dependency alongside ~getOrientation~ (same pattern)
+4. Log predicted vs actual for A/B comparison
+
+Deliverable: silent NN running in parallel; measure whether its corrections reduce
+calibration error.
+
+** Phase 3 — Online fine-tuning
+
+1. At calibration cycle end, run episodic update (§6.2)
+2. Persist weights to IndexedDB
+3. Show a subtle indicator when model has been personalised
+
+Deliverable: self-personalising ghost overlay.
+
+* 8. Risks and Open Questions
+
+| Risk | Severity | Mitigation |
+|------+----------+------------|
+| Ground truth from endpoint only (not per-frame) | High | Linear interpolation or optical flow |
+| TF.js startup time adds to app load | Medium | Lazy-load after first frame |
+| Model over-corrects when physics is already accurate | Medium | Cap |Δshift| to ±20 px |
+| Device diversity (sensor noise varies widely) | Medium | Noise augmentation in synthetic data |
+| User forgets to calibrate (no personalisation) | Low | Synthetic pretrain is a safe default |
+| WebGL unavailable (no TF.js acceleration) | Low | WASM backend fallback, or pure-JS mini-net |
+
+* 9. Summary
+
+| Question | Answer |
+|----------+--------|
+| Replace or augment? | Augment (residual corrector) |
+| Architecture | GRU(32) → Linear(2), ~3 200 params |
+| Input window | K=16 samples, 9 features each |
+| Output | (Δx, Δy) pixel correction + confidence |
+| Training data (real) | CalibrationExport JSON (already exportable) |
+| Training data (synthetic) | Physics pipeline + noise injection |
+| Inline training | Yes — episodic, end-of-calibration-cycle |
+| Cold start | Ship pre-trained weights from synthetic data |
+| Model size | <12 KB |
+| Inference time | <0.5 ms on mid-range mobile |
+| Privacy | On-device only, no server needed |

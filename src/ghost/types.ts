@@ -6,6 +6,13 @@ export interface SensorFrame {
   t: number
   gx: number; gy: number; gz: number
   ax: number; ay: number; az: number
+  // accel pipeline state — only present on motion frames
+  betaDeg?: number | null
+  gate?: 'pass' | 'zupt' | 'tilt' | 'beta-null'
+  velX?: number
+  velY?: number
+  dx_cm?: number
+  dy_cm?: number
 }
 
 export interface CalibrationCycle {
@@ -31,6 +38,7 @@ export interface CalibrationExport {
     devicePixelRatio: number
     userAgent: string
   }
+  orientation?: string
   hFovDeg: number
   focalLengthPx: number
   cycles: CalibrationCycle[]

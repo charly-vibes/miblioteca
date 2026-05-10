@@ -47,7 +47,7 @@ export type GhostFrame = {
 export type GhostOverlayCanvasDeps = {
   gyro: GyroLike | null
   motion?: MotionLike | null
-  getBeta?: () => number   // returns current DeviceOrientationEvent.beta; default 90 (phone upright)
+  getBeta?: () => number | null   // returns current DeviceOrientationEvent.beta; null when unavailable (e.g. Firefox Android)
   distanceCm?: number      // working distance to subject in cm; clamped to [20, 150]; default 60
   onFrame?: (frame: GhostFrame) => void  // fired each RAF tick after shift is computed
   requestAnimationFrame?: (cb: FrameRequestCallback) => number
@@ -147,21 +147,33 @@ export class GhostOverlayCanvas {
     // Defense in depth: adapter already guards against null, but belt-and-suspenders.
     // Stale non-zero velocity with ax=0 would silently accumulate displacement.
     if (motion.x === null || motion.y === null) return
-    const betaDeg = this.deps.getBeta?.() ?? 90
+    const betaDeg = this.deps.getBeta?.() ?? null
+    if (betaDeg === null) {
+      // beta unavailable (e.g. Firefox Android returns null): tilt guard is inoperable.
+      // Zero velocity to prevent bias drift accumulation; skip integration.
+      this.state = zeroVelocity(this.state)
+      return
+    }
     const now = this.deps.now()
     const gravitySubtracted = motion.gravitySubtracted ?? false
+    // In landscape the device is rotated 90° so device-Y maps to screen-X and device-X to
+    // screen-Y (negated). Apply the same axis remap the gyro path uses via scanAxis.
+    const orientationType = this.deps.getOrientation()
+    const isLandscape = orientationType.startsWith('landscape')
+    const ax = isLandscape ? motion.y : motion.x
+    const ay = isLandscape ? -motion.x : motion.y
     const sample: AccelSample = {
-      ax: motion.x,
-      ay: motion.y,
+      ax,
+      ay,
       interval_ms: motion.interval || 16,  // some browsers report 0; MotionLike types it as number but 0 is possible
       betaDeg,
       t: now,
       gravitySubtracted,
     }
-    this.state = feedGhostAccel(this.state, sample)
+    this.state = feedGhostAccel(this.state, sample).state
     if (now - this.lastMotionLogMs >= 500) {
       this.deps.logger.log('ghost:motion-sample', {
-        ax: motion.x, ay: motion.y,
+        ax, ay,
         usingRawAccel: !gravitySubtracted,
         betaDeg, interval_ms: motion.interval,
         dx_cm: this.state.dx_m * 100, dy_cm: this.state.dy_m * 100,

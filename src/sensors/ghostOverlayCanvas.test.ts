@@ -54,7 +54,8 @@ function makeMotion(x = 0, y = 0): MotionLike & { fire(): void } {
 function makeFullOverlay(opts: {
   gyro?: GyroLike & { fire(): void }
   motion?: MotionLike & { fire(): void }
-  getBeta?: () => number
+  getBeta?: () => number | null
+  getOrientation?: () => string
 } = {}) {
   let now = 0
   let rafCallback: FrameRequestCallback | null = null
@@ -65,6 +66,7 @@ function makeFullOverlay(opts: {
     gyro: opts.gyro ?? null,
     motion: opts.motion,
     getBeta: opts.getBeta,
+    getOrientation: opts.getOrientation,
     requestAnimationFrame: (cb) => { rafCallback = cb; return 1 },
     cancelAnimationFrame: vi.fn(),
     now: () => now,
@@ -370,7 +372,7 @@ describe('GhostOverlayCanvas gate-close ZUPT', () => {
   it('GIVEN motion data accumulated WHEN gate closes THEN velX zeroed but dx_m retained', () => {
     const gyro = makeGyro()
     const motion = makeMotion()
-    const { overlay, viewfinder, tick, setTime } = makeFullOverlay({ gyro, motion })
+    const { overlay, viewfinder, tick, setTime } = makeFullOverlay({ gyro, motion, getBeta: () => 90 })
     overlay.setSnapshot(makeBitmap(640, 480))
 
     // Feed motion to accumulate displacement
@@ -412,7 +414,7 @@ describe('GhostOverlayCanvas rotation + translation additive', () => {
   it('GIVEN yaw rotation AND lateral translation THEN total shift = rotation + translation', () => {
     const gyro = makeGyro()
     const motion = makeMotion()
-    const { overlay, viewfinder, tick, setTime } = makeFullOverlay({ gyro, motion })
+    const { overlay, viewfinder, tick, setTime } = makeFullOverlay({ gyro, motion, getBeta: () => 90 })
     overlay.setSnapshot(makeBitmap(640, 480))
 
     // First gyro (baseline)
@@ -589,6 +591,102 @@ describe('GhostOverlayCanvas onFrame callback', () => {
     raf.cb?.(0)
     expect(frames).toHaveLength(0)
     overlay.destroy()
+    viewfinder.remove()
+  })
+})
+
+describe('GhostOverlayCanvas accel landscape axis remap', () => {
+  beforeEach(() => vi.restoreAllMocks())
+
+  it('GIVEN landscape orientation AND motion.y bias THEN drift appears in dx_cm not dy_cm', () => {
+    const gyro = makeGyro()
+    const motion = makeMotion()
+    const { overlay, viewfinder, tick, setTime } = makeFullOverlay({
+      gyro, motion,
+      getBeta: () => 90,
+      getOrientation: () => 'landscape-primary',
+    })
+    overlay.setSnapshot(makeBitmap(640, 480))
+
+    setTime(0)
+    gyro.timestamp = 0; gyro.x = 0; gyro.y = 0; gyro.z = 0
+    gyro.fire()
+    motion.x = 0; motion.y = -0.3   // device-Y bias (portrait would drift ghost up)
+    motion.fire()
+
+    setTime(200)
+    gyro.timestamp = 200; gyro.x = 0; gyro.y = 0; gyro.z = 0
+    gyro.fire()
+    motion.fire()
+    tick()
+
+    const state = overlay.getDebugState()
+    // In landscape, device-Y → screen-X: drift is horizontal, not vertical
+    expect(Math.abs(state.dx_cm)).toBeGreaterThan(0)
+    expect(state.dy_cm).toBe(0)
+    viewfinder.remove()
+  })
+
+  it('GIVEN portrait orientation AND motion.y bias THEN drift appears in dy_cm not dx_cm', () => {
+    const gyro = makeGyro()
+    const motion = makeMotion()
+    const { overlay, viewfinder, tick, setTime } = makeFullOverlay({
+      gyro, motion,
+      getBeta: () => 90,
+      getOrientation: () => 'portrait-primary',
+    })
+    overlay.setSnapshot(makeBitmap(640, 480))
+
+    setTime(0)
+    gyro.timestamp = 0; gyro.x = 0; gyro.y = 0; gyro.z = 0
+    gyro.fire()
+    motion.x = 0; motion.y = -0.3
+    motion.fire()
+
+    setTime(200)
+    gyro.timestamp = 200; gyro.x = 0; gyro.y = 0; gyro.z = 0
+    gyro.fire()
+    motion.fire()
+    tick()
+
+    const state = overlay.getDebugState()
+    // In portrait, device-Y → screen-Y: drift is vertical
+    expect(Math.abs(state.dy_cm)).toBeGreaterThan(0)
+    expect(state.dx_cm).toBe(0)
+    viewfinder.remove()
+  })
+})
+
+describe('GhostOverlayCanvas accel null-beta guard (Firefox Android)', () => {
+  beforeEach(() => vi.restoreAllMocks())
+
+  it('GIVEN getBeta returns null WHEN motion fires THEN accel is not integrated', () => {
+    const gyro = makeGyro()
+    const motion = makeMotion()
+    const { overlay, viewfinder, tick, setTime } = makeFullOverlay({
+      gyro,
+      motion,
+      getBeta: () => null,
+    })
+    overlay.setSnapshot(makeBitmap(640, 480))
+
+    setTime(0)
+    gyro.timestamp = 0; gyro.x = 0; gyro.y = 0; gyro.z = 0
+    gyro.fire()
+    motion.x = 2.0; motion.y = 2.0
+    motion.fire()
+
+    setTime(200)
+    gyro.timestamp = 200; gyro.x = 0; gyro.y = 0; gyro.z = 0
+    gyro.fire()
+    motion.fire()
+    tick()
+
+    const state = overlay.getDebugState()
+    expect(state.velX).toBe(0)
+    expect(state.velY).toBe(0)
+    expect(state.dx_cm).toBe(0)
+    expect(state.dy_cm).toBe(0)
     viewfinder.remove()
   })
 })

@@ -29,6 +29,7 @@ export type CalibrationPageDeps = {
   now?: () => number
   triggerDownload?: (filename: string, json: string) => void
   distanceCm?: number
+  getOrientation?: () => string
 }
 
 export function focalLengthPx(viewportWidth: number, hFovDeg = H_FOV_DEG): number {
@@ -108,7 +109,8 @@ export class GhostCalibrationPage {
   private readonly triggerDownload: (filename: string, json: string) => void
 
   private readonly workingDistanceCm: number
-  private betaDeg = 90
+  private readonly getOrientation: () => string
+  private betaDeg: number | null = null
 
   private cycles: CalibrationCycle[] = []
   private currentCycle: Partial<CalibrationCycle> | null = null
@@ -151,6 +153,7 @@ export class GhostCalibrationPage {
       URL.revokeObjectURL(a.href)
     })
     this.workingDistanceCm = deps.distanceCm ?? 60
+    this.getOrientation = deps.getOrientation ?? (() => (typeof screen !== 'undefined' && screen.orientation?.type) || 'portrait-primary')
 
     const doc = root.ownerDocument ?? document
     this.doc = doc
@@ -368,7 +371,7 @@ export class GhostCalibrationPage {
 
     this.orientationHandler = (ev: Event) => {
       const e = ev as DeviceOrientationEvent
-      this.betaDeg = e.beta ?? 90
+      this.betaDeg = e.beta
     }
     this.win.addEventListener('deviceorientation', this.orientationHandler)
 
@@ -388,18 +391,28 @@ export class GhostCalibrationPage {
           gz: this.sensorVals.gz,
         }, 'y')
       }
+      let accelGate: SensorFrame['gate'] | undefined
       if (ac) {
         this.sensorVals.ax = ac.x ?? 0
         this.sensorVals.ay = ac.y ?? 0
         this.sensorVals.az = ac.z ?? 0
-        this.ghostState = feedGhostAccel(this.ghostState, {
-          ax: this.sensorVals.ax,
-          ay: this.sensorVals.ay,
-          interval_ms: e.interval ?? 16,
-          betaDeg: this.betaDeg,
-          t,
-          gravitySubtracted: true,
-        })
+        if (this.betaDeg === null) {
+          accelGate = 'beta-null'
+        } else {
+          const isLandscape = this.getOrientation().startsWith('landscape')
+          const ax = isLandscape ? this.sensorVals.ay : this.sensorVals.ax
+          const ay = isLandscape ? -this.sensorVals.ax : this.sensorVals.ay
+          const accelResult = feedGhostAccel(this.ghostState, {
+            ax,
+            ay,
+            interval_ms: e.interval ?? 16,
+            betaDeg: this.betaDeg,
+            t,
+            gravitySubtracted: true,
+          })
+          this.ghostState = accelResult.state
+          accelGate = accelResult.gate
+        }
       }
       const vw = this.win.innerWidth || 375
       const vh = this.win.innerHeight || 667
@@ -418,6 +431,12 @@ export class GhostCalibrationPage {
           ax: this.sensorVals.ax,
           ay: this.sensorVals.ay,
           az: this.sensorVals.az,
+          betaDeg: this.betaDeg,
+          gate: accelGate,
+          velX: this.ghostState.velX,
+          velY: this.ghostState.velY,
+          dx_cm: this.ghostState.dx_m * 100,
+          dy_cm: this.ghostState.dy_m * 100,
         }
         this.currentCycle.frames.push(frame)
       }
@@ -683,6 +702,7 @@ export class GhostCalibrationPage {
         devicePixelRatio: this.win.devicePixelRatio ?? 1,
         userAgent: this.win.navigator?.userAgent ?? '',
       },
+      orientation: this.getOrientation(),
       hFovDeg: H_FOV_DEG,
       focalLengthPx: focalLengthPx(vw),
       cycles: this.cycles,

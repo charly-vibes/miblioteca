@@ -567,6 +567,7 @@ export class GhostCalibrationPage {
   private transitionToCaptured(): void {
     this.phase = 'captured'
     this.confirmBtnEl.hidden = true
+    this.hintEl.hidden = true
     this.rectangleEl.style.background = ''
 
     const cycle = this.cycles.at(-1)
@@ -633,6 +634,7 @@ export class GhostCalibrationPage {
     this.exportBtnEl.hidden = true
     this.nextCycleBtnEl.hidden = true
     this.hintEl.textContent = 'TAP CENTER TO START'
+    this.hintEl.hidden = false
     this.centerDotEl.classList.add('ghost-center-dot')
 
     // Reset rectangle to initial centered position

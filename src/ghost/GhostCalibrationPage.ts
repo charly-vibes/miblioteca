@@ -74,6 +74,7 @@ export class GhostCalibrationPage {
   private readonly recordingIndicatorEl: HTMLElement
   private readonly timerSpanEl: HTMLSpanElement
   private readonly stopBtnEl: HTMLButtonElement
+  private readonly confirmBtnEl: HTMLButtonElement
 
   private phase: Phase = 'idle'
   private latestFrame: GhostFrame | null = null
@@ -84,6 +85,7 @@ export class GhostCalibrationPage {
   private readonly motionHandler: EventListenerOrEventListenerObject
   private readonly win: WindowLike
 
+  private readonly doc: Document
   private readonly gyro: GyroLike | null
   private readonly raf: (cb: FrameRequestCallback) => number
   private readonly caf: (id: number) => void
@@ -96,7 +98,14 @@ export class GhostCalibrationPage {
   private recordingStartedAt = 0
   private recordingRafId = 0
 
-  // Rectangle initial geometry (computed once, used for position updates)
+  private dragStartTouch: { clientX: number; clientY: number } | null = null
+  private dragStartRect = { left: 0, top: 0 }
+
+  private readonly onDocMouseMove: (e: MouseEvent) => void
+  private readonly onDocMouseUp: () => void
+  private readonly onDocTouchMove: (e: Event) => void
+  private readonly onDocTouchEnd: () => void
+
   private readonly rectInitLeft: number
   private readonly rectW: number
   private readonly rectH: number
@@ -115,6 +124,7 @@ export class GhostCalibrationPage {
     this.nowFn = deps.now ?? (() => (typeof performance !== 'undefined' ? performance.now() : 0))
 
     const doc = root.ownerDocument ?? document
+    this.doc = doc
     injectPulseStyle(doc)
 
     this.videoEl = doc.createElement('video')
@@ -168,7 +178,13 @@ export class GhostCalibrationPage {
       width: `${rw}px`, height: `${rh}px`,
       border: `2px solid ${DOT_COLOR}`,
       boxSizing: 'border-box',
+      touchAction: 'none',
     })
+    this.rectangleEl.addEventListener('mousedown', (e: MouseEvent) => this.startDrag(e.clientX, e.clientY))
+    this.rectangleEl.addEventListener('touchstart', (e: Event) => {
+      const t = (e as TouchEvent).touches[0]
+      if (t) { e.preventDefault(); this.startDrag(t.clientX, t.clientY) }
+    }, { passive: false })
 
     const corners: [number, number][] = [[0, 0], [rw, 0], [0, rh], [rw, rh]]
     for (const [x, y] of corners) {
@@ -231,6 +247,19 @@ export class GhostCalibrationPage {
     })
     this.stopBtnEl.addEventListener('click', () => this.onDotTap())
 
+    this.confirmBtnEl = doc.createElement('button')
+    this.confirmBtnEl.textContent = 'Confirm'
+    this.confirmBtnEl.setAttribute('data-testid', 'confirm-btn')
+    this.confirmBtnEl.hidden = true
+    Object.assign(this.confirmBtnEl.style, {
+      position: 'fixed', bottom: `${Math.round(vh * 0.08)}px`, left: '50%',
+      transform: 'translateX(-50%)',
+      padding: '0.6rem 2rem', background: '#0c0', color: '#fff',
+      border: 'none', borderRadius: '0.4rem',
+      fontFamily: 'sans-serif', fontSize: '1rem', cursor: 'pointer', zIndex: '6',
+    })
+    this.confirmBtnEl.addEventListener('click', () => this.onConfirm())
+
     const overlay = doc.createElement('div')
     Object.assign(overlay.style, { position: 'fixed', inset: '0', zIndex: '2' })
     overlay.appendChild(this.rectangleEl)
@@ -242,6 +271,21 @@ export class GhostCalibrationPage {
     root.appendChild(overlay)
     root.appendChild(this.recordingIndicatorEl)
     root.appendChild(this.stopBtnEl)
+    root.appendChild(this.confirmBtnEl)
+
+    this.onDocMouseMove = (e: MouseEvent) => this.moveDrag(e.clientX, e.clientY)
+    this.onDocMouseUp = () => this.stopDrag()
+    this.onDocTouchMove = (e: Event) => {
+      if (!this.dragStartTouch) return
+      const t = (e as TouchEvent).touches[0]
+      if (t) { e.preventDefault(); this.moveDrag(t.clientX, t.clientY) }
+    }
+    this.onDocTouchEnd = () => this.stopDrag()
+
+    doc.addEventListener('mousemove', this.onDocMouseMove)
+    doc.addEventListener('mouseup', this.onDocMouseUp)
+    doc.addEventListener('touchmove', this.onDocTouchMove, { passive: false })
+    doc.addEventListener('touchend', this.onDocTouchEnd)
 
     this.motionHandler = (ev: Event) => {
       const e = ev as DeviceMotionEvent
@@ -346,10 +390,11 @@ export class GhostCalibrationPage {
     const { gx, gy, gz, ax, ay, az } = this.sensorVals
     const omegaMag = Math.sqrt(gx * gx + gy * gy + gz * gz)
     const f = this.latestFrame
-    const yawDeg = f ? (f.yawRad * 180 / Math.PI).toFixed(1) : '0.0'
-    const pitchDeg = f ? (f.pitchRad * 180 / Math.PI).toFixed(1) : '0.0'
-    const shiftPx = f ? f.shiftPx.toFixed(0) : '0'
-    const gateStr = f?.gateOpen ? 'OPEN' : 'CLOSED'
+    const paused = this.phase === 'repositioning'
+    const yawDeg = paused ? 'PAUSED' : (f ? (f.yawRad * 180 / Math.PI).toFixed(1) : '0.0')
+    const pitchDeg = paused ? 'PAUSED' : (f ? (f.pitchRad * 180 / Math.PI).toFixed(1) : '0.0')
+    const shiftPx = paused ? 'PAUSED' : (f ? f.shiftPx.toFixed(0) : '0')
+    const gateStr = paused ? 'PAUSED' : (f?.gateOpen ? 'OPEN' : 'CLOSED')
     this.telemetryEl.textContent = [
       `gx ${fmt(gx)}  gy ${fmt(gy)}  gz ${fmt(gz)} rad/s`,
       `ax ${fmt(ax)}  ay ${fmt(ay)}  az ${fmt(az)} m/s²`,
@@ -412,14 +457,61 @@ export class GhostCalibrationPage {
     this.recordingIndicatorEl.hidden = true
     this.stopBtnEl.hidden = true
     this.hintEl.textContent = 'DRAG rectangle to its true position, then tap Confirm'
+    this.rectangleEl.style.background = 'rgba(255,255,255,0.15)'
+    this.confirmBtnEl.hidden = false
+    this.renderTelemetry()
+  }
+
+  private startDrag(clientX: number, clientY: number): void {
+    if (this.phase !== 'repositioning') return
+    this.dragStartTouch = { clientX, clientY }
+    this.dragStartRect = {
+      left: parseInt(this.rectangleEl.style.left, 10),
+      top: parseInt(this.rectangleEl.style.top, 10),
+    }
+  }
+
+  private moveDrag(clientX: number, clientY: number): void {
+    if (this.phase !== 'repositioning' || !this.dragStartTouch) return
+    const dx = clientX - this.dragStartTouch.clientX
+    const dy = clientY - this.dragStartTouch.clientY
+    const vw = this.win.innerWidth || 375
+    const vh = this.win.innerHeight || 667
+    const newLeft = Math.max(0, Math.min(vw - this.rectW, this.dragStartRect.left + dx))
+    const newTop = Math.max(0, Math.min(vh - this.rectH, this.dragStartRect.top + dy))
+    this.rectangleEl.style.left = `${Math.round(newLeft)}px`
+    this.rectangleEl.style.top = `${Math.round(newTop)}px`
+  }
+
+  private stopDrag(): void {
+    this.dragStartTouch = null
+  }
+
+  private onConfirm(): void {
+    if (this.phase !== 'repositioning' || !this.currentCycle) return
+    const left = parseInt(this.rectangleEl.style.left, 10)
+    const top = parseInt(this.rectangleEl.style.top, 10)
+    const gtX = left + this.rectW / 2
+    const gtY = top + this.rectH / 2
+    this.currentCycle.groundTruthPosition = { x: gtX, y: gtY }
+    this.currentCycle.returnYawRad = this.ghostState.yawIntegral
+    this.currentCycle.returnPitchRad = this.ghostState.pitchIntegral
+    const alg = this.currentCycle.algorithmPosition
+    if (!alg) return
+    this.currentCycle.deltaPixels = { x: gtX - alg.x, y: gtY - alg.y }
+    this.cycles.push(this.currentCycle as CalibrationCycle)
+    this.transitionToCaptured()
   }
 
   private transitionToCaptured(): void {
     this.phase = 'captured'
+    this.confirmBtnEl.hidden = true
+    this.rectangleEl.style.background = ''
   }
 
   getPhase(): Phase { return this.phase }
   getCenterDot(): HTMLElement { return this.centerDotEl }
+  getConfirmBtn(): HTMLButtonElement { return this.confirmBtnEl }
   getTelemetryEl(): HTMLElement { return this.telemetryEl }
   getCurrentCycle(): Partial<CalibrationCycle> | null { return this.currentCycle }
   getCycles(): CalibrationCycle[] { return this.cycles }
@@ -429,6 +521,10 @@ export class GhostCalibrationPage {
     this.caf(this.recordingRafId)
     if (this.gyro) this.gyro.onreading = null
     this.win.removeEventListener('devicemotion', this.motionHandler)
+    this.doc.removeEventListener('mousemove', this.onDocMouseMove)
+    this.doc.removeEventListener('mouseup', this.onDocMouseUp)
+    this.doc.removeEventListener('touchmove', this.onDocTouchMove)
+    this.doc.removeEventListener('touchend', this.onDocTouchEnd)
     this.gyro?.stop()
     this.stream?.getTracks().forEach(t => t.stop())
     this.root.replaceChildren()

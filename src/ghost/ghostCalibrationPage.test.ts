@@ -302,3 +302,70 @@ describe('GhostCalibrationPage — RECORDING phase', () => {
     expect(typeof pos!.y).toBe('number')
   })
 })
+
+describe('GhostCalibrationPage — REPOSITIONING phase', () => {
+  function enterRepositioning(w = makeWin(800, 600)) {
+    const page = new GhostCalibrationPage(container, { win: w })
+    page.getCenterDot().click()
+    ;(container.querySelector<HTMLElement>('[data-testid="stop-btn"]'))!.click()
+    return page
+  }
+
+  it('confirm button is hidden in IDLE and shown in REPOSITIONING', () => {
+    const page = new GhostCalibrationPage(container, { win })
+    expect(page.getConfirmBtn().hidden).toBe(true)
+    page.getCenterDot().click()
+    ;(container.querySelector<HTMLElement>('[data-testid="stop-btn"]'))!.click()
+    expect(page.getConfirmBtn().hidden).toBe(false)
+  })
+
+  it('rectangle background changes to semi-transparent on REPOSITIONING', () => {
+    enterRepositioning()
+    const rect = container.querySelector<HTMLElement>('[data-testid="calibration-rectangle"]')!
+    expect(rect.style.background).toContain('rgba')
+  })
+
+  it('telemetry shows PAUSED for motion values in REPOSITIONING', () => {
+    const page = enterRepositioning()
+    expect(page.getTelemetryEl().textContent).toContain('PAUSED')
+  })
+
+  it('drag moves rectangle within viewport bounds (clamped at right edge)', () => {
+    const w = makeWin(800, 600)
+    enterRepositioning(w)
+    const rect = container.querySelector<HTMLElement>('[data-testid="calibration-rectangle"]')!
+    // rw=480, vw=800 → max left=320; initial left=160
+    rect.dispatchEvent(new MouseEvent('mousedown', { clientX: 400, clientY: 300, bubbles: true }))
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 900, clientY: 300, bubbles: true }))
+    // 160 + 500 = 660 → clamped to 800 - 480 = 320
+    expect(parseInt(rect.style.left, 10)).toBe(320)
+  })
+
+  it('drag clamps at left edge (min 0)', () => {
+    const w = makeWin(800, 600)
+    enterRepositioning(w)
+    const rect = container.querySelector<HTMLElement>('[data-testid="calibration-rectangle"]')!
+    // initial left=160; drag 300px left → -140, clamped to 0
+    rect.dispatchEvent(new MouseEvent('mousedown', { clientX: 400, clientY: 300, bubbles: true }))
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 100, clientY: 300, bubbles: true }))
+    expect(parseInt(rect.style.left, 10)).toBe(0)
+  })
+
+  it('Confirm records groundTruthPosition, deltaPixels, and transitions to CAPTURED', () => {
+    const page = enterRepositioning()
+    page.getConfirmBtn().click()
+    expect(page.getPhase()).toBe('captured')
+    expect(page.getCycles()).toHaveLength(1)
+    const cycle = page.getCycles()[0]
+    expect(cycle.groundTruthPosition).toBeDefined()
+    expect(cycle.deltaPixels).toBeDefined()
+    expect(typeof cycle.returnYawRad).toBe('number')
+    expect(typeof cycle.returnPitchRad).toBe('number')
+  })
+
+  it('confirm button is hidden after CAPTURED transition', () => {
+    const page = enterRepositioning()
+    page.getConfirmBtn().click()
+    expect(page.getConfirmBtn().hidden).toBe(true)
+  })
+})

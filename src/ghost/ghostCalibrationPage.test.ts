@@ -449,3 +449,66 @@ describe('GhostCalibrationPage — CAPTURED phase', () => {
     expect(page.getSummaryPanel().hidden).toBe(true)
   })
 })
+
+describe('GhostCalibrationPage — JSON export', () => {
+  function enterCapturedWithExport() {
+    const downloads: { filename: string; json: string }[] = []
+    const page = new GhostCalibrationPage(container, {
+      win: { ...makeWin(800, 600), devicePixelRatio: 2, navigator: { userAgent: 'test-ua' } },
+      now: () => 1000,
+      triggerDownload: (filename, json) => downloads.push({ filename, json }),
+    })
+    page.getCenterDot().click()
+    ;(container.querySelector<HTMLElement>('[data-testid="stop-btn"]'))!.click()
+    page.getConfirmBtn().click()
+    return { page, downloads }
+  }
+
+  it('export button is disabled before CAPTURED phase', () => {
+    new GhostCalibrationPage(container, { win })
+    const btn = container.querySelector<HTMLButtonElement>('[data-testid="export-btn"]')!
+    expect(btn.disabled).toBe(true)
+  })
+
+  it('export button is enabled after entering CAPTURED phase', () => {
+    enterCapturedWithExport()
+    const btn = container.querySelector<HTMLButtonElement>('[data-testid="export-btn"]')!
+    expect(btn.disabled).toBe(false)
+  })
+
+  it('clicking export triggers download with valid CalibrationExport schema', () => {
+    const { downloads } = enterCapturedWithExport()
+    const btn = container.querySelector<HTMLButtonElement>('[data-testid="export-btn"]')!
+    btn.click()
+    expect(downloads).toHaveLength(1)
+    const parsed = JSON.parse(downloads[0].json)
+    expect(parsed).toMatchObject({
+      exportedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      deviceInfo: { viewportWidth: 800, viewportHeight: 600, devicePixelRatio: 2, userAgent: 'test-ua' },
+      hFovDeg: 65,
+      focalLengthPx: expect.any(Number),
+      cycles: expect.arrayContaining([
+        expect.objectContaining({ id: expect.any(String), frames: expect.any(Array) }),
+      ]),
+    })
+  })
+
+  it('filename matches ghost-calibration-YYYY-MM-DD-HH-mm-ss.json format', () => {
+    const { downloads } = enterCapturedWithExport()
+    const btn = container.querySelector<HTMLButtonElement>('[data-testid="export-btn"]')!
+    btn.click()
+    expect(downloads[0].filename).toMatch(/^ghost-calibration-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.json$/)
+  })
+
+  it('export accumulates all cycles from multiple Next Cycle resets', () => {
+    const { page, downloads } = enterCapturedWithExport()
+    page.getNextCycleBtn().click()
+    page.getCenterDot().click()
+    ;(container.querySelector<HTMLElement>('[data-testid="stop-btn"]'))!.click()
+    page.getConfirmBtn().click()
+    const btn = container.querySelector<HTMLButtonElement>('[data-testid="export-btn"]')!
+    btn.click()
+    const parsed = JSON.parse(downloads[0].json)
+    expect(parsed.cycles).toHaveLength(2)
+  })
+})

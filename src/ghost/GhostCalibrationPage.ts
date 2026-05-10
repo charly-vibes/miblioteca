@@ -1,7 +1,7 @@
 import type { GhostFrame, GyroLike } from '../sensors/ghostOverlayCanvas'
 import { initialGhostState, feedGhostGyro, computeShiftPx } from '../sensors/ghostOverlay'
 import type { GhostOverlayState } from '../sensors/ghostOverlay'
-import type { Phase, SensorFrame, CalibrationCycle } from './types'
+import type { Phase, SensorFrame, CalibrationCycle, CalibrationExport } from './types'
 
 const DOT_PX = 24
 const DOT_COLOR = '#FF3B30'
@@ -14,6 +14,8 @@ export type WindowLike = {
   removeEventListener: (type: string, cb: EventListenerOrEventListenerObject) => void
   innerWidth: number
   innerHeight: number
+  devicePixelRatio?: number
+  navigator?: { userAgent: string }
 }
 
 export type CalibrationPageDeps = {
@@ -23,6 +25,7 @@ export type CalibrationPageDeps = {
   requestAnimationFrame?: (cb: FrameRequestCallback) => number
   cancelAnimationFrame?: (id: number) => void
   now?: () => number
+  triggerDownload?: (filename: string, json: string) => void
 }
 
 export function focalLengthPx(viewportWidth: number, hFovDeg = H_FOV_DEG): number {
@@ -98,6 +101,7 @@ export class GhostCalibrationPage {
   private readonly raf: (cb: FrameRequestCallback) => number
   private readonly caf: (id: number) => void
   private readonly nowFn: () => number
+  private readonly triggerDownload: (filename: string, json: string) => void
 
   private cycles: CalibrationCycle[] = []
   private currentCycle: Partial<CalibrationCycle> | null = null
@@ -131,6 +135,13 @@ export class GhostCalibrationPage {
     this.raf = deps.requestAnimationFrame ?? (cb => (typeof window !== 'undefined' ? window.requestAnimationFrame(cb) : 0))
     this.caf = deps.cancelAnimationFrame ?? (id => { if (typeof window !== 'undefined') window.cancelAnimationFrame(id) })
     this.nowFn = deps.now ?? (() => (typeof performance !== 'undefined' ? performance.now() : 0))
+    this.triggerDownload = deps.triggerDownload ?? ((filename, json) => {
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
+      a.download = filename
+      a.click()
+      URL.revokeObjectURL(a.href)
+    })
 
     const doc = root.ownerDocument ?? document
     this.doc = doc
@@ -303,6 +314,7 @@ export class GhostCalibrationPage {
       fontFamily: 'sans-serif', fontSize: '1rem', cursor: 'pointer',
     })
     this.nextCycleBtnEl.addEventListener('click', () => this.transitionToIdle())
+    this.exportBtnEl.addEventListener('click', () => this.exportJson())
 
     this.summaryPanelEl.appendChild(this.exportBtnEl)
     this.summaryPanelEl.appendChild(this.nextCycleBtnEl)
@@ -585,8 +597,28 @@ export class GhostCalibrationPage {
     ].join('\n')))
     this.summaryPanelEl.insertBefore(pre, this.exportBtnEl)
 
+    this.exportBtnEl.disabled = false
     this.summaryPanelEl.hidden = false
     this.renderTelemetry()
+  }
+
+  private exportJson(): void {
+    const vw = this.win.innerWidth || 375
+    const now = new Date()
+    const payload: CalibrationExport = {
+      exportedAt: now.toISOString(),
+      deviceInfo: {
+        viewportWidth: vw,
+        viewportHeight: this.win.innerHeight || 667,
+        devicePixelRatio: this.win.devicePixelRatio ?? 1,
+        userAgent: this.win.navigator?.userAgent ?? '',
+      },
+      hFovDeg: H_FOV_DEG,
+      focalLengthPx: focalLengthPx(vw),
+      cycles: this.cycles,
+    }
+    const ts = now.toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    this.triggerDownload(`ghost-calibration-${ts}.json`, JSON.stringify(payload, null, 2))
   }
 
   private transitionToIdle(): void {

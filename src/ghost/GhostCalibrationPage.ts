@@ -285,39 +285,38 @@ export class GhostCalibrationPage {
     this.summaryPanelEl.setAttribute('data-testid', 'summary-panel')
     this.summaryPanelEl.hidden = true
     Object.assign(this.summaryPanelEl.style, {
-      position: 'fixed', inset: '0',
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      background: 'rgba(0,0,0,0.85)',
-      color: '#fff', fontFamily: 'monospace', fontSize: '0.9rem',
-      lineHeight: '1.8', textAlign: 'center', zIndex: '8',
-      padding: '2rem',
+      position: 'fixed', top: '4.5rem', left: '0.75rem', right: '0.75rem',
+      background: 'rgba(0,0,0,0.65)',
+      color: '#fff', fontFamily: 'monospace', fontSize: '0.75rem',
+      lineHeight: '1.5', zIndex: '8',
+      padding: '0.6rem 0.75rem',
+      borderRadius: '0.4rem',
     })
 
     this.exportBtnEl = doc.createElement('button')
     this.exportBtnEl.textContent = 'Export JSON'
     this.exportBtnEl.setAttribute('data-testid', 'export-btn')
     this.exportBtnEl.disabled = true
+    this.exportBtnEl.hidden = true
     Object.assign(this.exportBtnEl.style, {
-      marginTop: '1.5rem',
-      padding: '0.6rem 2rem', background: '#06f', color: '#fff',
+      position: 'fixed', bottom: '1.5rem', right: '1rem',
+      padding: '0.5rem 0.75rem', background: '#06f', color: '#fff',
       border: 'none', borderRadius: '0.4rem',
-      fontFamily: 'sans-serif', fontSize: '1rem', cursor: 'pointer',
+      fontFamily: 'sans-serif', fontSize: '0.85rem', cursor: 'pointer', zIndex: '8',
     })
 
     this.nextCycleBtnEl = doc.createElement('button')
     this.nextCycleBtnEl.textContent = 'Next Cycle'
     this.nextCycleBtnEl.setAttribute('data-testid', 'next-cycle-btn')
+    this.nextCycleBtnEl.hidden = true
     Object.assign(this.nextCycleBtnEl.style, {
-      marginTop: '0.75rem',
-      padding: '0.6rem 2rem', background: '#555', color: '#fff',
+      position: 'fixed', bottom: '1.5rem', left: '1rem',
+      padding: '0.5rem 0.75rem', background: '#555', color: '#fff',
       border: 'none', borderRadius: '0.4rem',
-      fontFamily: 'sans-serif', fontSize: '1rem', cursor: 'pointer',
+      fontFamily: 'sans-serif', fontSize: '0.85rem', cursor: 'pointer', zIndex: '8',
     })
     this.nextCycleBtnEl.addEventListener('click', () => this.transitionToIdle())
     this.exportBtnEl.addEventListener('click', () => this.exportJson())
-
-    this.summaryPanelEl.appendChild(this.exportBtnEl)
-    this.summaryPanelEl.appendChild(this.nextCycleBtnEl)
 
     const overlay = doc.createElement('div')
     Object.assign(overlay.style, { position: 'fixed', inset: '0', zIndex: '2' })
@@ -332,6 +331,8 @@ export class GhostCalibrationPage {
     root.appendChild(this.stopBtnEl)
     root.appendChild(this.confirmBtnEl)
     root.appendChild(this.summaryPanelEl)
+    root.appendChild(this.exportBtnEl)
+    root.appendChild(this.nextCycleBtnEl)
 
     this.onDocMouseMove = (e: MouseEvent) => this.moveDrag(e.clientX, e.clientY)
     this.onDocMouseUp = () => this.stopDrag()
@@ -579,13 +580,10 @@ export class GhostCalibrationPage {
     const returnYawDeg = (cycle.returnYawRad ?? 0) * 180 / Math.PI
     const returnPitchDeg = (cycle.returnPitchRad ?? 0) * 180 / Math.PI
 
-    // Clear previous text content before the buttons
-    while (this.summaryPanelEl.firstChild !== this.exportBtnEl) {
-      this.summaryPanelEl.removeChild(this.summaryPanelEl.firstChild!)
-    }
+    this.summaryPanelEl.replaceChildren()
     const pre = this.doc.createElement('pre')
     pre.setAttribute('data-testid', 'summary-text')
-    pre.style.cssText = 'margin:0 0 1rem; white-space:pre; text-align:left;'
+    pre.style.cssText = 'margin:0; white-space:pre;'
     pre.appendChild(this.doc.createTextNode([
       `Cycle ${this.cycles.length} complete`,
       `Duration: ${durationMs.toFixed(0)} ms`,
@@ -595,9 +593,11 @@ export class GhostCalibrationPage {
       `Effective yaw error: ${effectiveYawErrDeg.toFixed(2)}°`,
       `Return drift — yaw: ${returnYawDeg.toFixed(2)}°  pitch: ${returnPitchDeg.toFixed(2)}°`,
     ].join('\n')))
-    this.summaryPanelEl.insertBefore(pre, this.exportBtnEl)
+    this.summaryPanelEl.appendChild(pre)
 
     this.exportBtnEl.disabled = false
+    this.exportBtnEl.hidden = false
+    this.nextCycleBtnEl.hidden = false
     this.summaryPanelEl.hidden = false
     this.renderTelemetry()
   }
@@ -630,6 +630,8 @@ export class GhostCalibrationPage {
     this.dragStartTouch = null
 
     this.summaryPanelEl.hidden = true
+    this.exportBtnEl.hidden = true
+    this.nextCycleBtnEl.hidden = true
     this.hintEl.textContent = 'TAP CENTER TO START'
     this.centerDotEl.classList.add('ghost-center-dot')
 

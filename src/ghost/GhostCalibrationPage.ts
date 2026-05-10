@@ -330,8 +330,17 @@ export class GhostCalibrationPage {
     overlay.appendChild(this.rectangleEl)
     overlay.appendChild(this.hintEl)
 
+    const commitBadge = doc.createElement('div')
+    commitBadge.textContent = `v ${(window as unknown as Record<string, string>).__GIT_COMMIT__ ?? 'dev'}`
+    Object.assign(commitBadge.style, {
+      position: 'fixed', top: '0', left: '0', right: '0',
+      textAlign: 'center', fontSize: '11px', color: 'rgba(255,255,255,0.5)',
+      zIndex: '10', pointerEvents: 'none', padding: '2px 0',
+    })
+
     root.appendChild(this.videoEl)
     root.appendChild(this.warnBannerEl)
+    root.appendChild(commitBadge)
     root.appendChild(this.telemetryEl)
     root.appendChild(overlay)
     root.appendChild(this.recordingIndicatorEl)

@@ -3,6 +3,8 @@ import { initialGhostState, feedGhostGyro, feedGhostAccel, computeShiftPx, compu
 import type { GhostOverlayState } from '../sensors/ghostOverlay'
 import type { Phase, SensorFrame, CalibrationCycle, CalibrationExport } from './types'
 
+declare const __GIT_COMMIT__: string
+
 const DOT_PX = 24
 const DOT_COLOR = '#FF3B30'
 const RECT_W_RATIO = 0.6
@@ -331,7 +333,7 @@ export class GhostCalibrationPage {
     overlay.appendChild(this.hintEl)
 
     const commitBadge = doc.createElement('div')
-    commitBadge.textContent = `v ${(window as unknown as Record<string, string>).__GIT_COMMIT__ ?? 'dev'}`
+    commitBadge.textContent = `v ${__GIT_COMMIT__}`
     Object.assign(commitBadge.style, {
       position: 'fixed', top: '0', left: '0', right: '0',
       textAlign: 'center', fontSize: '11px', color: 'rgba(255,255,255,0.5)',
@@ -374,10 +376,17 @@ export class GhostCalibrationPage {
       const e = ev as DeviceMotionEvent
       const rr = e.rotationRate
       const ac = e.acceleration
+      const t = this.nowFn()
       if (rr) {
         this.sensorVals.gx = (rr.alpha ?? 0) * (Math.PI / 180)
         this.sensorVals.gy = (rr.beta ?? 0) * (Math.PI / 180)
         this.sensorVals.gz = (rr.gamma ?? 0) * (Math.PI / 180)
+        this.ghostState = feedGhostGyro(this.ghostState, {
+          t,
+          gx: this.sensorVals.gx,
+          gy: this.sensorVals.gy,
+          gz: this.sensorVals.gz,
+        }, 'y')
       }
       if (ac) {
         this.sensorVals.ax = ac.x ?? 0
@@ -388,10 +397,15 @@ export class GhostCalibrationPage {
           ay: this.sensorVals.ay,
           interval_ms: e.interval ?? 16,
           betaDeg: this.betaDeg,
-          t: this.nowFn(),
+          t,
           gravitySubtracted: true,
         })
       }
+      const vw = this.win.innerWidth || 375
+      const workingDistanceM = this.workingDistanceCm / 100
+      this.latestShiftPx = computeShiftPx(this.ghostState.yawIntegral, vw)
+        + computeTranslationShiftPx(this.ghostState.dx_m, workingDistanceM, vw)
+      this.latestShiftPy = computeTranslationShiftPy(this.ghostState.dy_m, workingDistanceM, vw)
       this.renderTelemetry()
     }
     this.win.addEventListener('devicemotion', this.motionHandler)

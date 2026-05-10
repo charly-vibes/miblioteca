@@ -66,6 +66,14 @@ export default defineConfig(({ command, mode }) => ({
       }
     })
   ],
+  build: {
+    rollupOptions: {
+      input: {
+        main: 'index.html',
+        ghost: 'ghost.html',
+      },
+    },
+  },
   server: {
     host: '0.0.0.0',
     https:

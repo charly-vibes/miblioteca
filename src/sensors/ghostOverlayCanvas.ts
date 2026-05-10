@@ -53,6 +53,9 @@ export type GhostOverlayCanvasDeps = {
   requestAnimationFrame?: (cb: FrameRequestCallback) => number
   cancelAnimationFrame?: (id: number) => void
   now?: () => DOMHighResTimeStamp
+  canvasClassName?: string          // CSS class for the overlay canvas; default 'ghost-overlay'
+  logger?: { log(...args: unknown[]): void }  // default: debugLogger
+  getOrientation?: () => string     // returns screen.orientation.type equivalent; default reads screen.orientation
 }
 
 // Hysteresis prevents rapid toggling when hand tremor hovers near the threshold.
@@ -76,7 +79,7 @@ export class GhostOverlayCanvas {
   private lastMotionLogMs = 0
   private workingDistanceCm = 60
   private snapshotBeta = 90  // DeviceOrientationEvent.beta at the time of the last setSnapshot
-  private readonly deps: Required<Omit<GhostOverlayCanvasDeps, 'motion' | 'getBeta' | 'distanceCm' | 'onFrame'>> & Pick<GhostOverlayCanvasDeps, 'motion' | 'getBeta' | 'onFrame'>
+  private readonly deps: Required<Omit<GhostOverlayCanvasDeps, 'motion' | 'getBeta' | 'distanceCm' | 'onFrame' | 'canvasClassName'>> & Pick<GhostOverlayCanvasDeps, 'motion' | 'getBeta' | 'onFrame'>
 
   constructor(viewfinder: HTMLElement, deps: GhostOverlayCanvasDeps) {
     this.viewfinder = viewfinder
@@ -88,13 +91,15 @@ export class GhostOverlayCanvas {
       requestAnimationFrame: deps.requestAnimationFrame ?? ((cb) => window.requestAnimationFrame(cb)),
       cancelAnimationFrame: deps.cancelAnimationFrame ?? ((id) => window.cancelAnimationFrame(id)),
       now: deps.now ?? (() => performance.now()),
+      logger: deps.logger ?? debugLogger,
+      getOrientation: deps.getOrientation ?? (() => (typeof screen !== 'undefined' && screen.orientation?.type) || 'portrait-primary'),
     }
 
     const d = deps.distanceCm ?? 60
     this.workingDistanceCm = Number.isFinite(d) && d >= 20 && d <= 150 ? d : 60
 
     this.canvas = document.createElement('canvas')
-    this.canvas.className = 'ghost-overlay'
+    this.canvas.className = deps.canvasClassName ?? 'ghost-overlay'
     this.canvas.hidden = true
     this.canvas.setAttribute('aria-hidden', 'true')
     viewfinder.append(this.canvas)
@@ -115,7 +120,7 @@ export class GhostOverlayCanvas {
     }
 
     this.rafId = this.deps.requestAnimationFrame(this.rafLoop)
-    debugLogger.log('ghost:created', { workingDistanceCm: this.workingDistanceCm })
+    this.deps.logger.log('ghost:created', { workingDistanceCm: this.workingDistanceCm })
   }
 
   private onGyroReading() {
@@ -127,12 +132,12 @@ export class GhostOverlayCanvas {
       gy: gyro.y ?? 0,
       gz: gyro.z ?? 0,
     }
-    const orientationType = (typeof screen !== 'undefined' && screen.orientation?.type) || 'portrait-primary'
+    const orientationType = this.deps.getOrientation()
     const scanAxis: 'x' | 'y' = orientationType.startsWith('landscape') ? 'x' : 'y'
     this.state = feedGhostGyro(this.state, sample, scanAxis)
     const sinceLastLog = now - this.lastOrientationLogMs
     if (this.lastOrientationLogMs === 0 || sinceLastLog >= 500) {
-      debugLogger.log('sensor:orientation-sample', { gx: sample.gx, gy: sample.gy, gz: sample.gz, scanAxis, omegaMag: this.state.omegaMag })
+      this.deps.logger.log('sensor:orientation-sample', { gx: sample.gx, gy: sample.gy, gz: sample.gz, scanAxis, omegaMag: this.state.omegaMag })
       this.lastOrientationLogMs = now
     }
   }
@@ -155,7 +160,7 @@ export class GhostOverlayCanvas {
     }
     this.state = feedGhostAccel(this.state, sample)
     if (now - this.lastMotionLogMs >= 500) {
-      debugLogger.log('ghost:motion-sample', {
+      this.deps.logger.log('ghost:motion-sample', {
         ax: motion.x, ay: motion.y,
         usingRawAccel: !gravitySubtracted,
         betaDeg, interval_ms: motion.interval,
@@ -171,7 +176,7 @@ export class GhostOverlayCanvas {
     this.rafId = this.deps.requestAnimationFrame(this.rafLoop)
     if (!this.firstRafFired) {
       this.firstRafFired = true
-      debugLogger.log('ghost:render-tick', {})
+      this.deps.logger.log('ghost:render-tick', {})
     }
 
     const currentlyHidden = this.canvas.hidden
@@ -188,7 +193,7 @@ export class GhostOverlayCanvas {
           pitchShiftPx: 0, gateOpen: false,
         })
       }
-      debugLogger.log('ghost:visibility-changed', { visible: shouldShow, omegaMag: this.state.omegaMag, yawIntegral: this.state.yawIntegral })
+      this.deps.logger.log('ghost:visibility-changed', { visible: shouldShow, omegaMag: this.state.omegaMag, yawIntegral: this.state.yawIntegral })
     }
     if (this.canvas.hidden) return
 
@@ -232,7 +237,7 @@ export class GhostOverlayCanvas {
 
     const now = this.deps.now()
     if (now - this.lastShiftLogMs >= 500) {
-      debugLogger.log('ghost:shift', {
+      this.deps.logger.log('ghost:shift', {
         shiftPx, shiftPy,
         yawIntegral: this.state.yawIntegral,
         pitchIntegral: this.state.pitchIntegral,
@@ -276,7 +281,7 @@ export class GhostOverlayCanvas {
   // Call after each capture to draw the thumbnail and reset yaw/pitch/translation accumulators.
   // Pass null when grabFrame() fails — previous snapshot is retained unchanged.
   setSnapshot(imageBitmap: ImageBitmap | null) {
-    debugLogger.log('ghost:reference-frame-set', { hasImageData: imageBitmap != null })
+    this.deps.logger.log('ghost:reference-frame-set', { hasImageData: imageBitmap != null })
     if (imageBitmap == null) return
 
     // Size canvas to CSS dimensions; readDisplayDims() caps at viewport (Firefox Android workaround).
@@ -361,6 +366,6 @@ export class GhostOverlayCanvas {
     this.deps.gyro?.stop()
     this.deps.motion?.stop()
     this.canvas.remove()
-    debugLogger.log('ghost:destroyed', {})
+    this.deps.logger.log('ghost:destroyed', {})
   }
 }

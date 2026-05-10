@@ -1,5 +1,5 @@
 import type { GhostFrame, GyroLike } from '../sensors/ghostOverlayCanvas'
-import { initialGhostState, feedGhostGyro, computeShiftPx } from '../sensors/ghostOverlay'
+import { initialGhostState, feedGhostGyro, feedGhostAccel, computeShiftPx, computeTranslationShiftPx, computeTranslationShiftPy } from '../sensors/ghostOverlay'
 import type { GhostOverlayState } from '../sensors/ghostOverlay'
 import type { Phase, SensorFrame, CalibrationCycle, CalibrationExport } from './types'
 
@@ -26,6 +26,7 @@ export type CalibrationPageDeps = {
   cancelAnimationFrame?: (id: number) => void
   now?: () => number
   triggerDownload?: (filename: string, json: string) => void
+  distanceCm?: number
 }
 
 export function focalLengthPx(viewportWidth: number, hFovDeg = H_FOV_DEG): number {
@@ -94,6 +95,7 @@ export class GhostCalibrationPage {
 
   private sensorVals = { gx: 0, gy: 0, gz: 0, ax: 0, ay: 0, az: 0 }
   private readonly motionHandler: EventListenerOrEventListenerObject
+  private readonly orientationHandler: EventListenerOrEventListenerObject
   private readonly win: WindowLike
 
   private readonly doc: Document
@@ -103,10 +105,14 @@ export class GhostCalibrationPage {
   private readonly nowFn: () => number
   private readonly triggerDownload: (filename: string, json: string) => void
 
+  private readonly workingDistanceCm: number
+  private betaDeg = 90
+
   private cycles: CalibrationCycle[] = []
   private currentCycle: Partial<CalibrationCycle> | null = null
   private ghostState: GhostOverlayState = initialGhostState()
   private latestShiftPx = 0
+  private latestShiftPy = 0
   private recordingStartedAt = 0
   private recordingRafId = 0
 
@@ -142,6 +148,7 @@ export class GhostCalibrationPage {
       a.click()
       URL.revokeObjectURL(a.href)
     })
+    this.workingDistanceCm = deps.distanceCm ?? 60
 
     const doc = root.ownerDocument ?? document
     this.doc = doc
@@ -348,6 +355,12 @@ export class GhostCalibrationPage {
     doc.addEventListener('touchmove', this.onDocTouchMove, { passive: false })
     doc.addEventListener('touchend', this.onDocTouchEnd)
 
+    this.orientationHandler = (ev: Event) => {
+      const e = ev as DeviceOrientationEvent
+      this.betaDeg = e.beta ?? 90
+    }
+    this.win.addEventListener('deviceorientation', this.orientationHandler)
+
     this.motionHandler = (ev: Event) => {
       const e = ev as DeviceMotionEvent
       const rr = e.rotationRate
@@ -361,6 +374,14 @@ export class GhostCalibrationPage {
         this.sensorVals.ax = ac.x ?? 0
         this.sensorVals.ay = ac.y ?? 0
         this.sensorVals.az = ac.z ?? 0
+        this.ghostState = feedGhostAccel(this.ghostState, {
+          ax: this.sensorVals.ax,
+          ay: this.sensorVals.ay,
+          interval_ms: e.interval ?? 16,
+          betaDeg: this.betaDeg,
+          t: this.nowFn(),
+          gravitySubtracted: true,
+        })
       }
       this.renderTelemetry()
     }
@@ -383,7 +404,11 @@ export class GhostCalibrationPage {
     const gz = g.z ?? 0
 
     this.ghostState = feedGhostGyro(this.ghostState, { t, gx, gy, gz }, 'y')
-    this.latestShiftPx = computeShiftPx(this.ghostState.yawIntegral, this.win.innerWidth || 375)
+    const vw = this.win.innerWidth || 375
+    const workingDistanceM = this.workingDistanceCm / 100
+    this.latestShiftPx = computeShiftPx(this.ghostState.yawIntegral, vw)
+      + computeTranslationShiftPx(this.ghostState.dx_m, workingDistanceM, vw)
+    this.latestShiftPy = computeTranslationShiftPy(this.ghostState.dy_m, workingDistanceM, vw)
 
     this.latestFrame = {
       t: this.nowFn(),
@@ -412,7 +437,9 @@ export class GhostCalibrationPage {
     this.recordingRafId = this.raf(this.recordingRafLoop)
 
     const shiftPx = this.latestShiftPx
+    const shiftPy = this.latestShiftPy
     this.rectangleEl.style.left = `${this.rectInitLeft + Math.round(shiftPx)}px`
+    this.rectangleEl.style.top = `${this.rectInitTop + Math.round(shiftPy)}px`
 
     const elapsed = this.nowFn() - this.recordingStartedAt
     this.timerSpanEl.textContent = msToMMSS(elapsed)
@@ -484,6 +511,7 @@ export class GhostCalibrationPage {
     this.recordingStartedAt = this.nowFn()
     this.ghostState = initialGhostState()
     this.latestShiftPx = 0
+    this.latestShiftPy = 0
 
     this.currentCycle = {
       id: crypto.randomUUID(),
@@ -627,6 +655,7 @@ export class GhostCalibrationPage {
     this.currentCycle = null
     this.ghostState = initialGhostState()
     this.latestShiftPx = 0
+    this.latestShiftPy = 0
     this.latestFrame = null
     this.dragStartTouch = null
 
@@ -659,6 +688,7 @@ export class GhostCalibrationPage {
     this.caf(this.recordingRafId)
     if (this.gyro) this.gyro.onreading = null
     this.win.removeEventListener('devicemotion', this.motionHandler)
+    this.win.removeEventListener('deviceorientation', this.orientationHandler)
     this.doc.removeEventListener('mousemove', this.onDocMouseMove)
     this.doc.removeEventListener('mouseup', this.onDocMouseUp)
     this.doc.removeEventListener('touchmove', this.onDocTouchMove)

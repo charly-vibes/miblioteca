@@ -1,5 +1,5 @@
 import type { GhostFrame, GyroLike } from '../sensors/ghostOverlayCanvas'
-import { initialGhostState, feedGhostGyro, feedGhostAccel, computeShiftPx, computeTranslationShiftPx, computeTranslationShiftPy } from '../sensors/ghostOverlay'
+import { initialGhostState, feedGhostGyro, feedGhostAccel, computeShiftPx, computeShiftPy, computeTranslationShiftPx, computeTranslationShiftPy } from '../sensors/ghostOverlay'
 import type { GhostOverlayState } from '../sensors/ghostOverlay'
 import type { Phase, SensorFrame, CalibrationCycle, CalibrationExport } from './types'
 
@@ -402,10 +402,26 @@ export class GhostCalibrationPage {
         })
       }
       const vw = this.win.innerWidth || 375
+      const vh = this.win.innerHeight || 667
       const workingDistanceM = this.workingDistanceCm / 100
       this.latestShiftPx = computeShiftPx(this.ghostState.yawIntegral, vw)
         + computeTranslationShiftPx(this.ghostState.dx_m, workingDistanceM, vw)
-      this.latestShiftPy = computeTranslationShiftPy(this.ghostState.dy_m, workingDistanceM, vw)
+      this.latestShiftPy = computeShiftPy(this.ghostState.pitchIntegral, vw, vh)
+        + computeTranslationShiftPy(this.ghostState.dy_m, workingDistanceM, vw)
+
+      if (this.phase === 'recording' && this.currentCycle?.frames) {
+        const frame: SensorFrame = {
+          t: this.nowFn() - this.recordingStartedAt,
+          gx: this.sensorVals.gx,
+          gy: this.sensorVals.gy,
+          gz: this.sensorVals.gz,
+          ax: this.sensorVals.ax,
+          ay: this.sensorVals.ay,
+          az: this.sensorVals.az,
+        }
+        this.currentCycle.frames.push(frame)
+      }
+
       this.renderTelemetry()
     }
     this.win.addEventListener('devicemotion', this.motionHandler)
@@ -428,17 +444,19 @@ export class GhostCalibrationPage {
 
     this.ghostState = feedGhostGyro(this.ghostState, { t, gx, gy, gz }, 'y')
     const vw = this.win.innerWidth || 375
+    const vh = this.win.innerHeight || 667
     const workingDistanceM = this.workingDistanceCm / 100
     this.latestShiftPx = computeShiftPx(this.ghostState.yawIntegral, vw)
       + computeTranslationShiftPx(this.ghostState.dx_m, workingDistanceM, vw)
-    this.latestShiftPy = computeTranslationShiftPy(this.ghostState.dy_m, workingDistanceM, vw)
+    this.latestShiftPy = computeShiftPy(this.ghostState.pitchIntegral, vw, vh)
+      + computeTranslationShiftPy(this.ghostState.dy_m, workingDistanceM, vw)
 
     this.latestFrame = {
       t: this.nowFn(),
       yawRad: this.ghostState.yawIntegral,
       pitchRad: this.ghostState.pitchIntegral,
       shiftPx: this.latestShiftPx,
-      pitchShiftPx: 0,
+      pitchShiftPx: this.latestShiftPy,
       gateOpen: true,
     }
     this.renderTelemetry()
@@ -473,7 +491,7 @@ export class GhostCalibrationPage {
         yawRad: this.ghostState.yawIntegral,
         pitchRad: this.ghostState.pitchIntegral,
         shiftPx,
-        pitchShiftPx: 0,
+        pitchShiftPx: shiftPy,
         gateOpen: true,
       }
       this.currentCycle.ghostFrames.push(ghostFrame)

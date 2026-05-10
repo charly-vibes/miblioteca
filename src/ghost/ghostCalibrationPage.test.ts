@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { GhostCalibrationPage } from './GhostCalibrationPage'
+import { GhostCalibrationPage, focalLengthPx } from './GhostCalibrationPage'
 import type { WindowLike } from './GhostCalibrationPage'
 import type { GyroLike } from '../sensors/ghostOverlayCanvas'
 
@@ -367,5 +367,85 @@ describe('GhostCalibrationPage — REPOSITIONING phase', () => {
     const page = enterRepositioning()
     page.getConfirmBtn().click()
     expect(page.getConfirmBtn().hidden).toBe(true)
+  })
+})
+
+describe('focalLengthPx', () => {
+  it('derives focalLengthPx from viewport width and default 65° hFov', () => {
+    // vw=800: fl = 400 / tan(32.5°) = 400 / 0.6371 ≈ 628
+    const fl = focalLengthPx(800)
+    expect(fl).toBeCloseTo(628, 0)
+  })
+
+  it('is symmetric: focalLengthPx(vw) * tan(hFov/2) === vw/2', () => {
+    const vw = 1080
+    const hFov = 65
+    const fl = focalLengthPx(vw, hFov)
+    expect(fl * Math.tan((hFov / 2) * Math.PI / 180)).toBeCloseTo(vw / 2, 5)
+  })
+})
+
+describe('GhostCalibrationPage — CAPTURED phase', () => {
+  function enterCaptured(w = makeWin(800, 600)) {
+    const page = new GhostCalibrationPage(container, { win: w })
+    page.getCenterDot().click()           // → recording
+    ;(container.querySelector<HTMLElement>('[data-testid="stop-btn"]'))!.click()  // → repositioning
+    page.getConfirmBtn().click()          // → captured
+    return page
+  }
+
+  it('summary panel is hidden in IDLE and shown in CAPTURED', () => {
+    const page = new GhostCalibrationPage(container, { win })
+    expect(page.getSummaryPanel().hidden).toBe(true)
+    page.getCenterDot().click()
+    ;(container.querySelector<HTMLElement>('[data-testid="stop-btn"]'))!.click()
+    page.getConfirmBtn().click()
+    expect(page.getSummaryPanel().hidden).toBe(false)
+  })
+
+  it('summary text contains cycle number and Δx/Δy', () => {
+    enterCaptured()
+    const text = container.querySelector('[data-testid="summary-text"]')!.textContent ?? ''
+    expect(text).toContain('Cycle 1 complete')
+    expect(text).toContain('Δx:')
+    expect(text).toContain('Effective yaw error')
+    expect(text).toContain('Return drift')
+  })
+
+  it('deltaPixels formula: groundTruth minus algorithmPosition', () => {
+    const page = enterCaptured()
+    const cycle = page.getCycles()[0]
+    const gt = cycle.groundTruthPosition
+    const alg = cycle.algorithmPosition
+    expect(cycle.deltaPixels.x).toBeCloseTo(gt.x - alg.x, 5)
+    expect(cycle.deltaPixels.y).toBeCloseTo(gt.y - alg.y, 5)
+  })
+
+  it('Next Cycle resets to IDLE, retains prior cycles, and restores rectangle', () => {
+    const page = enterCaptured()
+    expect(page.getCycles()).toHaveLength(1)
+    page.getNextCycleBtn().click()
+    expect(page.getPhase()).toBe('idle')
+    expect(page.getCycles()).toHaveLength(1)  // prior cycle retained
+    expect(page.getCurrentCycle()).toBeNull()
+    const rect = container.querySelector<HTMLElement>('[data-testid="calibration-rectangle"]')!
+    expect(rect.style.left).toBe('160px')  // (800-480)/2
+    expect(rect.style.top).toBe('180px')   // (600-240)/2
+  })
+
+  it('Next Cycle allows starting a second recording', () => {
+    const page = enterCaptured()
+    page.getNextCycleBtn().click()
+    page.getCenterDot().click()
+    expect(page.getPhase()).toBe('recording')
+    ;(container.querySelector<HTMLElement>('[data-testid="stop-btn"]'))!.click()
+    page.getConfirmBtn().click()
+    expect(page.getCycles()).toHaveLength(2)
+  })
+
+  it('summary panel is hidden after Next Cycle', () => {
+    const page = enterCaptured()
+    page.getNextCycleBtn().click()
+    expect(page.getSummaryPanel().hidden).toBe(true)
   })
 })

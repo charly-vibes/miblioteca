@@ -7,6 +7,7 @@ const DOT_PX = 24
 const DOT_COLOR = '#FF3B30'
 const RECT_W_RATIO = 0.6
 const RECT_H_RATIO = 0.4
+const H_FOV_DEG = 65
 
 export type WindowLike = {
   addEventListener: (type: string, cb: EventListenerOrEventListenerObject) => void
@@ -22,6 +23,10 @@ export type CalibrationPageDeps = {
   requestAnimationFrame?: (cb: FrameRequestCallback) => number
   cancelAnimationFrame?: (id: number) => void
   now?: () => number
+}
+
+export function focalLengthPx(viewportWidth: number, hFovDeg = H_FOV_DEG): number {
+  return (viewportWidth / 2) / Math.tan((hFovDeg / 2) * Math.PI / 180)
 }
 
 function injectPulseStyle(doc: Document): void {
@@ -75,6 +80,9 @@ export class GhostCalibrationPage {
   private readonly timerSpanEl: HTMLSpanElement
   private readonly stopBtnEl: HTMLButtonElement
   private readonly confirmBtnEl: HTMLButtonElement
+  private readonly summaryPanelEl: HTMLElement
+  private readonly exportBtnEl: HTMLButtonElement
+  private readonly nextCycleBtnEl: HTMLButtonElement
 
   private phase: Phase = 'idle'
   private latestFrame: GhostFrame | null = null
@@ -107,6 +115,7 @@ export class GhostCalibrationPage {
   private readonly onDocTouchEnd: () => void
 
   private readonly rectInitLeft: number
+  private readonly rectInitTop: number
   private readonly rectW: number
   private readonly rectH: number
 
@@ -167,6 +176,7 @@ export class GhostCalibrationPage {
     const ry = Math.round((vh - rh) / 2)
 
     this.rectInitLeft = rx
+    this.rectInitTop = ry
     this.rectW = rw
     this.rectH = rh
 
@@ -260,6 +270,43 @@ export class GhostCalibrationPage {
     })
     this.confirmBtnEl.addEventListener('click', () => this.onConfirm())
 
+    this.summaryPanelEl = doc.createElement('div')
+    this.summaryPanelEl.setAttribute('data-testid', 'summary-panel')
+    this.summaryPanelEl.hidden = true
+    Object.assign(this.summaryPanelEl.style, {
+      position: 'fixed', inset: '0',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      background: 'rgba(0,0,0,0.85)',
+      color: '#fff', fontFamily: 'monospace', fontSize: '0.9rem',
+      lineHeight: '1.8', textAlign: 'center', zIndex: '8',
+      padding: '2rem',
+    })
+
+    this.exportBtnEl = doc.createElement('button')
+    this.exportBtnEl.textContent = 'Export JSON'
+    this.exportBtnEl.setAttribute('data-testid', 'export-btn')
+    this.exportBtnEl.disabled = true
+    Object.assign(this.exportBtnEl.style, {
+      marginTop: '1.5rem',
+      padding: '0.6rem 2rem', background: '#06f', color: '#fff',
+      border: 'none', borderRadius: '0.4rem',
+      fontFamily: 'sans-serif', fontSize: '1rem', cursor: 'pointer',
+    })
+
+    this.nextCycleBtnEl = doc.createElement('button')
+    this.nextCycleBtnEl.textContent = 'Next Cycle'
+    this.nextCycleBtnEl.setAttribute('data-testid', 'next-cycle-btn')
+    Object.assign(this.nextCycleBtnEl.style, {
+      marginTop: '0.75rem',
+      padding: '0.6rem 2rem', background: '#555', color: '#fff',
+      border: 'none', borderRadius: '0.4rem',
+      fontFamily: 'sans-serif', fontSize: '1rem', cursor: 'pointer',
+    })
+    this.nextCycleBtnEl.addEventListener('click', () => this.transitionToIdle())
+
+    this.summaryPanelEl.appendChild(this.exportBtnEl)
+    this.summaryPanelEl.appendChild(this.nextCycleBtnEl)
+
     const overlay = doc.createElement('div')
     Object.assign(overlay.style, { position: 'fixed', inset: '0', zIndex: '2' })
     overlay.appendChild(this.rectangleEl)
@@ -272,6 +319,7 @@ export class GhostCalibrationPage {
     root.appendChild(this.recordingIndicatorEl)
     root.appendChild(this.stopBtnEl)
     root.appendChild(this.confirmBtnEl)
+    root.appendChild(this.summaryPanelEl)
 
     this.onDocMouseMove = (e: MouseEvent) => this.moveDrag(e.clientX, e.clientY)
     this.onDocMouseUp = () => this.stopDrag()
@@ -390,7 +438,7 @@ export class GhostCalibrationPage {
     const { gx, gy, gz, ax, ay, az } = this.sensorVals
     const omegaMag = Math.sqrt(gx * gx + gy * gy + gz * gz)
     const f = this.latestFrame
-    const paused = this.phase === 'repositioning'
+    const paused = this.phase === 'repositioning' || this.phase === 'captured'
     const yawDeg = paused ? 'PAUSED' : (f ? (f.yawRad * 180 / Math.PI).toFixed(1) : '0.0')
     const pitchDeg = paused ? 'PAUSED' : (f ? (f.pitchRad * 180 / Math.PI).toFixed(1) : '0.0')
     const shiftPx = paused ? 'PAUSED' : (f ? f.shiftPx.toFixed(0) : '0')
@@ -405,7 +453,7 @@ export class GhostCalibrationPage {
 
   private onCenterTap(): void {
     if (this.phase === 'idle') this.transitionToRecording()
-    else if (this.phase === 'repositioning') this.transitionToCaptured()
+    else if (this.phase === 'repositioning') this.onConfirm()
   }
 
   private onDotTap(): void {
@@ -507,11 +555,65 @@ export class GhostCalibrationPage {
     this.phase = 'captured'
     this.confirmBtnEl.hidden = true
     this.rectangleEl.style.background = ''
+
+    const cycle = this.cycles.at(-1)
+    if (!cycle) return
+
+    const vw = this.win.innerWidth || 375
+    const fl = focalLengthPx(vw)
+    const durationMs = (cycle.endedAt ?? cycle.startedAt) - cycle.startedAt
+    const lastGhostYawDeg = (cycle.ghostFrames.at(-1)?.yawRad ?? 0) * 180 / Math.PI
+    const effectiveYawErrDeg = Math.atan(cycle.deltaPixels.x / fl) * 180 / Math.PI
+    const returnYawDeg = (cycle.returnYawRad ?? 0) * 180 / Math.PI
+    const returnPitchDeg = (cycle.returnPitchRad ?? 0) * 180 / Math.PI
+
+    // Clear previous text content before the buttons
+    while (this.summaryPanelEl.firstChild !== this.exportBtnEl) {
+      this.summaryPanelEl.removeChild(this.summaryPanelEl.firstChild!)
+    }
+    const pre = this.doc.createElement('pre')
+    pre.setAttribute('data-testid', 'summary-text')
+    pre.style.cssText = 'margin:0 0 1rem; white-space:pre; text-align:left;'
+    pre.appendChild(this.doc.createTextNode([
+      `Cycle ${this.cycles.length} complete`,
+      `Duration: ${durationMs.toFixed(0)} ms`,
+      `Frames: ${cycle.frames.length} sensor  /  ${cycle.ghostFrames.length} ghost`,
+      `Δx: ${cycle.deltaPixels.x.toFixed(1)} px   Δy: ${cycle.deltaPixels.y.toFixed(1)} px`,
+      `Algorithm yaw at end: ${lastGhostYawDeg.toFixed(2)}°`,
+      `Effective yaw error: ${effectiveYawErrDeg.toFixed(2)}°`,
+      `Return drift — yaw: ${returnYawDeg.toFixed(2)}°  pitch: ${returnPitchDeg.toFixed(2)}°`,
+    ].join('\n')))
+    this.summaryPanelEl.insertBefore(pre, this.exportBtnEl)
+
+    this.summaryPanelEl.hidden = false
+    this.renderTelemetry()
+  }
+
+  private transitionToIdle(): void {
+    this.phase = 'idle'
+    this.currentCycle = null
+    this.ghostState = initialGhostState()
+    this.latestShiftPx = 0
+    this.latestFrame = null
+    this.dragStartTouch = null
+
+    this.summaryPanelEl.hidden = true
+    this.hintEl.textContent = 'TAP CENTER TO START'
+    this.centerDotEl.classList.add('ghost-center-dot')
+
+    // Reset rectangle to initial centered position
+    this.rectangleEl.style.left = `${this.rectInitLeft}px`
+    this.rectangleEl.style.top = `${this.rectInitTop}px`
+    this.rectangleEl.style.background = ''
+
+    this.renderTelemetry()
   }
 
   getPhase(): Phase { return this.phase }
   getCenterDot(): HTMLElement { return this.centerDotEl }
   getConfirmBtn(): HTMLButtonElement { return this.confirmBtnEl }
+  getNextCycleBtn(): HTMLButtonElement { return this.nextCycleBtnEl }
+  getSummaryPanel(): HTMLElement { return this.summaryPanelEl }
   getTelemetryEl(): HTMLElement { return this.telemetryEl }
   getCurrentCycle(): Partial<CalibrationCycle> | null { return this.currentCycle }
   getCycles(): CalibrationCycle[] { return this.cycles }

@@ -18,12 +18,13 @@ export class DeviceMotionGyroAdapter implements GyroLike {
     this.win = win
     this.handler = (e: DeviceMotionEvent) => {
       const r = e.rotationRate
-      // Firefox Android reports rotationRate.beta on the Y-axis (horizontal pan) and gamma on
-      // the X-axis (tilt) — opposite from the W3C spec. Matching the /ghost page convention
-      // (gy=beta for yaw) so horizontal scanning drives the yaw integral, not pitch.
-      this.x = r?.gamma != null ? r.gamma * DEG_TO_RAD : null
+      // Firefox Android (non-standard axis assignment vs W3C spec):
+      //   alpha → vertical tilt (X device axis) → maps to x (pitch axis in feedGhostGyro)
+      //   beta  → horizontal pan (Y device axis) → maps to y (yaw axis in feedGhostGyro)
+      //   gamma → in-plane rotation             → maps to z (unused)
+      this.x = r?.alpha != null ? r.alpha * DEG_TO_RAD : null
       this.y = r?.beta != null ? r.beta * DEG_TO_RAD : null
-      this.z = r?.alpha != null ? r.alpha * DEG_TO_RAD : null
+      this.z = r?.gamma != null ? r.gamma * DEG_TO_RAD : null
       this.timestamp = e.timeStamp
       this.onreading?.()
     }

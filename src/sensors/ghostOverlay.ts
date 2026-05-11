@@ -49,7 +49,7 @@ export function feedGhostGyro(
   }
 
   const dt = Math.min((sample.t - state.lastT) / 1000, 0.5) // ms → s, clamped to 500ms to guard against stale lastT after long pauses
-  // Portrait (scanAxis='y'): horizontal sweep uses gy; pitch (tilt up/down) uses gx.
+  // Portrait (scanAxis='y'): horizontal sweep uses gy (beta/Y-axis); pitch uses gx (alpha/X-axis on Firefox).
   // Landscape (scanAxis='x'): horizontal sweep uses gx; pitch uses gy.
   const yawOmega   = scanAxis === 'x' ? sample.gx : sample.gy
   const pitchOmega = scanAxis === 'x' ? sample.gy : sample.gx

@@ -40,20 +40,20 @@ describe('DeviceMotionGyroAdapter', () => {
       rotationRate: { beta: 180, gamma: 90, alpha: 45 },
       timeStamp: 1000,
     })
-    expect(adapter.x).toBeCloseTo(90 * DEG_TO_RAD)
-    expect(adapter.y).toBeCloseTo(180 * DEG_TO_RAD)
-    expect(adapter.z).toBeCloseTo(45 * DEG_TO_RAD)
+    expect(adapter.x).toBeCloseTo(45 * DEG_TO_RAD)  // alpha = vertical tilt axis
+    expect(adapter.y).toBeCloseTo(180 * DEG_TO_RAD) // beta = horizontal pan axis
+    expect(adapter.z).toBeCloseTo(90 * DEG_TO_RAD)  // gamma = unused/in-plane
   })
 
-  it('maps alpha→z, beta→y, gamma→x (Firefox Android convention)', () => {
+  it('maps alpha→x, beta→y, gamma→z (Firefox Android: alpha=tilt, beta=pan)', () => {
     adapter.start()
     win.dispatch('devicemotion', {
       rotationRate: { beta: 10, gamma: 20, alpha: 30 },
       timeStamp: 2000,
     })
-    expect(adapter.x).toBeCloseTo(20 * DEG_TO_RAD)
-    expect(adapter.y).toBeCloseTo(10 * DEG_TO_RAD)
-    expect(adapter.z).toBeCloseTo(30 * DEG_TO_RAD)
+    expect(adapter.x).toBeCloseTo(30 * DEG_TO_RAD)  // alpha→x (vertical tilt)
+    expect(adapter.y).toBeCloseTo(10 * DEG_TO_RAD)  // beta→y (horizontal pan)
+    expect(adapter.z).toBeCloseTo(20 * DEG_TO_RAD)  // gamma→z (in-plane)
   })
 
   it('sets timestamp from event', () => {

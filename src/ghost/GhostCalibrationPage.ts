@@ -1,6 +1,5 @@
 import type { GhostFrame, GyroLike } from '../sensors/ghostOverlay'
-import { initialGhostState, feedGhostAccel, computeShiftPx, computeShiftPy, focalLengthPx } from '../sensors/ghostOverlay'
-import type { GhostOverlayState } from '../sensors/ghostOverlay'
+import { computeShiftPx, computeShiftPy, focalLengthPx } from '../sensors/ghostOverlay'
 import { GhostMotionPipeline } from '../sensors/GhostMotionPipeline'
 import type { Phase, SensorFrame, CalibrationCycle, CalibrationExport } from './types'
 
@@ -10,7 +9,8 @@ const DOT_PX = 24
 const DOT_COLOR = '#FF3B30'
 const RECT_W_RATIO = 0.6
 const RECT_H_RATIO = 0.4
-const H_FOV_DEG = 65
+// ~40° effective: matches natural phone-tilt projection loss (see DEFAULT_HFOV_DEG in ghostOverlay.ts)
+const H_FOV_DEG = 40
 
 export type WindowLike = {
   addEventListener: (type: string, cb: EventListenerOrEventListenerObject) => void
@@ -112,7 +112,6 @@ export class GhostCalibrationPage {
   private cycles: CalibrationCycle[] = []
   private currentCycle: Partial<CalibrationCycle> | null = null
   private readonly pipeline: GhostMotionPipeline
-  private accelState: GhostOverlayState = initialGhostState()
   private lastYawRad = 0
   private lastPitchRad = 0
   private recordingStartedAt = 0
@@ -125,8 +124,8 @@ export class GhostCalibrationPage {
   private readonly onDocTouchMove: (e: Event) => void
   private readonly onDocTouchEnd: () => void
 
-  private readonly rectInitLeft: number
-  private readonly rectInitTop: number
+  private rectInitLeft: number
+  private rectInitTop: number
   private readonly rectW: number
   private readonly rectH: number
 
@@ -404,34 +403,15 @@ export class GhostCalibrationPage {
       const e = ev as DeviceMotionEvent
       const rr = e.rotationRate
       const ac = e.acceleration
-      const t = this.nowFn()
       if (rr) {
         this.sensorVals.gx = (rr.alpha ?? 0) * (Math.PI / 180)
         this.sensorVals.gy = (rr.beta ?? 0) * (Math.PI / 180)
         this.sensorVals.gz = (rr.gamma ?? 0) * (Math.PI / 180)
       }
-      let accelGate: SensorFrame['gate'] | undefined
       if (ac) {
         this.sensorVals.ax = ac.x ?? 0
         this.sensorVals.ay = ac.y ?? 0
         this.sensorVals.az = ac.z ?? 0
-        if (this.betaDeg === null) {
-          accelGate = 'beta-null'
-        } else {
-          const isLandscape = this.getOrientation().startsWith('landscape')
-          const ax = isLandscape ? this.sensorVals.ay : this.sensorVals.ax
-          const ay = isLandscape ? -this.sensorVals.ax : this.sensorVals.ay
-          const accelResult = feedGhostAccel(this.accelState, {
-            ax,
-            ay,
-            interval_ms: e.interval ?? 16,
-            betaDeg: this.betaDeg,
-            t,
-            gravitySubtracted: true,
-          })
-          this.accelState = accelResult.state
-          accelGate = accelResult.gate
-        }
       }
 
       // Gyro API path records its own SensorFrames in the wrapped onreading — skip here to avoid duplicates.
@@ -445,11 +425,6 @@ export class GhostCalibrationPage {
           ay: this.sensorVals.ay,
           az: this.sensorVals.az,
           betaDeg: this.betaDeg,
-          gate: accelGate,
-          velX: this.accelState.velX,
-          velY: this.accelState.velY,
-          dx_cm: this.accelState.dx_m * 100,
-          dy_cm: this.accelState.dy_m * 100,
         }
         this.currentCycle.frames.push(frame)
       }
@@ -581,11 +556,8 @@ export class GhostCalibrationPage {
     this.hintEl.textContent = 'RECORDING — tap any dot to stop'
     this.centerDotEl.classList.remove('ghost-center-dot')
 
-    const vw = this.win.innerWidth || 375
-    const vh = this.win.innerHeight || 667
     this.recordingStartedAt = this.nowFn()
     this.pipeline.reset()
-    this.accelState = initialGhostState()
     this.lastYawRad = 0
     this.lastPitchRad = 0
 
@@ -600,7 +572,7 @@ export class GhostCalibrationPage {
       id: crypto.randomUUID(),
       startedAt: this.recordingStartedAt,
       rectangleSize: { width: this.rectW, height: this.rectH },
-      startPosition: { x: Math.round(vw / 2), y: Math.round(vh / 2) },
+      startPosition: { x: Math.round(this.rectInitLeft + this.rectW / 2), y: Math.round(this.rectInitTop + this.rectH / 2) },
       frames: [],
       ghostFrames: [],
       startSnapshot,
@@ -731,10 +703,15 @@ export class GhostCalibrationPage {
   }
 
   private transitionToIdle(): void {
+    // Persist the current GT rectangle position as the starting reference for the next cycle.
+    const curLeft = parseInt(this.rectangleEl.style.left, 10)
+    const curTop  = parseInt(this.rectangleEl.style.top,  10)
+    if (!isNaN(curLeft)) this.rectInitLeft = curLeft
+    if (!isNaN(curTop))  this.rectInitTop  = curTop
+
     this.phase = 'idle'
     this.currentCycle = null
     this.pipeline.reset()
-    this.accelState = initialGhostState()
     this.lastYawRad = 0
     this.lastPitchRad = 0
     this.latestFrame = null

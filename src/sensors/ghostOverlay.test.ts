@@ -159,9 +159,9 @@ describe('computeShiftPx', () => {
     expect(shiftWide).toBeCloseTo(shiftNarrow * 2)
   })
 
-  it('matches the expected formula at known values (65° hFOV)', () => {
+  it('matches the expected formula at known values (40° hFOV)', () => {
     // shiftX = -(videoWidth/2) / tan(hFov/2) * yawIntegral
-    const hFovRad = (65 * Math.PI) / 180
+    const hFovRad = (40 * Math.PI) / 180
     const expected = -(1920 / 2) / Math.tan(hFovRad / 2) * 0.1
     expect(computeShiftPx(0.1, 1920)).toBeCloseTo(expected)
   })
@@ -199,7 +199,7 @@ describe('computeShiftPy', () => {
 
   it('uses the same focal length as computeShiftPx', () => {
     // focal = (displayWidth/2) / tan(hFov/2); shiftY = focal * pitchIntegral
-    const hFovRad = (65 * Math.PI) / 180
+    const hFovRad = (40 * Math.PI) / 180
     const focal = (1920 / 2) / Math.tan(hFovRad / 2)
     expect(computeShiftPy(0.1, 1920, 1080)).toBeCloseTo(focal * 0.1)
   })
@@ -524,18 +524,18 @@ describe('capToViewport', () => {
 
 describe('clampYawToViewport', () => {
   it('GIVEN yaw within bounds THEN returns unchanged', () => {
-    const maxYaw = Math.tan((65 * Math.PI / 180) / 2)
+    const maxYaw = Math.tan((40 * Math.PI / 180) / 2)
     expect(clampYawToViewport(0.1)).toBe(0.1)
     expect(clampYawToViewport(maxYaw - 0.001)).toBeCloseTo(maxYaw - 0.001)
   })
 
   it('GIVEN yaw exceeds +tan(hFov/2) THEN clamps to maximum', () => {
-    const maxYaw = Math.tan((65 * Math.PI / 180) / 2)
+    const maxYaw = Math.tan((40 * Math.PI / 180) / 2)
     expect(clampYawToViewport(100)).toBeCloseTo(maxYaw)
   })
 
   it('GIVEN yaw below -tan(hFov/2) THEN clamps to minimum', () => {
-    const maxYaw = Math.tan((65 * Math.PI / 180) / 2)
+    const maxYaw = Math.tan((40 * Math.PI / 180) / 2)
     expect(clampYawToViewport(-100)).toBeCloseTo(-maxYaw)
   })
 

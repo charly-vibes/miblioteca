@@ -371,15 +371,15 @@ describe('GhostCalibrationPage — REPOSITIONING phase', () => {
 })
 
 describe('focalLengthPx', () => {
-  it('derives focalLengthPx from viewport width and default 65° hFov', () => {
-    // vw=800: fl = 400 / tan(32.5°) = 400 / 0.6371 ≈ 628
+  it('derives focalLengthPx from viewport width and default 40° hFov', () => {
+    // vw=800: fl = 400 / tan(20°) = 400 / 0.3640 ≈ 1099
     const fl = focalLengthPx(800)
-    expect(fl).toBeCloseTo(628, 0)
+    expect(fl).toBeCloseTo(1099, 0)
   })
 
   it('is symmetric: focalLengthPx(vw) * tan(hFov/2) === vw/2', () => {
     const vw = 1080
-    const hFov = 65
+    const hFov = 40
     const fl = focalLengthPx(vw, hFov)
     expect(fl * Math.tan((hFov / 2) * Math.PI / 180)).toBeCloseTo(vw / 2, 5)
   })
@@ -443,6 +443,48 @@ describe('GhostCalibrationPage — CAPTURED phase', () => {
     expect(rect.style.top).toBe('180px')   // (600-240)/2
   })
 
+  it('rectangle persists at GT position after Next Cycle when user dragged it', () => {
+    const w = makeWin(800, 600)
+    const page = new GhostCalibrationPage(container, { win: w })
+    page.getCenterDot().click()
+    ;(container.querySelector<HTMLElement>('[data-testid="stop-btn"]'))!.click()
+
+    const rect = container.querySelector<HTMLElement>('[data-testid="calibration-rectangle"]')!
+    // Drag rectangle 200px right, 100px down
+    rect.dispatchEvent(new MouseEvent('mousedown', { clientX: 400, clientY: 300, bubbles: true }))
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 600, clientY: 400, bubbles: true }))
+    const draggedLeft = parseInt(rect.style.left, 10)   // 160+200 = 360
+    const draggedTop  = parseInt(rect.style.top,  10)   // 180+100 = 280
+
+    page.getConfirmBtn().click()
+    page.getNextCycleBtn().click()
+
+    expect(parseInt(rect.style.left, 10)).toBe(draggedLeft)
+    expect(parseInt(rect.style.top,  10)).toBe(draggedTop)
+  })
+
+  it('startPosition on second cycle uses GT position from first cycle', () => {
+    const w = makeWin(800, 600)
+    const page = new GhostCalibrationPage(container, { win: w })
+    page.getCenterDot().click()
+    ;(container.querySelector<HTMLElement>('[data-testid="stop-btn"]'))!.click()
+
+    const rect = container.querySelector<HTMLElement>('[data-testid="calibration-rectangle"]')!
+    rect.dispatchEvent(new MouseEvent('mousedown', { clientX: 400, clientY: 300, bubbles: true }))
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 600, clientY: 400, bubbles: true }))
+    const draggedLeft = parseInt(rect.style.left, 10)  // 360
+    const draggedTop  = parseInt(rect.style.top,  10)  // 280
+
+    page.getConfirmBtn().click()
+    page.getNextCycleBtn().click()
+    page.getCenterDot().click()  // start second recording
+
+    const cycle2 = page.getCurrentCycle()!
+    // rectW=480, rectH=240: center = left+240, top+120
+    expect(cycle2.startPosition?.x).toBeCloseTo(draggedLeft + 480 / 2, 0)
+    expect(cycle2.startPosition?.y).toBeCloseTo(draggedTop  + 240 / 2, 0)
+  })
+
   it('Next Cycle allows starting a second recording', () => {
     const page = enterCaptured()
     page.getNextCycleBtn().click()
@@ -495,7 +537,7 @@ describe('GhostCalibrationPage — JSON export', () => {
     expect(parsed).toMatchObject({
       exportedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
       deviceInfo: { viewportWidth: 800, viewportHeight: 600, devicePixelRatio: 2, userAgent: 'test-ua' },
-      hFovDeg: 65,
+      hFovDeg: 40,
       focalLengthPx: expect.any(Number),
       cycles: expect.arrayContaining([
         expect.objectContaining({ id: expect.any(String), frames: expect.any(Array) }),

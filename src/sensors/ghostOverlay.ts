@@ -26,7 +26,9 @@ export type GhostOverlayState = {
   readonly dy_m: number           // m, vertical displacement since last reset
 }
 
-const DEFAULT_HFOV_DEG = 65
+// ~40° empirically matches phone-held-at-natural-tilt (~55° forward): cos(55°)≈0.57 projection
+// loss on beta means the effective angular capture per pixel ≈ 40° equivalent FOV.
+const DEFAULT_HFOV_DEG = 40
 
 export function initialGhostState(): GhostOverlayState {
   return { yawIntegral: 0, pitchIntegral: 0, lastT: -Infinity, lastAccelT: -Infinity, omegaMag: 0, velX: 0, velY: 0, dx_m: 0, dy_m: 0 }

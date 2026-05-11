@@ -363,7 +363,7 @@ describe('GhostOverlayCanvas yaw viewport clamp (3cg)', () => {
     tick()
 
     const state = overlay.getDebugState()
-    const maxYaw = Math.tan((65 * Math.PI / 180) / 2)
+    const maxYaw = Math.tan((40 * Math.PI / 180) / 2)
     // yawIntegral must not exceed the viewport boundary
     expect(Math.abs(state.yawIntegral)).toBeLessThanOrEqual(maxYaw + 0.001)
     viewfinder.remove()

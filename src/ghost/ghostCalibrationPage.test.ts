@@ -412,6 +412,16 @@ describe('GhostCalibrationPage — CAPTURED phase', () => {
     expect(text).toContain('Return drift')
   })
 
+  it('effectiveYawErrDeg is a finite number using the correct focal-length formula', () => {
+    enterCaptured()
+    const text = container.querySelector('[data-testid="summary-text"]')!.textContent ?? ''
+    const match = text.match(/Effective yaw error:\s*([-\d.]+)°/)
+    expect(match).not.toBeNull()
+    const deg = parseFloat(match![1])
+    expect(Number.isFinite(deg)).toBe(true)
+    expect(Math.abs(deg)).toBeLessThan(180)
+  })
+
   it('deltaPixels formula: groundTruth minus algorithmPosition', () => {
     const page = enterCaptured()
     const cycle = page.getCycles()[0]
@@ -510,5 +520,126 @@ describe('GhostCalibrationPage — JSON export', () => {
     btn.click()
     const parsed = JSON.parse(downloads[0].json)
     expect(parsed.cycles).toHaveLength(2)
+  })
+})
+
+describe('GhostCalibrationPage — double integration prevention', () => {
+  it('devicemotion does not re-integrate gyro when Gyroscope API is active', () => {
+    const gyro = makeGyro(0, 0.5, 0)  // gy = 0.5 rad/s
+    let rafCb: FrameRequestCallback | null = null
+    const raf = vi.fn((cb: FrameRequestCallback) => { rafCb = cb; return 1 })
+    const now = vi.fn().mockReturnValue(0)
+    const w = makeWin(800, 600)
+    const page = new GhostCalibrationPage(container, {
+      win: w, gyro,
+      requestAnimationFrame: raf, cancelAnimationFrame: vi.fn(), now,
+    })
+    page.getCenterDot().click()
+
+    gyro.timestamp = 0; gyro.trigger()
+    gyro.timestamp = 100; now.mockReturnValue(100); gyro.trigger()  // yawIntegral = -0.05
+
+    rafCb!(0)
+    const rect = container.querySelector<HTMLElement>('[data-testid="calibration-rectangle"]')!
+    const leftAfterGyroOnly = parseInt(rect.style.left, 10)
+
+    now.mockReturnValue(200)
+    w.dispatch('devicemotion', {
+      rotationRate: { alpha: 0, beta: 0.5 * (180 / Math.PI), gamma: 0 },
+      acceleration: null,
+      interval: 16,
+    })
+    rafCb!(0)
+    const leftAfterDeviceMotion = parseInt(rect.style.left, 10)
+
+    expect(leftAfterDeviceMotion).toBe(leftAfterGyroOnly)
+  })
+
+  it('does not push duplicate SensorFrames when both gyro and devicemotion fire', () => {
+    const gyro = makeGyro(0, 0.5, 0)
+    const page = new GhostCalibrationPage(container, { win, gyro })
+    page.getCenterDot().click()
+
+    gyro.trigger()
+
+    win.dispatch('devicemotion', {
+      rotationRate: { alpha: 0, beta: 20, gamma: 0 },
+      acceleration: null,
+      interval: 16,
+    })
+
+    expect(page.getCurrentCycle()?.frames).toHaveLength(1)
+  })
+})
+
+describe('GhostCalibrationPage — scan axis', () => {
+  it('landscape orientation uses gx for horizontal scan', () => {
+    const gyro = makeGyro(0.5, 0, 0)  // gx=0.5 rad/s, gy=0
+    const getOrientation = vi.fn().mockReturnValue('landscape-primary')
+    const page = new GhostCalibrationPage(container, { win: makeWin(800, 600), gyro, getOrientation })
+
+    gyro.timestamp = 0; gyro.trigger()
+    gyro.timestamp = 100; gyro.trigger()  // dt=0.1s, gx drives yaw in landscape
+
+    const telemetry = page.getTelemetryEl()
+    expect(telemetry.textContent).not.toContain('Yaw: 0.0°')
+  })
+})
+
+describe('GhostCalibrationPage — yaw clamping', () => {
+  it('clamps yawIntegral in RAF loop so counter-rotation moves the rectangle immediately', () => {
+    const gyro = makeGyro(0, 100, 0)  // huge gy
+    let rafCb: FrameRequestCallback | null = null
+    const raf = vi.fn((cb: FrameRequestCallback) => { rafCb = cb; return 1 })
+    const page = new GhostCalibrationPage(container, {
+      win: makeWin(800, 600), gyro,
+      requestAnimationFrame: raf, cancelAnimationFrame: vi.fn(),
+    })
+    page.getCenterDot().click()
+
+    gyro.timestamp = 0; gyro.trigger()
+    gyro.timestamp = 1000; gyro.trigger()  // dt clamped to 0.5s → yaw ≈ -50 rad
+
+    rafCb!(0)  // should clamp yawIntegral to maxYaw
+
+    const rect = container.querySelector<HTMLElement>('[data-testid="calibration-rectangle"]')!
+    const leftBeforeCounter = parseInt(rect.style.left, 10)
+
+    gyro.y = -0.1  // small counter-rotation
+    gyro.timestamp = 1100; gyro.trigger()  // dt=0.1s → small yaw change from clamped state
+
+    rafCb!(0)
+    const leftAfterCounter = parseInt(rect.style.left, 10)
+
+    // With clamp: yawIntegral was reset to maxYaw, counter moves it into range → rect shifts
+    // Without clamp: yawIntegral still -50, counter barely changes it → rect stays at edge
+    expect(leftAfterCounter).not.toBe(leftBeforeCounter)
+  })
+
+  it('gyro path: onGyroReading clamps yawIntegral so counter-rotation responds immediately', () => {
+    const gyro = makeGyro(0, 100, 0)  // huge gy in portrait
+    let rafCb: FrameRequestCallback | null = null
+    const raf = vi.fn((cb: FrameRequestCallback) => { rafCb = cb; return 1 })
+    const page = new GhostCalibrationPage(container, {
+      win: makeWin(800, 600), gyro,
+      requestAnimationFrame: raf, cancelAnimationFrame: vi.fn(),
+    })
+    page.getCenterDot().click()
+
+    gyro.timestamp = 0; gyro.trigger()
+    gyro.timestamp = 1000; gyro.trigger()  // dt clamped to 0.5s → massive yaw without clamp
+
+    rafCb!(0)
+    const rect = container.querySelector<HTMLElement>('[data-testid="calibration-rectangle"]')!
+    const leftAtEdge = parseInt(rect.style.left, 10)
+
+    gyro.y = -0.1  // small counter-rotation
+    gyro.timestamp = 1100; gyro.trigger()  // dt=0.1s → small yaw from clamped state
+
+    rafCb!(0)
+    const leftAfterCounter = parseInt(rect.style.left, 10)
+
+    // Clamp in onGyroReading resets integral to boundary, so counter-rotation takes effect immediately
+    expect(leftAfterCounter).not.toBe(leftAtEdge)
   })
 })

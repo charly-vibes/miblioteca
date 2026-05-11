@@ -1,5 +1,6 @@
 import type { GhostFrame, GyroLike } from '../sensors/ghostOverlayCanvas'
-import { initialGhostState, feedGhostGyro, feedGhostAccel, computeShiftPx, computeShiftPy, computeTranslationShiftPx, computeTranslationShiftPy } from '../sensors/ghostOverlay'
+import { initialGhostState, feedGhostGyro, feedGhostAccel, computeShiftPx, computeShiftPy, computeTranslationShiftPx, computeTranslationShiftPy, clampYawToViewport, focalLengthPx } from '../sensors/ghostOverlay'
+export { focalLengthPx } from '../sensors/ghostOverlay'
 import type { GhostOverlayState } from '../sensors/ghostOverlay'
 import type { Phase, SensorFrame, CalibrationCycle, CalibrationExport } from './types'
 
@@ -30,10 +31,6 @@ export type CalibrationPageDeps = {
   triggerDownload?: (filename: string, json: string) => void
   distanceCm?: number
   getOrientation?: () => string
-}
-
-export function focalLengthPx(viewportWidth: number, hFovDeg = H_FOV_DEG): number {
-  return (viewportWidth / 2) / Math.tan((hFovDeg / 2) * Math.PI / 180)
 }
 
 function injectPulseStyle(doc: Document): void {
@@ -384,12 +381,15 @@ export class GhostCalibrationPage {
         this.sensorVals.gx = (rr.alpha ?? 0) * (Math.PI / 180)
         this.sensorVals.gy = (rr.beta ?? 0) * (Math.PI / 180)
         this.sensorVals.gz = (rr.gamma ?? 0) * (Math.PI / 180)
-        this.ghostState = feedGhostGyro(this.ghostState, {
-          t,
-          gx: this.sensorVals.gx,
-          gy: this.sensorVals.gy,
-          gz: this.sensorVals.gz,
-        }, 'y')
+        if (!this.gyro) {
+          const scanAxis: 'x' | 'y' = this.getOrientation().startsWith('landscape') ? 'x' : 'y'
+          this.ghostState = feedGhostGyro(this.ghostState, {
+            t,
+            gx: this.sensorVals.gx,
+            gy: this.sensorVals.gy,
+            gz: this.sensorVals.gz,
+          }, scanAxis)
+        }
       }
       let accelGate: SensorFrame['gate'] | undefined
       if (ac) {
@@ -422,7 +422,8 @@ export class GhostCalibrationPage {
       this.latestShiftPy = computeShiftPy(this.ghostState.pitchIntegral, vw, vh)
         + computeTranslationShiftPy(this.ghostState.dy_m, workingDistanceM, vw)
 
-      if (this.phase === 'recording' && this.currentCycle?.frames) {
+      // Gyro API path records its own SensorFrames in onGyroReading — skip here to avoid duplicates.
+      if (!this.gyro && this.phase === 'recording' && this.currentCycle?.frames) {
         const frame: SensorFrame = {
           t: this.nowFn() - this.recordingStartedAt,
           gx: this.sensorVals.gx,
@@ -461,7 +462,10 @@ export class GhostCalibrationPage {
     const gy = g.y ?? 0
     const gz = g.z ?? 0
 
-    this.ghostState = feedGhostGyro(this.ghostState, { t, gx, gy, gz }, 'y')
+    const scanAxis: 'x' | 'y' = this.getOrientation().startsWith('landscape') ? 'x' : 'y'
+    this.ghostState = feedGhostGyro(this.ghostState, { t, gx, gy, gz }, scanAxis)
+    // Clamp here so yawIntegral never over-accumulates between RAF ticks when gyro fires at high rate.
+    this.ghostState = { ...this.ghostState, yawIntegral: clampYawToViewport(this.ghostState.yawIntegral) }
     const vw = this.win.innerWidth || 375
     const vh = this.win.innerHeight || 667
     const workingDistanceM = this.workingDistanceCm / 100
@@ -495,6 +499,13 @@ export class GhostCalibrationPage {
   private readonly recordingRafLoop: FrameRequestCallback = () => {
     if (this.phase !== 'recording' || this.destroyed) return
     this.recordingRafId = this.raf(this.recordingRafLoop)
+
+    // computeShiftPx already bounds the pixel output, but without clamping the integral, a large
+    // over-accumulated yaw would resist counter-rotation until it drained back within range.
+    const clampedYaw = clampYawToViewport(this.ghostState.yawIntegral)
+    if (clampedYaw !== this.ghostState.yawIntegral) {
+      this.ghostState = { ...this.ghostState, yawIntegral: clampedYaw }
+    }
 
     const shiftPx = this.latestShiftPx
     const shiftPy = this.latestShiftPy

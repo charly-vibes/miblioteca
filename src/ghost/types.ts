@@ -28,6 +28,8 @@ export interface CalibrationCycle {
   returnPitchRad: number
   frames: SensorFrame[]
   ghostFrames: GhostFrame[]
+  startSnapshot?: string | null
+  endSnapshot?: string | null
 }
 
 export interface CalibrationExport {

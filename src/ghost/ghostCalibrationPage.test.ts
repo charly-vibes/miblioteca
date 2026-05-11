@@ -331,25 +331,24 @@ describe('GhostCalibrationPage — REPOSITIONING phase', () => {
     expect(page.getTelemetryEl().textContent).toContain('PAUSED')
   })
 
-  it('drag moves rectangle within viewport bounds (clamped at right edge)', () => {
+  it('drag moves rectangle and can go past right edge', () => {
     const w = makeWin(800, 600)
     enterRepositioning(w)
     const rect = container.querySelector<HTMLElement>('[data-testid="calibration-rectangle"]')!
-    // rw=480, vw=800 → max left=320; initial left=160
+    // rw=480, vw=800; initial left=160; drag 500px right → 660 (no clamp)
     rect.dispatchEvent(new MouseEvent('mousedown', { clientX: 400, clientY: 300, bubbles: true }))
     document.dispatchEvent(new MouseEvent('mousemove', { clientX: 900, clientY: 300, bubbles: true }))
-    // 160 + 500 = 660 → clamped to 800 - 480 = 320
-    expect(parseInt(rect.style.left, 10)).toBe(320)
+    expect(parseInt(rect.style.left, 10)).toBe(660)
   })
 
-  it('drag clamps at left edge (min 0)', () => {
+  it('drag can go off left edge (negative left)', () => {
     const w = makeWin(800, 600)
     enterRepositioning(w)
     const rect = container.querySelector<HTMLElement>('[data-testid="calibration-rectangle"]')!
-    // initial left=160; drag 300px left → -140, clamped to 0
+    // initial left=160; drag 300px left → -140 (no clamp)
     rect.dispatchEvent(new MouseEvent('mousedown', { clientX: 400, clientY: 300, bubbles: true }))
     document.dispatchEvent(new MouseEvent('mousemove', { clientX: 100, clientY: 300, bubbles: true }))
-    expect(parseInt(rect.style.left, 10)).toBe(0)
+    expect(parseInt(rect.style.left, 10)).toBe(-140)
   })
 
   it('Confirm records groundTruthPosition, deltaPixels, and transitions to CAPTURED', () => {
@@ -642,5 +641,136 @@ describe('GhostCalibrationPage — yaw clamping', () => {
 
     // Clamp in onGyroReading resets integral to boundary, so counter-rotation takes effect immediately
     expect(leftAfterCounter).not.toBe(leftAtEdge)
+  })
+})
+
+describe('GhostCalibrationPage — ghost overlay', () => {
+  it('ghost overlay element is hidden in idle phase', () => {
+    new GhostCalibrationPage(container, { win })
+    const overlay = container.querySelector<HTMLElement>('[data-testid="ghost-overlay"]')
+    expect(overlay).not.toBeNull()
+    expect(overlay!.style.display).toBe('none')
+  })
+
+  it('ghost overlay becomes visible when recording starts', () => {
+    const captureSnapshot = vi.fn().mockReturnValue('data:image/jpeg;base64,FAKE')
+    const page = new GhostCalibrationPage(container, { win, captureSnapshot })
+    page.getCenterDot().click()
+    const overlay = container.querySelector<HTMLElement>('[data-testid="ghost-overlay"]')!
+    expect(overlay.style.display).not.toBe('none')
+    expect(captureSnapshot).toHaveBeenCalled()
+  })
+
+  it('ghost overlay src is set to captured snapshot', () => {
+    const captureSnapshot = vi.fn().mockReturnValue('data:image/jpeg;base64,TESTIMG')
+    const page = new GhostCalibrationPage(container, { win, captureSnapshot })
+    page.getCenterDot().click()
+    const overlay = container.querySelector<HTMLImageElement>('[data-testid="ghost-overlay"]')!
+    expect(overlay.src).toContain('TESTIMG')
+  })
+
+  it('ghost overlay is hidden after cycle ends', () => {
+    const captureSnapshot = vi.fn().mockReturnValue('data:image/jpeg;base64,FAKE')
+    const page = new GhostCalibrationPage(container, { win, captureSnapshot })
+    page.getCenterDot().click()
+    // tap dot to stop recording
+    const rect = container.querySelector('[data-testid="calibration-rectangle"]')!
+    rect.querySelector<HTMLElement>('[role="button"]')!.click()
+    const overlay = container.querySelector<HTMLElement>('[data-testid="ghost-overlay"]')!
+    expect(overlay.style.display).toBe('none')
+  })
+
+  it('ghost overlay transform tracks pipeline shift during recording', () => {
+    const captureSnapshot = vi.fn().mockReturnValue('data:image/jpeg;base64,FAKE')
+    const gyro = makeGyro(0, 0.5, 0)  // gy=0.5 drives yaw
+    let rafCb: FrameRequestCallback | null = null
+    const raf = vi.fn((cb: FrameRequestCallback) => { rafCb = cb; return 1 })
+    const page = new GhostCalibrationPage(container, {
+      win: makeWin(800, 600), gyro, captureSnapshot,
+      requestAnimationFrame: raf, cancelAnimationFrame: vi.fn(),
+    })
+    page.getCenterDot().click()
+    gyro.timestamp = 0; gyro.trigger()
+    gyro.timestamp = 200; gyro.trigger()
+    rafCb!(0)
+    const overlay = container.querySelector<HTMLElement>('[data-testid="ghost-overlay"]')!
+    expect(overlay.style.transform).toMatch(/translate3d\(-?\d+(\.\d+)?px, -?\d+(\.\d+)?px, 0\)/)
+    expect(overlay.style.transform).not.toBe('translate3d(0px, 0px, 0)')
+  })
+})
+
+describe('GhostCalibrationPage — drag off-screen', () => {
+  it('drag can position rectangle with negative left (off left edge)', () => {
+    const page = new GhostCalibrationPage(container, { win: makeWin(800, 600) })
+    page.getCenterDot().click()
+    // tap dot to stop
+    const rect = container.querySelector<HTMLElement>('[data-testid="calibration-rectangle"]')!
+    rect.querySelector<HTMLElement>('[role="button"]')!.click()
+    // now in repositioning — drag far left
+    const touch = new Event('touchstart') as TouchEvent
+    Object.defineProperty(touch, 'touches', { value: [{ clientX: 400, clientY: 300 }] })
+    rect.dispatchEvent(touch)
+    const move = new Event('touchmove')
+    Object.defineProperty(move, 'touches', { value: [{ clientX: -200, clientY: 300 }] })
+    ;(container.ownerDocument as Document).dispatchEvent(move)
+    const left = parseInt(rect.style.left, 10)
+    expect(left).toBeLessThan(0)
+  })
+
+  it('drag can position rectangle past right edge', () => {
+    const page = new GhostCalibrationPage(container, { win: makeWin(800, 600) })
+    page.getCenterDot().click()
+    const rect = container.querySelector<HTMLElement>('[data-testid="calibration-rectangle"]')!
+    rect.querySelector<HTMLElement>('[role="button"]')!.click()
+    const touch = new Event('touchstart') as TouchEvent
+    Object.defineProperty(touch, 'touches', { value: [{ clientX: 400, clientY: 300 }] })
+    rect.dispatchEvent(touch)
+    const move = new Event('touchmove')
+    Object.defineProperty(move, 'touches', { value: [{ clientX: 900, clientY: 300 }] })
+    ;(container.ownerDocument as Document).dispatchEvent(move)
+    const left = parseInt(rect.style.left, 10)
+    // 800 - 480 = 320 is the old max — should now exceed it
+    expect(left).toBeGreaterThan(320)
+  })
+})
+
+describe('GhostCalibrationPage — cycle snapshots', () => {
+  it('startSnapshot is set at recording start', () => {
+    const captureSnapshot = vi.fn().mockReturnValue('data:image/jpeg;base64,START')
+    const page = new GhostCalibrationPage(container, { win, captureSnapshot })
+    page.getCenterDot().click()
+    const cycle = page.getCurrentCycle()!
+    expect((cycle as { startSnapshot?: string }).startSnapshot).toBe('data:image/jpeg;base64,START')
+  })
+
+  it('endSnapshot is set when recording ends', () => {
+    let call = 0
+    const captureSnapshot = vi.fn().mockImplementation(() =>
+      call++ === 0 ? 'data:image/jpeg;base64,START' : 'data:image/jpeg;base64,END'
+    )
+    const page = new GhostCalibrationPage(container, { win, captureSnapshot })
+    page.getCenterDot().click()
+    const rect = container.querySelector('[data-testid="calibration-rectangle"]')!
+    rect.querySelector<HTMLElement>('[role="button"]')!.click()
+    const cycle = page.getCurrentCycle()!
+    expect((cycle as { endSnapshot?: string }).endSnapshot).toBe('data:image/jpeg;base64,END')
+  })
+
+  it('snapshots included in exported JSON', () => {
+    let downloads: Array<{ filename: string; json: string }> = []
+    const triggerDownload = vi.fn((filename: string, json: string) => { downloads.push({ filename, json }) })
+    let call = 0
+    const captureSnapshot = vi.fn().mockImplementation(() =>
+      call++ === 0 ? 'data:image/jpeg;base64,START' : 'data:image/jpeg;base64,END'
+    )
+    const page = new GhostCalibrationPage(container, { win, captureSnapshot, triggerDownload })
+    page.getCenterDot().click()
+    const rect = container.querySelector<HTMLElement>('[data-testid="calibration-rectangle"]')!
+    rect.querySelector<HTMLElement>('[role="button"]')!.click()
+    page.getConfirmBtn().click()
+    page.getExportBtn().click()
+    const payload = JSON.parse(downloads[0].json)
+    expect(payload.cycles[0].startSnapshot).toBe('data:image/jpeg;base64,START')
+    expect(payload.cycles[0].endSnapshot).toBe('data:image/jpeg;base64,END')
   })
 })

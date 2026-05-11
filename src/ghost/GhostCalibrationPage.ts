@@ -31,6 +31,7 @@ export type CalibrationPageDeps = {
   triggerDownload?: (filename: string, json: string) => void
   distanceCm?: number
   getOrientation?: () => string
+  captureSnapshot?: (video: HTMLVideoElement) => string | null
 }
 
 function injectPulseStyle(doc: Document): void {
@@ -129,6 +130,9 @@ export class GhostCalibrationPage {
   private readonly rectW: number
   private readonly rectH: number
 
+  private readonly ghostOverlayEl: HTMLImageElement
+  private readonly captureSnapshotFn: (video: HTMLVideoElement) => string | null
+
   constructor(
     private readonly root: HTMLElement,
     deps: CalibrationPageDeps = {}
@@ -150,6 +154,16 @@ export class GhostCalibrationPage {
     })
 
     this.getOrientation = deps.getOrientation ?? (() => (typeof screen !== 'undefined' && screen.orientation?.type) || 'portrait-primary')
+
+    this.captureSnapshotFn = deps.captureSnapshot ?? ((video) => {
+      try {
+        const c = document.createElement('canvas')
+        c.width = video.videoWidth || video.clientWidth || 375
+        c.height = video.videoHeight || video.clientHeight || 667
+        c.getContext('2d')?.drawImage(video, 0, 0, c.width, c.height)
+        return c.toDataURL('image/jpeg', 0.8)
+      } catch { return null }
+    })
 
     const doc = root.ownerDocument ?? document
     this.doc = doc
@@ -326,6 +340,20 @@ export class GhostCalibrationPage {
     this.nextCycleBtnEl.addEventListener('click', () => this.transitionToIdle())
     this.exportBtnEl.addEventListener('click', () => this.exportJson())
 
+    this.ghostOverlayEl = doc.createElement('img')
+    this.ghostOverlayEl.setAttribute('data-testid', 'ghost-overlay')
+    this.ghostOverlayEl.alt = ''
+    Object.assign(this.ghostOverlayEl.style, {
+      position: 'fixed', inset: '0',
+      width: '100%', height: '100%',
+      objectFit: 'cover',
+      opacity: '0.5',
+      pointerEvents: 'none',
+      display: 'none',
+      zIndex: '1',
+      willChange: 'transform',
+    })
+
     const overlay = doc.createElement('div')
     Object.assign(overlay.style, { position: 'fixed', inset: '0', zIndex: '2' })
     overlay.appendChild(this.rectangleEl)
@@ -340,6 +368,7 @@ export class GhostCalibrationPage {
     })
 
     root.appendChild(this.videoEl)
+    root.appendChild(this.ghostOverlayEl)
     root.appendChild(this.warnBannerEl)
     root.appendChild(commitBadge)
     root.appendChild(this.telemetryEl)
@@ -489,6 +518,7 @@ export class GhostCalibrationPage {
     if (this.phase === 'recording') {
       this.rectangleEl.style.left = `${this.rectInitLeft + Math.round(shiftPx)}px`
       this.rectangleEl.style.top = `${this.rectInitTop + Math.round(shiftPy)}px`
+      this.ghostOverlayEl.style.transform = `translate3d(${shiftPx.toFixed(2)}px, ${shiftPy.toFixed(2)}px, 0)`
       const elapsed = frame.t - this.recordingStartedAt
       this.timerSpanEl.textContent = msToMMSS(elapsed)
       if (this.currentCycle?.ghostFrames) {
@@ -559,6 +589,13 @@ export class GhostCalibrationPage {
     this.lastYawRad = 0
     this.lastPitchRad = 0
 
+    const startSnapshot = this.captureSnapshotFn(this.videoEl)
+    if (startSnapshot) {
+      this.ghostOverlayEl.src = startSnapshot
+      this.ghostOverlayEl.style.display = ''
+      this.ghostOverlayEl.style.transform = 'translate3d(0px, 0px, 0)'
+    }
+
     this.currentCycle = {
       id: crypto.randomUUID(),
       startedAt: this.recordingStartedAt,
@@ -566,6 +603,7 @@ export class GhostCalibrationPage {
       startPosition: { x: Math.round(vw / 2), y: Math.round(vh / 2) },
       frames: [],
       ghostFrames: [],
+      startSnapshot,
     }
 
     this.recordingIndicatorEl.hidden = false
@@ -578,6 +616,7 @@ export class GhostCalibrationPage {
     const endedAt = this.nowFn()
     if (this.currentCycle) {
       this.currentCycle.endedAt = endedAt
+      this.currentCycle.endSnapshot = this.captureSnapshotFn(this.videoEl)
       const left = parseInt(this.rectangleEl.style.left, 10)
       const top = parseInt(this.rectangleEl.style.top, 10)
       this.currentCycle.algorithmPosition = {
@@ -586,6 +625,7 @@ export class GhostCalibrationPage {
       }
     }
 
+    this.ghostOverlayEl.style.display = 'none'
     this.recordingIndicatorEl.hidden = true
     this.stopBtnEl.hidden = true
     this.hintEl.textContent = 'DRAG rectangle to its true position, then tap Confirm'
@@ -607,12 +647,8 @@ export class GhostCalibrationPage {
     if (this.phase !== 'repositioning' || !this.dragStartTouch) return
     const dx = clientX - this.dragStartTouch.clientX
     const dy = clientY - this.dragStartTouch.clientY
-    const vw = this.win.innerWidth || 375
-    const vh = this.win.innerHeight || 667
-    const newLeft = Math.max(0, Math.min(vw - this.rectW, this.dragStartRect.left + dx))
-    const newTop = Math.max(0, Math.min(vh - this.rectH, this.dragStartRect.top + dy))
-    this.rectangleEl.style.left = `${Math.round(newLeft)}px`
-    this.rectangleEl.style.top = `${Math.round(newTop)}px`
+    this.rectangleEl.style.left = `${Math.round(this.dragStartRect.left + dx)}px`
+    this.rectangleEl.style.top = `${Math.round(this.dragStartRect.top + dy)}px`
   }
 
   private stopDrag(): void {
@@ -704,6 +740,8 @@ export class GhostCalibrationPage {
     this.latestFrame = null
     this.dragStartTouch = null
 
+    this.ghostOverlayEl.style.display = 'none'
+    this.ghostOverlayEl.src = ''
     this.summaryPanelEl.hidden = true
     this.exportBtnEl.hidden = true
     this.nextCycleBtnEl.hidden = true
@@ -722,6 +760,7 @@ export class GhostCalibrationPage {
   getPhase(): Phase { return this.phase }
   getCenterDot(): HTMLElement { return this.centerDotEl }
   getConfirmBtn(): HTMLButtonElement { return this.confirmBtnEl }
+  getExportBtn(): HTMLButtonElement { return this.exportBtnEl }
   getNextCycleBtn(): HTMLButtonElement { return this.nextCycleBtnEl }
   getSummaryPanel(): HTMLElement { return this.summaryPanelEl }
   getTelemetryEl(): HTMLElement { return this.telemetryEl }

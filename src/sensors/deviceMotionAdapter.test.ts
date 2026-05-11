@@ -40,19 +40,19 @@ describe('DeviceMotionGyroAdapter', () => {
       rotationRate: { beta: 180, gamma: 90, alpha: 45 },
       timeStamp: 1000,
     })
-    expect(adapter.x).toBeCloseTo(180 * DEG_TO_RAD)
-    expect(adapter.y).toBeCloseTo(90 * DEG_TO_RAD)
+    expect(adapter.x).toBeCloseTo(90 * DEG_TO_RAD)
+    expect(adapter.y).toBeCloseTo(180 * DEG_TO_RAD)
     expect(adapter.z).toBeCloseTo(45 * DEG_TO_RAD)
   })
 
-  it('maps alpha→z, beta→x, gamma→y', () => {
+  it('maps alpha→z, beta→y, gamma→x (Firefox Android convention)', () => {
     adapter.start()
     win.dispatch('devicemotion', {
       rotationRate: { beta: 10, gamma: 20, alpha: 30 },
       timeStamp: 2000,
     })
-    expect(adapter.x).toBeCloseTo(10 * DEG_TO_RAD)
-    expect(adapter.y).toBeCloseTo(20 * DEG_TO_RAD)
+    expect(adapter.x).toBeCloseTo(20 * DEG_TO_RAD)
+    expect(adapter.y).toBeCloseTo(10 * DEG_TO_RAD)
     expect(adapter.z).toBeCloseTo(30 * DEG_TO_RAD)
   })
 

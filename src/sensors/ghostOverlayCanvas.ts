@@ -38,9 +38,9 @@ export type MotionLike = {
 export type GhostFrame = {
   t: DOMHighResTimeStamp    // absolute timestamp from deps.now()
   yawRad: number            // yawIntegral at this tick
-  pitchRad: number          // gyro pitch integral in rad; used for data collection only — rendering (pitchShiftPx) is 0 until pitch is implemented
+  pitchRad: number          // gyro pitch integral in rad
   shiftPx: number           // horizontal canvas shift in CSS px
-  pitchShiftPx: number      // vertical shift (always 0 until pitch is implemented)
+  pitchShiftPx: number      // vertical canvas shift in CSS px
   gateOpen: boolean         // true when ghost overlay is visible
 }
 
@@ -78,7 +78,6 @@ export class GhostOverlayCanvas {
   private lastShiftLogMs = 0
   private lastMotionLogMs = 0
   private workingDistanceCm = 60
-  private snapshotBeta = 90  // DeviceOrientationEvent.beta at the time of the last setSnapshot
   private readonly deps: Required<Omit<GhostOverlayCanvasDeps, 'motion' | 'getBeta' | 'distanceCm' | 'onFrame' | 'canvasClassName'>> & Pick<GhostOverlayCanvasDeps, 'motion' | 'getBeta' | 'onFrame'>
 
   constructor(viewfinder: HTMLElement, deps: GhostOverlayCanvasDeps) {
@@ -217,14 +216,8 @@ export class GhostOverlayCanvas {
     const dh = rh || this.canvas.height
     const workingDistanceM = this.workingDistanceCm / 100
 
-    // Rotation component (each internally clamped to display bounds).
-    // Pitch uses absolute DeviceOrientationEvent.beta (current minus snapshot) to avoid gyro drift.
-    // Falls back to 0 when getBeta is unavailable (beta=null) — no vertical shift on devices
-    // that don't report orientation (e.g. Firefox Android with null beta).
     const rotShiftPx = computeShiftPx(this.state.yawIntegral, dw)
-    const currentBetaDeg = this.deps.getBeta?.() ?? this.snapshotBeta
-    const absolutePitchRad = (currentBetaDeg - this.snapshotBeta) * (Math.PI / 180)
-    const rotShiftPy = computeShiftPy(absolutePitchRad, dw, dh)
+    const rotShiftPy = computeShiftPy(this.state.pitchIntegral, dw, dh)
     // Translation component (unclamped; combined clamp applied below)
     const transShiftPx = computeTranslationShiftPx(this.state.dx_m, workingDistanceM, dw)
     const transShiftPy = computeTranslationShiftPy(this.state.dy_m, workingDistanceM, dw)
@@ -253,9 +246,6 @@ export class GhostOverlayCanvas {
         shiftPx, shiftPy,
         yawIntegral: this.state.yawIntegral,
         pitchIntegral: this.state.pitchIntegral,
-        absolutePitchRad,
-        snapshotBeta: this.snapshotBeta,
-        currentBetaDeg,
         dx_cm: this.state.dx_m * 100, dy_cm: this.state.dy_m * 100,
         velX: this.state.velX, velY: this.state.velY,
         workingDistanceCm: this.workingDistanceCm,
@@ -269,7 +259,7 @@ export class GhostOverlayCanvas {
       yawRad: this.state.yawIntegral,
       pitchRad: this.state.pitchIntegral,
       shiftPx,
-      pitchShiftPx: 0,
+      pitchShiftPx: shiftPy,
       gateOpen: true,
     })
   }
@@ -312,8 +302,6 @@ export class GhostOverlayCanvas {
     this.ctx.clearRect(0, 0, w, h)
     this.ctx.drawImage(imageBitmap, sx, sy, sw, sh, 0, 0, w, h)
 
-    // Store absolute pitch angle at snapshot time for drift-free vertical tracking.
-    this.snapshotBeta = this.deps.getBeta?.() ?? 90
     // Primary ZUPT: reset all accumulators including velocity and displacement.
     this.state = initialGhostState()
     this.currentShiftPx = 0
@@ -342,9 +330,7 @@ export class GhostOverlayCanvas {
     const displayHeight = dh || this.canvas.height
     const workingDistanceM = this.workingDistanceCm / 100
     const rotShiftPx = computeShiftPx(this.state.yawIntegral, displayWidth)
-    const debugBetaDeg = this.deps.getBeta?.() ?? this.snapshotBeta
-    const debugPitchRad = (debugBetaDeg - this.snapshotBeta) * (Math.PI / 180)
-    const rotShiftPy = computeShiftPy(debugPitchRad, displayWidth, displayHeight)
+    const rotShiftPy = computeShiftPy(this.state.pitchIntegral, displayWidth, displayHeight)
     const transShiftPx = computeTranslationShiftPx(this.state.dx_m, workingDistanceM, displayWidth)
     const transShiftPy = computeTranslationShiftPy(this.state.dy_m, workingDistanceM, displayWidth)
     const halfW = displayWidth / 2

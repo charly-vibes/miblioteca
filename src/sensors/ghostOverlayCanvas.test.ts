@@ -221,66 +221,12 @@ describe('GhostOverlayCanvas portrait pan shift', () => {
   })
 })
 
-describe('GhostOverlayCanvas pitch via absolute beta', () => {
+describe('GhostOverlayCanvas pitch via pitchIntegral', () => {
   beforeEach(() => vi.restoreAllMocks())
 
-  it('GIVEN getBeta returns 80 at snapshot and 90 now THEN shiftPy reflects the 10° delta', () => {
-    let beta = 80
+  it('GIVEN gyro gx accumulates pitch THEN shiftPy reflects pitchIntegral', () => {
     const gyro = makeGyro()
-    const { overlay, viewfinder, tick, el, setTime } = makeFullOverlay({
-      gyro,
-      getBeta: () => beta,
-    })
-    overlay.setSnapshot(makeBitmap(640, 480))
-
-    // Fire gyro so omegaMag stays below gate
-    setTime(0)
-    gyro.timestamp = 0; gyro.x = 0; gyro.y = 0; gyro.z = 0
-    gyro.fire()
-
-    // Now beta changes to 90 (10° tilt from snapshot)
-    beta = 90
-    setTime(100)
-    gyro.timestamp = 100; gyro.x = 0; gyro.y = 0; gyro.z = 0
-    gyro.fire()
-    tick()
-
-    const match = el.style.transform.match(/translate3d\(([-\d.]+)px,\s*([-\d.]+)px/)
-    const shiftPy = Number(match![2])
-    // 10° positive pitch → positive shift (ghost moves down)
-    expect(shiftPy).toBeGreaterThan(0)
-    viewfinder.remove()
-  })
-
-  it('GIVEN getBeta unavailable THEN shiftPy is 0 (no vertical drift)', () => {
-    const gyro = makeGyro()
-    const { overlay, viewfinder, tick, setTime } = makeFullOverlay({ gyro })
-    overlay.setSnapshot(makeBitmap(640, 480))
-
-    // Pump gx to accumulate pitchIntegral (keep omegaMag below gate)
-    setTime(0)
-    gyro.timestamp = 0; gyro.x = 0.2; gyro.y = 0; gyro.z = 0
-    gyro.fire()
-
-    setTime(200)
-    gyro.timestamp = 200; gyro.x = 0.2; gyro.y = 0; gyro.z = 0
-    gyro.fire()
-    tick()
-
-    const state = overlay.getDebugState()
-    // pitchIntegral is non-zero (gyro did accumulate) but rotShiftPy is 0 (no getBeta → no delta)
-    expect(state.pitchIntegral).not.toBe(0)
-    expect(state.rotShiftPy).toBe(0)
-    viewfinder.remove()
-  })
-
-  it('GIVEN gyro pitchIntegral accumulated WHEN getBeta is stable THEN pitch is 0 (gyro integral ignored)', () => {
-    let beta = 85
-    const gyro = makeGyro()
-    const { overlay, viewfinder, tick, setTime } = makeFullOverlay({
-      gyro,
-      getBeta: () => beta,
-    })
+    const { overlay, viewfinder, tick, el, setTime } = makeFullOverlay({ gyro })
     overlay.setSnapshot(makeBitmap(640, 480))
 
     setTime(0)
@@ -295,6 +241,29 @@ describe('GhostOverlayCanvas pitch via absolute beta', () => {
 
     const state = overlay.getDebugState()
     expect(state.pitchIntegral).not.toBe(0)
+    expect(state.rotShiftPy).not.toBe(0)
+
+    const match = el.style.transform.match(/translate3d\(([-\d.]+)px,\s*([-\d.]+)px/)
+    const shiftPy = Number(match![2])
+    expect(shiftPy).not.toBe(0)
+    viewfinder.remove()
+  })
+
+  it('GIVEN no gyro pitch THEN shiftPy is 0', () => {
+    const gyro = makeGyro()
+    const { overlay, viewfinder, tick, setTime } = makeFullOverlay({ gyro })
+    overlay.setSnapshot(makeBitmap(640, 480))
+
+    setTime(0)
+    gyro.timestamp = 0; gyro.x = 0; gyro.y = 0; gyro.z = 0
+    gyro.fire()
+    setTime(200)
+    gyro.timestamp = 200; gyro.x = 0; gyro.y = 0; gyro.z = 0
+    gyro.fire()
+    tick()
+
+    const state = overlay.getDebugState()
+    expect(state.pitchIntegral).toBe(0)
     expect(state.rotShiftPy).toBe(0)
     viewfinder.remove()
   })
@@ -332,36 +301,24 @@ describe('GhostOverlayCanvas setSnapshot reset', () => {
     viewfinder.remove()
   })
 
-  it('GIVEN getBeta returns 75 WHEN setSnapshot called THEN snapshotBeta captured as 75', () => {
-    let beta = 75
+  it('GIVEN pitch accumulated WHEN setSnapshot called THEN pitchIntegral resets to 0', () => {
     const gyro = makeGyro()
-    const { overlay, viewfinder, tick, setTime } = makeFullOverlay({
-      gyro,
-      getBeta: () => beta,
-    })
+    const { overlay, viewfinder, tick, setTime } = makeFullOverlay({ gyro })
     overlay.setSnapshot(makeBitmap(640, 480))
 
-    // Beta stays at 75 → delta is 0 → no vertical shift
     setTime(0)
-    gyro.timestamp = 0; gyro.x = 0; gyro.y = 0; gyro.z = 0
+    gyro.timestamp = 0; gyro.x = 0.3; gyro.y = 0; gyro.z = 0
     gyro.fire()
-    setTime(100)
-    gyro.timestamp = 100; gyro.x = 0; gyro.y = 0; gyro.z = 0
-    gyro.fire()
-    tick()
-
-    const state1 = overlay.getDebugState()
-    expect(state1.rotShiftPy).toBe(0)
-
-    // Now beta changes to 85 → delta = 10°
-    beta = 85
     setTime(200)
-    gyro.timestamp = 200; gyro.x = 0; gyro.y = 0; gyro.z = 0
+    gyro.timestamp = 200; gyro.x = 0.3; gyro.y = 0; gyro.z = 0
     gyro.fire()
     tick()
 
-    const state2 = overlay.getDebugState()
-    expect(state2.rotShiftPy).toBeGreaterThan(0)
+    expect(overlay.getDebugState().pitchIntegral).not.toBe(0)
+
+    overlay.setSnapshot(makeBitmap(640, 480))
+    expect(overlay.getDebugState().pitchIntegral).toBe(0)
+    expect(overlay.getDebugState().rotShiftPy).toBe(0)
     viewfinder.remove()
   })
 })

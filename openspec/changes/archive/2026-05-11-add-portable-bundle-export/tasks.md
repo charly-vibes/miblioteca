@@ -11,9 +11,9 @@
 - [x] 2.4 Add tests that verify a persisted one-record session maps to the expected bundle manifest and file paths
 
 ## 3. Tracer Acceptance Slice
-- [ ] 3.1 Produce a one-record `.mbibundle.zip` from Android Chrome using the existing local capture/persistence path
-- [ ] 3.2 Manually inspect the one-record bundle contents on another device or desktop
-- [ ] 3.3 Verify the one-record manifest counts, byte totals, and `sha256` checksums match the files in the archive
+- [x] 3.1 Produce a one-record `.mbibundle.zip` from Android Chrome using the existing local capture/persistence path
+- [x] 3.2 Manually inspect the one-record bundle contents on another device or desktop
+- [x] 3.3 Verify the one-record manifest counts, byte totals, and `sha256` checksums match the files in the archive
 
 ## 4. Export Implementation
 - [x] 4.1 Select and document the browser archive generation approach

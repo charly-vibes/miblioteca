@@ -1,7 +1,7 @@
-import type { GhostFrame, GyroLike } from '../sensors/ghostOverlayCanvas'
-import { initialGhostState, feedGhostGyro, feedGhostAccel, computeShiftPx, computeShiftPy, computeTranslationShiftPx, computeTranslationShiftPy, clampYawToViewport, focalLengthPx } from '../sensors/ghostOverlay'
-export { focalLengthPx } from '../sensors/ghostOverlay'
+import type { GhostFrame, GyroLike } from '../sensors/ghostOverlay'
+import { initialGhostState, feedGhostAccel, computeShiftPx, computeShiftPy, computeTranslationShiftPx, computeTranslationShiftPy, focalLengthPx } from '../sensors/ghostOverlay'
 import type { GhostOverlayState } from '../sensors/ghostOverlay'
+import { GhostMotionPipeline } from '../sensors/GhostMotionPipeline'
 import type { Phase, SensorFrame, CalibrationCycle, CalibrationExport } from './types'
 
 declare const __GIT_COMMIT__: string
@@ -111,11 +111,11 @@ export class GhostCalibrationPage {
 
   private cycles: CalibrationCycle[] = []
   private currentCycle: Partial<CalibrationCycle> | null = null
-  private ghostState: GhostOverlayState = initialGhostState()
-  private latestShiftPx = 0
-  private latestShiftPy = 0
+  private readonly pipeline: GhostMotionPipeline
+  private accelState: GhostOverlayState = initialGhostState()
+  private lastYawRad = 0
+  private lastPitchRad = 0
   private recordingStartedAt = 0
-  private recordingRafId = 0
 
   private dragStartTouch: { clientX: number; clientY: number } | null = null
   private dragStartRect = { left: 0, top: 0 }
@@ -381,15 +381,6 @@ export class GhostCalibrationPage {
         this.sensorVals.gx = (rr.alpha ?? 0) * (Math.PI / 180)
         this.sensorVals.gy = (rr.beta ?? 0) * (Math.PI / 180)
         this.sensorVals.gz = (rr.gamma ?? 0) * (Math.PI / 180)
-        if (!this.gyro) {
-          const scanAxis: 'x' | 'y' = this.getOrientation().startsWith('landscape') ? 'x' : 'y'
-          this.ghostState = feedGhostGyro(this.ghostState, {
-            t,
-            gx: this.sensorVals.gx,
-            gy: this.sensorVals.gy,
-            gz: this.sensorVals.gz,
-          }, scanAxis)
-        }
       }
       let accelGate: SensorFrame['gate'] | undefined
       if (ac) {
@@ -402,7 +393,7 @@ export class GhostCalibrationPage {
           const isLandscape = this.getOrientation().startsWith('landscape')
           const ax = isLandscape ? this.sensorVals.ay : this.sensorVals.ax
           const ay = isLandscape ? -this.sensorVals.ax : this.sensorVals.ay
-          const accelResult = feedGhostAccel(this.ghostState, {
+          const accelResult = feedGhostAccel(this.accelState, {
             ax,
             ay,
             interval_ms: e.interval ?? 16,
@@ -410,19 +401,12 @@ export class GhostCalibrationPage {
             t,
             gravitySubtracted: true,
           })
-          this.ghostState = accelResult.state
+          this.accelState = accelResult.state
           accelGate = accelResult.gate
         }
       }
-      const vw = this.win.innerWidth || 375
-      const vh = this.win.innerHeight || 667
-      const workingDistanceM = this.workingDistanceCm / 100
-      this.latestShiftPx = computeShiftPx(this.ghostState.yawIntegral, vw)
-        + computeTranslationShiftPx(this.ghostState.dx_m, workingDistanceM, vw)
-      this.latestShiftPy = computeShiftPy(this.ghostState.pitchIntegral, vw, vh)
-        + computeTranslationShiftPy(this.ghostState.dy_m, workingDistanceM, vw)
 
-      // Gyro API path records its own SensorFrames in onGyroReading — skip here to avoid duplicates.
+      // Gyro API path records its own SensorFrames in the wrapped onreading — skip here to avoid duplicates.
       if (!this.gyro && this.phase === 'recording' && this.currentCycle?.frames) {
         const frame: SensorFrame = {
           t: this.nowFn() - this.recordingStartedAt,
@@ -434,10 +418,10 @@ export class GhostCalibrationPage {
           az: this.sensorVals.az,
           betaDeg: this.betaDeg,
           gate: accelGate,
-          velX: this.ghostState.velX,
-          velY: this.ghostState.velY,
-          dx_cm: this.ghostState.dx_m * 100,
-          dy_cm: this.ghostState.dy_m * 100,
+          velX: this.accelState.velX,
+          velY: this.accelState.velY,
+          dx_cm: this.accelState.dx_m * 100,
+          dy_cm: this.accelState.dy_m * 100,
         }
         this.currentCycle.frames.push(frame)
       }
@@ -446,86 +430,86 @@ export class GhostCalibrationPage {
     }
     this.win.addEventListener('devicemotion', this.motionHandler)
 
+    // Pipeline handles gyro integration and RAF-driven rendering (enableMotionGate: false for continuous recording).
+    this.pipeline = new GhostMotionPipeline({
+      gyro: this.gyro,
+      displayWidth: () => this.win.innerWidth || 375,
+      displayHeight: () => this.win.innerHeight || 667,
+      getOrientation: this.getOrientation,
+      onFrame: (frame) => this.onPipelineFrame(frame),
+      enableMotionGate: false,
+      requestAnimationFrame: this.raf,
+      cancelAnimationFrame: this.caf,
+      now: this.nowFn,
+    })
+
+    // Wrap gyro.onreading (set by pipeline constructor) to also record SensorFrames and update telemetry.
     if (this.gyro) {
-      this.gyro.onreading = () => this.onGyroReading()
-      this.gyro.onerror = null
-      this.gyro.start()
+      const pipelineOnReading = this.gyro.onreading
+      this.gyro.onreading = () => {
+        pipelineOnReading?.()
+        const g = this.gyro!
+        const gx = g.x ?? 0, gy = g.y ?? 0, gz = g.z ?? 0
+        const pState = this.pipeline.getState()
+        const w = this.win.innerWidth || 375
+        const h = this.win.innerHeight || 667
+        const workingDistanceM = this.workingDistanceCm / 100
+        const shiftPx = computeShiftPx(pState.yawRad, w)
+          + computeTranslationShiftPx(this.accelState.dx_m, workingDistanceM, w)
+        const shiftPy = computeShiftPy(pState.pitchRad, w, h)
+          + computeTranslationShiftPy(this.accelState.dy_m, workingDistanceM, w)
+        this.lastYawRad = pState.yawRad
+        this.lastPitchRad = pState.pitchRad
+        this.latestFrame = {
+          t: this.nowFn(), yawRad: pState.yawRad, pitchRad: pState.pitchRad,
+          shiftPx, pitchShiftPx: shiftPy, gateOpen: true,
+        }
+        if (this.phase === 'recording' && this.currentCycle?.frames) {
+          this.currentCycle.frames.push({
+            t: this.nowFn() - this.recordingStartedAt,
+            gx, gy, gz,
+            ax: this.sensorVals.ax, ay: this.sensorVals.ay, az: this.sensorVals.az,
+          })
+        }
+        this.renderTelemetry()
+      }
     }
 
     void this.startCamera(deps.getUserMedia)
   }
 
-  private onGyroReading(): void {
-    const g = this.gyro!
-    const t = g.timestamp ?? this.nowFn()
-    const gx = g.x ?? 0
-    const gy = g.y ?? 0
-    const gz = g.z ?? 0
-
-    const scanAxis: 'x' | 'y' = this.getOrientation().startsWith('landscape') ? 'x' : 'y'
-    this.ghostState = feedGhostGyro(this.ghostState, { t, gx, gy, gz }, scanAxis)
-    // Clamp here so yawIntegral never over-accumulates between RAF ticks when gyro fires at high rate.
-    this.ghostState = { ...this.ghostState, yawIntegral: clampYawToViewport(this.ghostState.yawIntegral) }
+  private onPipelineFrame(frame: GhostFrame): void {
+    this.lastYawRad = frame.yawRad
+    this.lastPitchRad = frame.pitchRad
     const vw = this.win.innerWidth || 375
     const vh = this.win.innerHeight || 667
     const workingDistanceM = this.workingDistanceCm / 100
-    this.latestShiftPx = computeShiftPx(this.ghostState.yawIntegral, vw)
-      + computeTranslationShiftPx(this.ghostState.dx_m, workingDistanceM, vw)
-    this.latestShiftPy = computeShiftPy(this.ghostState.pitchIntegral, vw, vh)
-      + computeTranslationShiftPy(this.ghostState.dy_m, workingDistanceM, vw)
-
+    const halfW = vw / 2, halfH = vh / 2
+    const rotShiftPx = computeShiftPx(frame.yawRad, vw)
+    const rotShiftPy = computeShiftPy(frame.pitchRad, vw, vh)
+    const transShiftPx = computeTranslationShiftPx(this.accelState.dx_m, workingDistanceM, vw)
+    const transShiftPy = computeTranslationShiftPy(this.accelState.dy_m, workingDistanceM, vw)
+    const shiftPx = Math.max(-halfW, Math.min(halfW, rotShiftPx + transShiftPx))
+    const shiftPy = Math.max(-halfH, Math.min(halfH, rotShiftPy + transShiftPy))
     this.latestFrame = {
-      t: this.nowFn(),
-      yawRad: this.ghostState.yawIntegral,
-      pitchRad: this.ghostState.pitchIntegral,
-      shiftPx: this.latestShiftPx,
-      pitchShiftPx: this.latestShiftPy,
-      gateOpen: true,
+      t: frame.t, yawRad: frame.yawRad, pitchRad: frame.pitchRad,
+      shiftPx, pitchShiftPx: shiftPy, gateOpen: true,
     }
+
+    if (this.phase === 'recording') {
+      this.rectangleEl.style.left = `${this.rectInitLeft + Math.round(shiftPx)}px`
+      this.rectangleEl.style.top = `${this.rectInitTop + Math.round(shiftPy)}px`
+      const elapsed = frame.t - this.recordingStartedAt
+      this.timerSpanEl.textContent = msToMMSS(elapsed)
+      if (this.currentCycle?.ghostFrames) {
+        this.currentCycle.ghostFrames.push({
+          t: elapsed, yawRad: frame.yawRad, pitchRad: frame.pitchRad,
+          shiftPx, pitchShiftPx: shiftPy, gateOpen: true,
+        })
+      }
+    }
+
     this.renderTelemetry()
-
-    if (this.phase === 'recording' && this.currentCycle?.frames) {
-      const frame: SensorFrame = {
-        t: this.nowFn() - this.recordingStartedAt,
-        gx, gy, gz,
-        ax: this.sensorVals.ax,
-        ay: this.sensorVals.ay,
-        az: this.sensorVals.az,
-      }
-      this.currentCycle.frames.push(frame)
-    }
-  }
-
-  private readonly recordingRafLoop: FrameRequestCallback = () => {
-    if (this.phase !== 'recording' || this.destroyed) return
-    this.recordingRafId = this.raf(this.recordingRafLoop)
-
-    // computeShiftPx already bounds the pixel output, but without clamping the integral, a large
-    // over-accumulated yaw would resist counter-rotation until it drained back within range.
-    const clampedYaw = clampYawToViewport(this.ghostState.yawIntegral)
-    if (clampedYaw !== this.ghostState.yawIntegral) {
-      this.ghostState = { ...this.ghostState, yawIntegral: clampedYaw }
-    }
-
-    const shiftPx = this.latestShiftPx
-    const shiftPy = this.latestShiftPy
-    this.rectangleEl.style.left = `${this.rectInitLeft + Math.round(shiftPx)}px`
-    this.rectangleEl.style.top = `${this.rectInitTop + Math.round(shiftPy)}px`
-
-    const elapsed = this.nowFn() - this.recordingStartedAt
-    this.timerSpanEl.textContent = msToMMSS(elapsed)
-
-    if (this.currentCycle?.ghostFrames) {
-      const ghostFrame: GhostFrame = {
-        t: elapsed,
-        yawRad: this.ghostState.yawIntegral,
-        pitchRad: this.ghostState.pitchIntegral,
-        shiftPx,
-        pitchShiftPx: shiftPy,
-        gateOpen: true,
-      }
-      this.currentCycle.ghostFrames.push(ghostFrame)
-    }
   }
 
   private async startCamera(getUserMedia?: CalibrationPageDeps['getUserMedia']): Promise<void> {
@@ -580,9 +564,10 @@ export class GhostCalibrationPage {
     const vw = this.win.innerWidth || 375
     const vh = this.win.innerHeight || 667
     this.recordingStartedAt = this.nowFn()
-    this.ghostState = initialGhostState()
-    this.latestShiftPx = 0
-    this.latestShiftPy = 0
+    this.pipeline.reset()
+    this.accelState = initialGhostState()
+    this.lastYawRad = 0
+    this.lastPitchRad = 0
 
     this.currentCycle = {
       id: crypto.randomUUID(),
@@ -595,13 +580,10 @@ export class GhostCalibrationPage {
 
     this.recordingIndicatorEl.hidden = false
     this.stopBtnEl.hidden = false
-    this.recordingRafId = this.raf(this.recordingRafLoop)
   }
 
   private transitionToRepositioning(): void {
     this.phase = 'repositioning'
-    this.caf(this.recordingRafId)
-    this.recordingRafId = 0
 
     const endedAt = this.nowFn()
     if (this.currentCycle) {
@@ -654,8 +636,8 @@ export class GhostCalibrationPage {
     const gtX = left + this.rectW / 2
     const gtY = top + this.rectH / 2
     this.currentCycle.groundTruthPosition = { x: gtX, y: gtY }
-    this.currentCycle.returnYawRad = this.ghostState.yawIntegral
-    this.currentCycle.returnPitchRad = this.ghostState.pitchIntegral
+    this.currentCycle.returnYawRad = this.lastYawRad
+    this.currentCycle.returnPitchRad = this.lastPitchRad
     const alg = this.currentCycle.algorithmPosition
     if (!alg) return
     this.currentCycle.deltaPixels = { x: gtX - alg.x, y: gtY - alg.y }
@@ -725,9 +707,10 @@ export class GhostCalibrationPage {
   private transitionToIdle(): void {
     this.phase = 'idle'
     this.currentCycle = null
-    this.ghostState = initialGhostState()
-    this.latestShiftPx = 0
-    this.latestShiftPy = 0
+    this.pipeline.reset()
+    this.accelState = initialGhostState()
+    this.lastYawRad = 0
+    this.lastPitchRad = 0
     this.latestFrame = null
     this.dragStartTouch = null
 
@@ -757,15 +740,13 @@ export class GhostCalibrationPage {
 
   destroy(): void {
     this.destroyed = true
-    this.caf(this.recordingRafId)
-    if (this.gyro) this.gyro.onreading = null
+    this.pipeline.destroy()
     this.win.removeEventListener('devicemotion', this.motionHandler)
     this.win.removeEventListener('deviceorientation', this.orientationHandler)
     this.doc.removeEventListener('mousemove', this.onDocMouseMove)
     this.doc.removeEventListener('mouseup', this.onDocMouseUp)
     this.doc.removeEventListener('touchmove', this.onDocTouchMove)
     this.doc.removeEventListener('touchend', this.onDocTouchEnd)
-    this.gyro?.stop()
     this.stream?.getTracks().forEach(t => t.stop())
     this.root.replaceChildren()
   }

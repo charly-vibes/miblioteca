@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { GhostCalibrationPage, focalLengthPx } from './GhostCalibrationPage'
+import { GhostCalibrationPage } from './GhostCalibrationPage'
+import { focalLengthPx } from '../sensors/ghostOverlay'
 import type { WindowLike } from './GhostCalibrationPage'
 import type { GyroLike } from '../sensors/ghostOverlayCanvas'
 

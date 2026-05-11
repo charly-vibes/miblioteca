@@ -1,5 +1,5 @@
 import type { GhostFrame, GyroLike } from '../sensors/ghostOverlay'
-import { initialGhostState, feedGhostAccel, computeShiftPx, computeShiftPy, computeTranslationShiftPx, computeTranslationShiftPy, focalLengthPx } from '../sensors/ghostOverlay'
+import { initialGhostState, feedGhostAccel, computeShiftPx, computeShiftPy, focalLengthPx } from '../sensors/ghostOverlay'
 import type { GhostOverlayState } from '../sensors/ghostOverlay'
 import { GhostMotionPipeline } from '../sensors/GhostMotionPipeline'
 import type { Phase, SensorFrame, CalibrationCycle, CalibrationExport } from './types'
@@ -105,7 +105,6 @@ export class GhostCalibrationPage {
   private readonly nowFn: () => number
   private readonly triggerDownload: (filename: string, json: string) => void
 
-  private readonly workingDistanceCm: number
   private readonly getOrientation: () => string
   private betaDeg: number | null = null
 
@@ -149,7 +148,7 @@ export class GhostCalibrationPage {
       a.click()
       URL.revokeObjectURL(a.href)
     })
-    this.workingDistanceCm = deps.distanceCm ?? 60
+
     this.getOrientation = deps.getOrientation ?? (() => (typeof screen !== 'undefined' && screen.orientation?.type) || 'portrait-primary')
 
     const doc = root.ownerDocument ?? document
@@ -453,11 +452,8 @@ export class GhostCalibrationPage {
         const pState = this.pipeline.getState()
         const w = this.win.innerWidth || 375
         const h = this.win.innerHeight || 667
-        const workingDistanceM = this.workingDistanceCm / 100
         const shiftPx = computeShiftPx(pState.yawRad, w)
-          + computeTranslationShiftPx(this.accelState.dx_m, workingDistanceM, w)
         const shiftPy = computeShiftPy(pState.pitchRad, w, h)
-          + computeTranslationShiftPy(this.accelState.dy_m, workingDistanceM, w)
         this.lastYawRad = pState.yawRad
         this.lastPitchRad = pState.pitchRad
         this.latestFrame = {
@@ -483,14 +479,8 @@ export class GhostCalibrationPage {
     this.lastPitchRad = frame.pitchRad
     const vw = this.win.innerWidth || 375
     const vh = this.win.innerHeight || 667
-    const workingDistanceM = this.workingDistanceCm / 100
-    const halfW = vw / 2, halfH = vh / 2
-    const rotShiftPx = computeShiftPx(frame.yawRad, vw)
-    const rotShiftPy = computeShiftPy(frame.pitchRad, vw, vh)
-    const transShiftPx = computeTranslationShiftPx(this.accelState.dx_m, workingDistanceM, vw)
-    const transShiftPy = computeTranslationShiftPy(this.accelState.dy_m, workingDistanceM, vw)
-    const shiftPx = Math.max(-halfW, Math.min(halfW, rotShiftPx + transShiftPx))
-    const shiftPy = Math.max(-halfH, Math.min(halfH, rotShiftPy + transShiftPy))
+    const shiftPx = computeShiftPx(frame.yawRad, vw)
+    const shiftPy = computeShiftPy(frame.pitchRad, vw, vh)
     this.latestFrame = {
       t: frame.t, yawRad: frame.yawRad, pitchRad: frame.pitchRad,
       shiftPx, pitchShiftPx: shiftPy, gateOpen: true,

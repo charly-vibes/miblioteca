@@ -83,8 +83,8 @@ export class GhostOverlayCanvas {
         this.canvas.hidden = true
         this.deps.logger.log('ghost:visibility-changed', { visible: false, yawIntegral: 0 })
       }
-      this.lastYawRad = 0
-      this.lastPitchRad = 0
+      // Keep lastYawRad/lastPitchRad — pipeline continues integrating while gate is closed,
+      // so getDebugState() reflects actual accumulated state rather than a stale 0.
       this.deps.onFrame?.({ t: this.deps.now(), yawRad: 0, pitchRad: 0, shiftPx: 0, pitchShiftPx: 0, gateOpen: false })
       return
     }

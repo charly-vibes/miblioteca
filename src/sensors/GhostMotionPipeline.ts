@@ -99,7 +99,9 @@ export class GhostMotionPipeline {
       if (!shouldShow) {
         if (this.gateVisible) {
           this.gateVisible = false
-          this.state = { ...this.state, yawIntegral: 0, pitchIntegral: 0 }
+          // Do NOT reset yawIntegral/pitchIntegral here — the sensor keeps integrating
+          // while the gate is closed so that when it reopens the ghost shows the correct
+          // position relative to the last capture, not relative to the gate-close moment.
           this.deps.onFrame({ t: now, yawRad: 0, pitchRad: 0, shiftPx: 0, pitchShiftPx: 0, gateOpen: false })
         }
         return

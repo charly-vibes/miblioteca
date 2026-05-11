@@ -231,6 +231,44 @@ describe('GhostMotionPipeline', () => {
     })
   })
 
+  describe('gate close preserves yawIntegral for correct position on reopen', () => {
+    it('ghost position since capture is not lost when gate closes during fast pan', () => {
+      const gyro = makeGyro()
+      const onFrame = vi.fn()
+      const deps = makeDeps({ gyro, onFrame, enableMotionGate: true })
+      const pipeline = new GhostMotionPipeline(deps)
+
+      // Step 1: slow motion — gate opens, accumulate yaw
+      // gy=0.3 rad/s (< showThreshold 0.40) for 0.1s → dYaw = -0.03
+      gyro.fire(0, 0.3, 0, 1000)  // first sample, no dt yet
+      gyro.fire(0, 0.3, 0, 1100)  // dt=0.1 → dYaw=-0.03
+      ;(deps.raf as unknown as { flush(): void }).flush()
+      const openFrame = onFrame.mock.calls.at(-1)?.[0]
+      expect(openFrame?.gateOpen).toBe(true)
+      onFrame.mockClear()
+
+      // Step 2: fast pan — gate closes
+      // gy=0.7 (> hideThreshold 0.55), dt=0.1 → dYaw=-0.07 → total yaw=-0.10
+      gyro.fire(0, 0.7, 0, 1200)
+      ;(deps.raf as unknown as { flush(): void }).flush()
+      const closeFrame = onFrame.mock.calls.at(-1)?.[0]
+      expect(closeFrame?.gateOpen).toBe(false)
+      onFrame.mockClear()
+
+      // Step 3: slow motion resumes — gate reopens
+      // gy=0.3, dt=0.1 → dYaw=-0.03 → total yaw should be -0.13 (not -0.03)
+      gyro.fire(0, 0.3, 0, 1300)
+      ;(deps.raf as unknown as { flush(): void }).flush()
+      const reopenFrame = onFrame.mock.calls.at(-1)?.[0]
+      expect(reopenFrame?.gateOpen).toBe(true)
+      // yawRad should reflect all motion since capture: -0.03 + -0.07 + -0.03 = -0.13
+      // With current (broken) code, yawIntegral resets on gate close → only -0.03 from step 3
+      expect(reopenFrame?.yawRad).toBeCloseTo(-0.13, 2)
+
+      pipeline.destroy()
+    })
+  })
+
   describe('no-gyro + enableMotionGate guard', () => {
     it('does not fire onFrame when gyro is null and enableMotionGate is true', () => {
       const onFrame = vi.fn()

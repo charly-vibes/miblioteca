@@ -304,10 +304,10 @@ describe('GhostOverlayCanvas setSnapshot reset', () => {
 })
 
 
-describe('GhostOverlayCanvas gate-close yaw reset (2yu)', () => {
+describe('GhostOverlayCanvas gate-close preserves yawIntegral (2yu)', () => {
   beforeEach(() => vi.restoreAllMocks())
 
-  it('GIVEN yaw accumulated WHEN gate closes THEN yawIntegral and pitchIntegral reset to 0', () => {
+  it('GIVEN yaw accumulated WHEN gate closes THEN canvas is hidden but yawIntegral is preserved', () => {
     const gyro = makeGyro()
     const { overlay, viewfinder, tick, setTime } = makeFullOverlay({ gyro })
     overlay.setSnapshot(makeBitmap(640, 480))
@@ -333,7 +333,10 @@ describe('GhostOverlayCanvas gate-close yaw reset (2yu)', () => {
     tick()
 
     const after = overlay.getDebugState()
-    expect(after.yawIntegral).toBe(0)
+    // yawIntegral must NOT be zeroed — sensor keeps integrating while gate is closed
+    // so ghost reopens at the correct position relative to the last capture
+    expect(after.yawIntegral).not.toBe(0)
+    // pitchIntegral is 0 because no pitch (gx) was applied in this test
     expect(after.pitchIntegral).toBe(0)
     viewfinder.remove()
   })

@@ -1,0 +1,233 @@
+import { describe, it, expect, vi } from 'vitest'
+import { GhostMotionPipeline } from './GhostMotionPipeline'
+import type { GhostMotionPipelineDeps } from './GhostMotionPipeline'
+import type { GyroLike } from './ghostOverlay'
+
+function makeGyro(): GyroLike & { fire(gx: number, gy: number, gz: number, t: number): void } {
+  const g: GyroLike & { fire(gx: number, gy: number, gz: number, t: number): void } = {
+    onreading: null,
+    onerror: null,
+    x: null, y: null, z: null,
+    timestamp: null,
+    start: vi.fn(),
+    stop: vi.fn(),
+    fire(gx, gy, gz, t) {
+      this.x = gx; this.y = gy; this.z = gz; this.timestamp = t
+      this.onreading?.()
+    },
+  }
+  return g
+}
+
+function makeDeps(overrides: Partial<GhostMotionPipelineDeps> = {}): GhostMotionPipelineDeps & { raf: (cb: FrameRequestCallback) => number } {
+  let pendingCb: FrameRequestCallback | null = null
+  const raf = (cb: FrameRequestCallback) => { pendingCb = cb; return 1 }
+  ;(raf as unknown as { flush(): void }).flush = () => { const cb = pendingCb; pendingCb = null; cb?.(performance.now()) }
+  return {
+    gyro: null,
+    displayWidth: () => 800,
+    displayHeight: () => 600,
+    requestAnimationFrame: raf,
+    ...overrides,
+    raf,
+  }
+}
+
+describe('GhostMotionPipeline', () => {
+  describe('yaw integrates from gyro reading each RAF tick', () => {
+    it('accumulates yaw from gyro y-axis (portrait) after RAF tick', () => {
+      const gyro = makeGyro()
+      const onFrame = vi.fn()
+      const deps = makeDeps({ gyro, onFrame, enableMotionGate: false })
+      const pipeline = new GhostMotionPipeline(deps)
+      gyro.fire(0, 0.5, 0, 1000)  // gy=0.5 rad/s in portrait
+      gyro.fire(0, 0.5, 0, 1100)  // dt=100ms → Δyaw = -(0.5 * 0.1) = -0.05
+      ;(deps.raf as unknown as { flush(): void }).flush()
+      expect(onFrame).toHaveBeenCalled()
+      const frame = onFrame.mock.calls[0][0]
+      expect(frame.yawRad).toBeCloseTo(-0.05, 5)
+      pipeline.destroy()
+    })
+  })
+
+  describe('pitch integrates from gyro reading each RAF tick', () => {
+    it('accumulates pitch from gyro x-axis (portrait) after RAF tick', () => {
+      const gyro = makeGyro()
+      const onFrame = vi.fn()
+      const deps = makeDeps({ gyro, onFrame, enableMotionGate: false })
+      const pipeline = new GhostMotionPipeline(deps)
+      gyro.fire(0.3, 0, 0, 1000)  // gx=0.3 rad/s
+      gyro.fire(0.3, 0, 0, 1100)  // dt=100ms → Δpitch = 0.3 * 0.1 = 0.03
+      ;(deps.raf as unknown as { flush(): void }).flush()
+      expect(onFrame).toHaveBeenCalled()
+      const frame = onFrame.mock.calls[0][0]
+      expect(frame.pitchRad).toBeCloseTo(0.03, 5)
+      pipeline.destroy()
+    })
+  })
+
+  describe('yaw clamps at viewport left edge', () => {
+    it('shiftPx does not exceed -displayWidth/2', () => {
+      const gyro = makeGyro()
+      const onFrame = vi.fn()
+      const deps = makeDeps({ gyro, onFrame, enableMotionGate: false, displayWidth: () => 800 })
+      const pipeline = new GhostMotionPipeline(deps)
+      // Phone sweeps right → gy < 0 → yawIntegral grows positive → shiftPx negative (ghost left = left edge)
+      for (let t = 1000; t <= 5000; t += 100) {
+        gyro.fire(0, -2.0, 0, t)
+      }
+      ;(deps.raf as unknown as { flush(): void }).flush()
+      const frame = onFrame.mock.calls[0][0]
+      expect(frame.shiftPx).toBeGreaterThanOrEqual(-400)
+      expect(frame.shiftPx).toBeLessThanOrEqual(0)
+      pipeline.destroy()
+    })
+  })
+
+  describe('yaw clamps at viewport right edge', () => {
+    it('shiftPx does not exceed +displayWidth/2', () => {
+      const gyro = makeGyro()
+      const onFrame = vi.fn()
+      const deps = makeDeps({ gyro, onFrame, enableMotionGate: false, displayWidth: () => 800 })
+      const pipeline = new GhostMotionPipeline(deps)
+      // Phone sweeps left → gy > 0 → yawIntegral grows negative → shiftPx positive (ghost right = right edge)
+      for (let t = 1000; t <= 5000; t += 100) {
+        gyro.fire(0, 2.0, 0, t)
+      }
+      ;(deps.raf as unknown as { flush(): void }).flush()
+      const frame = onFrame.mock.calls[0][0]
+      expect(frame.shiftPx).toBeLessThanOrEqual(400)
+      expect(frame.shiftPx).toBeGreaterThanOrEqual(0)
+      pipeline.destroy()
+    })
+  })
+
+  describe('pitch clamps at viewport top/bottom edges', () => {
+    it('pitchShiftPx does not exceed ±displayHeight/2', () => {
+      const gyro = makeGyro()
+      const onFrame = vi.fn()
+      const deps = makeDeps({ gyro, onFrame, enableMotionGate: false, displayWidth: () => 800, displayHeight: () => 600 })
+      const pipeline = new GhostMotionPipeline(deps)
+      for (let t = 1000; t <= 5000; t += 100) {
+        gyro.fire(3.0, 0, 0, t)  // large gx
+      }
+      ;(deps.raf as unknown as { flush(): void }).flush()
+      const frame = onFrame.mock.calls[0][0]
+      expect(Math.abs(frame.pitchShiftPx)).toBeLessThanOrEqual(300)
+      pipeline.destroy()
+    })
+  })
+
+  describe('enableMotionGate: true suppresses shift above motion threshold', () => {
+    it('does not fire gated onFrame when omegaMag exceeds hide threshold (0.55)', () => {
+      const gyro = makeGyro()
+      const onFrame = vi.fn()
+      const deps = makeDeps({ gyro, onFrame, enableMotionGate: true })
+      const pipeline = new GhostMotionPipeline(deps)
+      // omegaMag = sqrt(0.7^2) = 0.7 → above show threshold 0.40 → gate never opens
+      gyro.fire(0, 0.7, 0, 1000)
+      gyro.fire(0, 0.7, 0, 1100)
+      ;(deps.raf as unknown as { flush(): void }).flush()
+      const openFrames = onFrame.mock.calls.filter(([f]) => f.gateOpen)
+      expect(openFrames).toHaveLength(0)
+      pipeline.destroy()
+    })
+  })
+
+  describe('enableMotionGate: false passes all motion through unfiltered', () => {
+    it('fires onFrame even when motion is below threshold', () => {
+      const gyro = makeGyro()
+      const onFrame = vi.fn()
+      const deps = makeDeps({ gyro, onFrame, enableMotionGate: false })
+      const pipeline = new GhostMotionPipeline(deps)
+      gyro.fire(0.01, 0.01, 0.01, 1000)
+      gyro.fire(0.01, 0.01, 0.01, 1100)
+      ;(deps.raf as unknown as { flush(): void }).flush()
+      expect(onFrame).toHaveBeenCalled()
+      expect(onFrame.mock.calls[0][0].gateOpen).toBe(true)
+      pipeline.destroy()
+    })
+  })
+
+  describe('reset() zeroes yaw and pitch integrals', () => {
+    it('zeroes integrals after reset()', () => {
+      const gyro = makeGyro()
+      const onFrame = vi.fn()
+      const deps = makeDeps({ gyro, onFrame, enableMotionGate: false })
+      const pipeline = new GhostMotionPipeline(deps)
+      gyro.fire(0, 0.5, 0, 1000)
+      gyro.fire(0, 0.5, 0, 1100)
+      ;(deps.raf as unknown as { flush(): void }).flush()
+      expect(onFrame.mock.calls[0][0].yawRad).not.toBe(0)
+      pipeline.reset()
+      onFrame.mockClear()
+      ;(deps.raf as unknown as { flush(): void }).flush()
+      expect(onFrame.mock.calls[0][0].yawRad).toBe(0)
+      expect(onFrame.mock.calls[0][0].pitchRad).toBe(0)
+      pipeline.destroy()
+    })
+  })
+
+  describe('onFrame fires with correct shiftPx and shiftPy', () => {
+    it('reports shiftPx proportional to yaw', () => {
+      const gyro = makeGyro()
+      const onFrame = vi.fn()
+      const deps = makeDeps({ gyro, onFrame, enableMotionGate: false, displayWidth: () => 800 })
+      const pipeline = new GhostMotionPipeline(deps)
+      gyro.fire(0, 0.5, 0, 1000)
+      gyro.fire(0, 0.5, 0, 1100)  // yaw = -0.05 rad
+      ;(deps.raf as unknown as { flush(): void }).flush()
+      const frame = onFrame.mock.calls[0][0]
+      // shiftPx = -focalLengthPx(800) * (-0.05) = positive
+      expect(frame.shiftPx).toBeGreaterThan(0)
+      expect(frame.shiftPx).toBeLessThan(400)
+      pipeline.destroy()
+    })
+  })
+
+  describe('scanAxis follows getOrientation() result', () => {
+    it('uses gx for yaw in landscape orientation', () => {
+      const gyro = makeGyro()
+      const onFrame = vi.fn()
+      const deps = makeDeps({
+        gyro, onFrame, enableMotionGate: false,
+        getOrientation: () => 'landscape-primary',
+      })
+      const pipeline = new GhostMotionPipeline(deps)
+      // In landscape, gx is yaw axis. Fire gx=0.5, gy=0 → should see yaw accumulate
+      gyro.fire(0.5, 0, 0, 1000)
+      gyro.fire(0.5, 0, 0, 1100)  // dt=0.1 → yaw = -(0.5 * 0.1) = -0.05
+      ;(deps.raf as unknown as { flush(): void }).flush()
+      const frame = onFrame.mock.calls[0][0]
+      expect(frame.yawRad).toBeCloseTo(-0.05, 5)
+      pipeline.destroy()
+    })
+
+    it('uses gy for yaw in portrait orientation (default)', () => {
+      const gyro = makeGyro()
+      const onFrame = vi.fn()
+      const deps = makeDeps({
+        gyro, onFrame, enableMotionGate: false,
+        getOrientation: () => 'portrait-primary',
+      })
+      const pipeline = new GhostMotionPipeline(deps)
+      gyro.fire(0, 0.5, 0, 1000)
+      gyro.fire(0, 0.5, 0, 1100)
+      ;(deps.raf as unknown as { flush(): void }).flush()
+      const frame = onFrame.mock.calls[0][0]
+      expect(frame.yawRad).toBeCloseTo(-0.05, 5)
+      pipeline.destroy()
+    })
+  })
+
+  describe('destroy() cleanup', () => {
+    it('stops the gyro and nulls onreading on destroy', () => {
+      const gyro = makeGyro()
+      const deps = makeDeps({ gyro, enableMotionGate: false })
+      const pipeline = new GhostMotionPipeline(deps)
+      pipeline.destroy()
+      expect(gyro.stop).toHaveBeenCalled()
+      expect(gyro.onreading).toBeNull()
+    })
+  })
+})

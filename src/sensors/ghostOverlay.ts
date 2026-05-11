@@ -128,7 +128,7 @@ export function zeroVelocity(state: GhostOverlayState): GhostOverlayState {
   return { ...state, velX: 0, velY: 0 }
 }
 
-function focalLengthPx(displayWidth: number, hFovDeg: number): number {
+export function focalLengthPx(displayWidth: number, hFovDeg = DEFAULT_HFOV_DEG): number {
   return (displayWidth / 2) / Math.tan((hFovDeg * Math.PI) / 180 / 2)
 }
 
@@ -197,4 +197,34 @@ export function motionGateVisible(
 
 export function capToViewport(clientDim: number, viewportDim: number): number {
   return viewportDim > 0 ? Math.min(clientDim, viewportDim) : clientDim
+}
+
+export type GyroLike = {
+  onreading: (() => void) | null
+  onerror: ((e: Event) => void) | null
+  x: number | null
+  y: number | null
+  z: number | null
+  timestamp: DOMHighResTimeStamp | null
+  start(): void
+  stop(): void
+}
+
+export type MotionLike = {
+  onreading: (() => void) | null
+  x: number | null
+  y: number | null
+  interval: number
+  gravitySubtracted?: boolean
+  start(): void
+  stop(): void
+}
+
+export type GhostFrame = {
+  t: DOMHighResTimeStamp
+  yawRad: number
+  pitchRad: number
+  shiftPx: number
+  pitchShiftPx: number
+  gateOpen: boolean
 }

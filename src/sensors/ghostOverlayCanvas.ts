@@ -11,38 +11,10 @@ import {
   motionGateVisible,
   capToViewport,
 } from './ghostOverlay'
-import type { GhostOverlayState, GyroSample, AccelSample } from './ghostOverlay'
+import type { GhostOverlayState, GyroSample, AccelSample, GyroLike, MotionLike, GhostFrame } from './ghostOverlay'
 import { debugLogger } from '../debug/logger'
 
-export type GyroLike = {
-  onreading: (() => void) | null
-  onerror: ((e: Event) => void) | null
-  x: number | null
-  y: number | null
-  z: number | null
-  timestamp: DOMHighResTimeStamp | null
-  start(): void
-  stop(): void
-}
-
-export type MotionLike = {
-  onreading: (() => void) | null
-  x: number | null    // DeviceMotionEvent.acceleration.x (m/s², gravity subtracted)
-  y: number | null    // DeviceMotionEvent.acceleration.y (m/s², gravity subtracted)
-  interval: number    // DeviceMotionEvent.interval (ms)
-  gravitySubtracted?: boolean  // true when hardware removed gravity; widens beta guard in feedGhostAccel
-  start(): void
-  stop(): void
-}
-
-export type GhostFrame = {
-  t: DOMHighResTimeStamp    // absolute timestamp from deps.now()
-  yawRad: number            // yawIntegral at this tick
-  pitchRad: number          // gyro pitch integral in rad
-  shiftPx: number           // horizontal canvas shift in CSS px
-  pitchShiftPx: number      // vertical canvas shift in CSS px
-  gateOpen: boolean         // true when ghost overlay is visible
-}
+export type { GyroLike, MotionLike, GhostFrame }
 
 export type GhostOverlayCanvasDeps = {
   gyro: GyroLike | null

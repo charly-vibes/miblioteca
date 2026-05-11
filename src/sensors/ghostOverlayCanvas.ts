@@ -1,17 +1,15 @@
 import {
   initialGhostState,
-  feedGhostGyro,
   feedGhostAccel,
   zeroVelocity,
   computeShiftPx,
   computeShiftPy,
   computeTranslationShiftPx,
   computeTranslationShiftPy,
-  clampYawToViewport,
-  motionGateVisible,
   capToViewport,
 } from './ghostOverlay'
-import type { GhostOverlayState, GyroSample, AccelSample, GyroLike, MotionLike, GhostFrame } from './ghostOverlay'
+import type { GhostOverlayState, AccelSample, GyroLike, MotionLike, GhostFrame } from './ghostOverlay'
+import { GhostMotionPipeline } from './GhostMotionPipeline'
 import { debugLogger } from '../debug/logger'
 
 export type { GyroLike, MotionLike, GhostFrame }
@@ -30,23 +28,18 @@ export type GhostOverlayCanvasDeps = {
   getOrientation?: () => string     // returns screen.orientation.type equivalent; default reads screen.orientation
 }
 
-// Hysteresis prevents rapid toggling when hand tremor hovers near the threshold.
-// Show the ghost when movement drops below SHOW, hide it when it rises above HIDE.
-const MOTION_GATE_SHOW_RAD_S = 0.40
-const MOTION_GATE_HIDE_RAD_S = 0.55
-
 export class GhostOverlayCanvas {
   private readonly canvas: HTMLCanvasElement
   private readonly ctx: CanvasRenderingContext2D
   private readonly viewfinder: HTMLElement
-  private state: GhostOverlayState = initialGhostState()
-  private rafId = 0
+  private readonly pipeline: GhostMotionPipeline
+  private accelState: GhostOverlayState = initialGhostState()
+  private lastYawRad = 0
+  private lastPitchRad = 0
   private currentShiftPx = 0
   private currentShiftPy = 0
   private hasSnapshot = false
-  private destroyed = false
-  private firstRafFired = false
-  private lastOrientationLogMs = 0
+  private firstFrameFired = false
   private lastShiftLogMs = 0
   private lastMotionLogMs = 0
   private workingDistanceCm = 60
@@ -79,121 +72,64 @@ export class GhostOverlayCanvas {
     if (!ctx) throw new Error('Canvas 2D context unavailable')
     this.ctx = ctx
 
-    if (this.deps.gyro) {
-      this.deps.gyro.onreading = () => this.onGyroReading()
-      this.deps.gyro.onerror = null
-      this.deps.gyro.start()
-    }
+    this.pipeline = new GhostMotionPipeline({
+      gyro: deps.gyro,
+      displayWidth: () => this.readDisplayDims().w || this.canvas.width,
+      displayHeight: () => this.readDisplayDims().h || this.canvas.height,
+      getOrientation: this.deps.getOrientation,
+      onFrame: (frame) => this.onPipelineFrame(frame),
+      enableMotionGate: true,
+      requestAnimationFrame: this.deps.requestAnimationFrame,
+      cancelAnimationFrame: this.deps.cancelAnimationFrame,
+      now: this.deps.now,
+      logger: this.deps.logger,
+    })
 
     if (this.deps.motion) {
       this.deps.motion.onreading = () => this.onMotionReading()
       this.deps.motion.start()
     }
 
-    this.rafId = this.deps.requestAnimationFrame(this.rafLoop)
     this.deps.logger.log('ghost:created', { workingDistanceCm: this.workingDistanceCm })
   }
 
-  private onGyroReading() {
-    const gyro = this.deps.gyro!
-    const now = this.deps.now()
-    const sample: GyroSample = {
-      t: gyro.timestamp ?? now,
-      gx: gyro.x ?? 0,
-      gy: gyro.y ?? 0,
-      gz: gyro.z ?? 0,
-    }
-    const orientationType = this.deps.getOrientation()
-    const scanAxis: 'x' | 'y' = orientationType.startsWith('landscape') ? 'x' : 'y'
-    this.state = feedGhostGyro(this.state, sample, scanAxis)
-    const sinceLastLog = now - this.lastOrientationLogMs
-    if (this.lastOrientationLogMs === 0 || sinceLastLog >= 500) {
-      this.deps.logger.log('sensor:orientation-sample', { gx: sample.gx, gy: sample.gy, gz: sample.gz, scanAxis, omegaMag: this.state.omegaMag })
-      this.lastOrientationLogMs = now
-    }
-  }
-
-  private onMotionReading() {
-    const motion = this.deps.motion!
-    // Defense in depth: adapter already guards against null, but belt-and-suspenders.
-    // Stale non-zero velocity with ax=0 would silently accumulate displacement.
-    if (motion.x === null || motion.y === null) return
-    const betaDeg = this.deps.getBeta?.() ?? null
-    if (betaDeg === null) {
-      // beta unavailable (e.g. Firefox Android returns null): tilt guard is inoperable.
-      // Zero velocity to prevent bias drift accumulation; skip integration.
-      this.state = zeroVelocity(this.state)
-      return
-    }
-    const now = this.deps.now()
-    const gravitySubtracted = motion.gravitySubtracted ?? false
-    // In landscape the device is rotated 90° so device-Y maps to screen-X and device-X to
-    // screen-Y (negated). Apply the same axis remap the gyro path uses via scanAxis.
-    const orientationType = this.deps.getOrientation()
-    const isLandscape = orientationType.startsWith('landscape')
-    const ax = isLandscape ? motion.y : motion.x
-    const ay = isLandscape ? -motion.x : motion.y
-    const sample: AccelSample = {
-      ax,
-      ay,
-      interval_ms: motion.interval || 16,  // some browsers report 0; MotionLike types it as number but 0 is possible
-      betaDeg,
-      t: now,
-      gravitySubtracted,
-    }
-    this.state = feedGhostAccel(this.state, sample).state
-    if (now - this.lastMotionLogMs >= 500) {
-      this.deps.logger.log('ghost:motion-sample', {
-        ax, ay,
-        usingRawAccel: !gravitySubtracted,
-        betaDeg, interval_ms: motion.interval,
-        dx_cm: this.state.dx_m * 100, dy_cm: this.state.dy_m * 100,
-        velX: this.state.velX, velY: this.state.velY,
-      })
-      this.lastMotionLogMs = now
-    }
-  }
-
-  private rafLoop: FrameRequestCallback = () => {
-    if (this.destroyed) return
-    this.rafId = this.deps.requestAnimationFrame(this.rafLoop)
-    if (!this.firstRafFired) {
-      this.firstRafFired = true
+  private onPipelineFrame(frame: GhostFrame) {
+    if (!this.firstFrameFired) {
+      this.firstFrameFired = true
       this.deps.logger.log('ghost:render-tick', {})
     }
 
-    const currentlyHidden = this.canvas.hidden
-    const shouldShow = this.hasSnapshot &&
-      motionGateVisible(this.state.omegaMag, currentlyHidden, MOTION_GATE_SHOW_RAD_S, MOTION_GATE_HIDE_RAD_S)
-    if (this.canvas.hidden !== !shouldShow) {
-      this.canvas.hidden = !shouldShow
-      // Secondary ZUPT: zero velocity and reset yaw/pitch on gate close to prevent jump on reappear.
-      if (!shouldShow) {
-        this.state = { ...zeroVelocity(this.state), yawIntegral: 0, pitchIntegral: 0 }
-        this.deps.onFrame?.({
-          t: this.deps.now(),
-          yawRad: 0, pitchRad: 0, shiftPx: 0,
-          pitchShiftPx: 0, gateOpen: false,
-        })
+    if (!frame.gateOpen) {
+      if (!this.canvas.hidden) {
+        this.canvas.hidden = true
+        this.accelState = zeroVelocity(this.accelState)
+        this.deps.logger.log('ghost:visibility-changed', { visible: false, yawIntegral: 0 })
       }
-      this.deps.logger.log('ghost:visibility-changed', { visible: shouldShow, omegaMag: this.state.omegaMag, yawIntegral: this.state.yawIntegral })
+      this.lastYawRad = 0
+      this.lastPitchRad = 0
+      this.deps.onFrame?.({ t: this.deps.now(), yawRad: 0, pitchRad: 0, shiftPx: 0, pitchShiftPx: 0, gateOpen: false })
+      return
     }
-    if (this.canvas.hidden) return
 
-    // Use CSS display dimensions so shifts are in CSS pixels, not bitmap pixels.
-    // readDisplayDims() caps clientWidth/Height at the viewport to guard against a Firefox
-    // Android quirk where setting canvas.width > viewport inflates the parent's clientWidth.
+    this.lastYawRad = frame.yawRad
+    this.lastPitchRad = frame.pitchRad
+
+    if (!this.hasSnapshot) return
+
+    if (this.canvas.hidden) {
+      this.canvas.hidden = false
+      this.deps.logger.log('ghost:visibility-changed', { visible: true, yawIntegral: frame.yawRad })
+    }
+
     const { w: rw, h: rh } = this.readDisplayDims()
     const dw = rw || this.canvas.width
     const dh = rh || this.canvas.height
     const workingDistanceM = this.workingDistanceCm / 100
 
-    const rotShiftPx = computeShiftPx(this.state.yawIntegral, dw)
-    const rotShiftPy = computeShiftPy(this.state.pitchIntegral, dw, dh)
-    // Translation component (unclamped; combined clamp applied below)
-    const transShiftPx = computeTranslationShiftPx(this.state.dx_m, workingDistanceM, dw)
-    const transShiftPy = computeTranslationShiftPy(this.state.dy_m, workingDistanceM, dw)
-    // Combined shift, clamped to display boundaries
+    const rotShiftPx = computeShiftPx(frame.yawRad, dw)
+    const rotShiftPy = computeShiftPy(frame.pitchRad, dw, dh)
+    const transShiftPx = computeTranslationShiftPx(this.accelState.dx_m, workingDistanceM, dw)
+    const transShiftPy = computeTranslationShiftPy(this.accelState.dy_m, workingDistanceM, dw)
     const halfW = dw / 2
     const halfH = dh / 2
     const shiftPx = Math.max(-halfW, Math.min(halfW, rotShiftPx + transShiftPx))
@@ -205,21 +141,14 @@ export class GhostOverlayCanvas {
       this.currentShiftPy = shiftPy
     }
 
-    // Clamp yawIntegral to the viewport boundary so yaw never accumulates past the edge.
-    // Prevents the ghost from jumping when panning back after hitting the display limit.
-    const clampedYaw = clampYawToViewport(this.state.yawIntegral)
-    if (clampedYaw !== this.state.yawIntegral) {
-      this.state = { ...this.state, yawIntegral: clampedYaw }
-    }
-
     const now = this.deps.now()
     if (now - this.lastShiftLogMs >= 500) {
       this.deps.logger.log('ghost:shift', {
         shiftPx, shiftPy,
-        yawIntegral: this.state.yawIntegral,
-        pitchIntegral: this.state.pitchIntegral,
-        dx_cm: this.state.dx_m * 100, dy_cm: this.state.dy_m * 100,
-        velX: this.state.velX, velY: this.state.velY,
+        yawIntegral: frame.yawRad,
+        pitchIntegral: frame.pitchRad,
+        dx_cm: this.accelState.dx_m * 100, dy_cm: this.accelState.dy_m * 100,
+        velX: this.accelState.velX, velY: this.accelState.velY,
         workingDistanceCm: this.workingDistanceCm,
         displayWidth: dw, displayHeight: dh,
       })
@@ -228,12 +157,49 @@ export class GhostOverlayCanvas {
 
     this.deps.onFrame?.({
       t: now,
-      yawRad: this.state.yawIntegral,
-      pitchRad: this.state.pitchIntegral,
+      yawRad: frame.yawRad,
+      pitchRad: frame.pitchRad,
       shiftPx,
       pitchShiftPx: shiftPy,
       gateOpen: true,
     })
+  }
+
+  private onMotionReading() {
+    const motion = this.deps.motion!
+    if (motion.x === null || motion.y === null) return
+    const betaDeg = this.deps.getBeta?.() ?? null
+    if (betaDeg === null) {
+      // beta unavailable (e.g. Firefox Android returns null): tilt guard is inoperable.
+      // Zero velocity to prevent bias drift accumulation; skip integration.
+      this.accelState = zeroVelocity(this.accelState)
+      return
+    }
+    const now = this.deps.now()
+    const gravitySubtracted = motion.gravitySubtracted ?? false
+    const orientationType = this.deps.getOrientation()
+    const isLandscape = orientationType.startsWith('landscape')
+    const ax = isLandscape ? motion.y : motion.x
+    const ay = isLandscape ? -motion.x : motion.y
+    const sample: AccelSample = {
+      ax,
+      ay,
+      interval_ms: motion.interval || 16,
+      betaDeg,
+      t: now,
+      gravitySubtracted,
+    }
+    this.accelState = feedGhostAccel(this.accelState, sample).state
+    if (now - this.lastMotionLogMs >= 500) {
+      this.deps.logger.log('ghost:motion-sample', {
+        ax, ay,
+        usingRawAccel: !gravitySubtracted,
+        betaDeg, interval_ms: motion.interval,
+        dx_cm: this.accelState.dx_m * 100, dy_cm: this.accelState.dy_m * 100,
+        velX: this.accelState.velX, velY: this.accelState.velY,
+      })
+      this.lastMotionLogMs = now
+    }
   }
 
   // Returns viewfinder CSS dimensions capped at the visual viewport.
@@ -275,7 +241,11 @@ export class GhostOverlayCanvas {
     this.ctx.drawImage(imageBitmap, sx, sy, sw, sh, 0, 0, w, h)
 
     // Primary ZUPT: reset all accumulators including velocity and displacement.
-    this.state = initialGhostState()
+    this.pipeline.reset()
+    this.pipeline.openGate()  // allow gate-close on next tick when omegaMag is high
+    this.accelState = initialGhostState()
+    this.lastYawRad = 0
+    this.lastPitchRad = 0
     this.currentShiftPx = 0
     this.currentShiftPy = 0
     this.canvas.style.transform = 'translate3d(0, 0, 0)'
@@ -301,10 +271,10 @@ export class GhostOverlayCanvas {
     const displayWidth = dw || this.canvas.width
     const displayHeight = dh || this.canvas.height
     const workingDistanceM = this.workingDistanceCm / 100
-    const rotShiftPx = computeShiftPx(this.state.yawIntegral, displayWidth)
-    const rotShiftPy = computeShiftPy(this.state.pitchIntegral, displayWidth, displayHeight)
-    const transShiftPx = computeTranslationShiftPx(this.state.dx_m, workingDistanceM, displayWidth)
-    const transShiftPy = computeTranslationShiftPy(this.state.dy_m, workingDistanceM, displayWidth)
+    const rotShiftPx = computeShiftPx(this.lastYawRad, displayWidth)
+    const rotShiftPy = computeShiftPy(this.lastPitchRad, displayWidth, displayHeight)
+    const transShiftPx = computeTranslationShiftPx(this.accelState.dx_m, workingDistanceM, displayWidth)
+    const transShiftPy = computeTranslationShiftPy(this.accelState.dy_m, workingDistanceM, displayWidth)
     const halfW = displayWidth / 2
     const halfH = displayHeight / 2
     const shiftPx = Math.max(-halfW, Math.min(halfW, rotShiftPx + transShiftPx))
@@ -316,12 +286,12 @@ export class GhostOverlayCanvas {
       rotShiftPy,
       transShiftPx,
       transShiftPy,
-      yawIntegral: this.state.yawIntegral,
-      pitchIntegral: this.state.pitchIntegral,
-      dx_cm: this.state.dx_m * 100,
-      dy_cm: this.state.dy_m * 100,
-      velX: this.state.velX,
-      velY: this.state.velY,
+      yawIntegral: this.lastYawRad,
+      pitchIntegral: this.lastPitchRad,
+      dx_cm: this.accelState.dx_m * 100,
+      dy_cm: this.accelState.dy_m * 100,
+      velX: this.accelState.velX,
+      velY: this.accelState.velY,
       visible: !this.canvas.hidden,
       displayWidth,
       displayHeight,
@@ -331,9 +301,7 @@ export class GhostOverlayCanvas {
 
   // Call when the camera session ends or the view unmounts.
   destroy() {
-    this.destroyed = true
-    this.deps.cancelAnimationFrame(this.rafId)
-    this.deps.gyro?.stop()
+    this.pipeline.destroy()
     this.deps.motion?.stop()
     this.canvas.remove()
     this.deps.logger.log('ghost:destroyed', {})

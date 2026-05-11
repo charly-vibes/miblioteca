@@ -7,6 +7,7 @@ import {
   motionGateVisible,
 } from './ghostOverlay'
 import type { GhostOverlayState, GyroSample, GyroLike, GhostFrame } from './ghostOverlay'
+import { debugLogger } from '../debug/logger'
 
 const MOTION_GATE_SHOW_RAD_S = 0.40
 const MOTION_GATE_HIDE_RAD_S = 0.55
@@ -22,6 +23,7 @@ export type GhostMotionPipelineDeps = {
   requestAnimationFrame?: (cb: FrameRequestCallback) => number
   cancelAnimationFrame?: (id: number) => void
   now?: () => DOMHighResTimeStamp
+  logger?: { log(...args: unknown[]): void }
 }
 
 export class GhostMotionPipeline {
@@ -31,6 +33,7 @@ export class GhostMotionPipeline {
   private gateVisible = false
 
   private readonly deps: Required<GhostMotionPipelineDeps>
+  private lastOrientationLogMs = 0
 
   constructor(deps: GhostMotionPipelineDeps) {
     this.deps = {
@@ -44,6 +47,7 @@ export class GhostMotionPipeline {
       requestAnimationFrame: deps.requestAnimationFrame ?? ((cb) => window.requestAnimationFrame(cb)),
       cancelAnimationFrame: deps.cancelAnimationFrame ?? ((id) => window.cancelAnimationFrame(id)),
       now: deps.now ?? (() => performance.now()),
+      logger: deps.logger ?? debugLogger,
     }
 
     if (this.deps.gyro) {
@@ -64,8 +68,14 @@ export class GhostMotionPipeline {
       gy: gyro.y ?? 0,
       gz: gyro.z ?? 0,
     }
-    const scanAxis: 'x' | 'y' = this.deps.getOrientation().startsWith('landscape') ? 'x' : 'y'
+    const orientationType = this.deps.getOrientation()
+    const scanAxis: 'x' | 'y' = orientationType.startsWith('landscape') ? 'x' : 'y'
     this.state = feedGhostGyro(this.state, sample, scanAxis)
+    const sinceLastLog = now - this.lastOrientationLogMs
+    if (this.lastOrientationLogMs === 0 || sinceLastLog >= 500) {
+      this.deps.logger.log('sensor:orientation-sample', { gx: sample.gx, gy: sample.gy, gz: sample.gz, scanAxis, omegaMag: this.state.omegaMag })
+      this.lastOrientationLogMs = now
+    }
     // Clamp yaw immediately to prevent over-accumulation between RAF ticks at high gyro rates
     const clamped = clampYawToViewport(this.state.yawIntegral)
     if (clamped !== this.state.yawIntegral) {
@@ -115,6 +125,10 @@ export class GhostMotionPipeline {
   reset() {
     this.state = initialGhostState()
     this.gateVisible = false
+  }
+
+  openGate() {
+    this.gateVisible = true
   }
 
   destroy() {

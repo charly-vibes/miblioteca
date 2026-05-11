@@ -87,6 +87,9 @@ export class GhostMotionPipeline {
     if (this.destroyed) return
     this.rafId = this.deps.requestAnimationFrame(this.rafLoop)
 
+    // No sensor attached and gate hasn't been manually opened — nothing useful to emit
+    if (!this.deps.gyro && this.deps.enableMotionGate && !this.gateVisible) return
+
     const dw = this.deps.displayWidth()
     const dh = this.deps.displayHeight()
     const now = this.deps.now()
@@ -120,6 +123,10 @@ export class GhostMotionPipeline {
       pitchShiftPx: shiftPy,
       gateOpen: true,
     })
+  }
+
+  getState(): { yawRad: number; pitchRad: number } {
+    return { yawRad: this.state.yawIntegral, pitchRad: this.state.pitchIntegral }
   }
 
   reset() {

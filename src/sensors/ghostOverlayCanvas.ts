@@ -94,11 +94,6 @@ export class GhostOverlayCanvas {
   }
 
   private onPipelineFrame(frame: GhostFrame) {
-    if (!this.firstFrameFired) {
-      this.firstFrameFired = true
-      this.deps.logger.log('ghost:render-tick', {})
-    }
-
     if (!frame.gateOpen) {
       if (!this.canvas.hidden) {
         this.canvas.hidden = true
@@ -115,6 +110,11 @@ export class GhostOverlayCanvas {
     this.lastPitchRad = frame.pitchRad
 
     if (!this.hasSnapshot) return
+
+    if (!this.firstFrameFired) {
+      this.firstFrameFired = true
+      this.deps.logger.log('ghost:render-tick', {})
+    }
 
     if (this.canvas.hidden) {
       this.canvas.hidden = false

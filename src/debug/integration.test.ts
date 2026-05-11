@@ -123,7 +123,7 @@ describe('ghost overlay events', () => {
     expect(hasEvent('ghost:destroyed')).toBe(true)
   })
 
-  it('logs ghost:render-tick on first RAF callback', () => {
+  it('logs ghost:render-tick on first RAF callback after snapshot is set', () => {
     let rafCb: FrameRequestCallback | null = null
     overlay = new GhostOverlayCanvas(viewfinder, {
       gyro: null,
@@ -131,6 +131,7 @@ describe('ghost overlay events', () => {
       cancelAnimationFrame: vi.fn(),
       now: () => 0,
     })
+    overlay.setSnapshot({ width: 100, height: 100 } as unknown as ImageBitmap)
     ;(rafCb as unknown as FrameRequestCallback)(0)
     expect(hasEvent('ghost:render-tick')).toBe(true)
   })

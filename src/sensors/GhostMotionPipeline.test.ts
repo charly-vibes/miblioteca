@@ -230,4 +230,24 @@ describe('GhostMotionPipeline', () => {
       expect(gyro.onreading).toBeNull()
     })
   })
+
+  describe('no-gyro + enableMotionGate guard', () => {
+    it('does not fire onFrame when gyro is null and enableMotionGate is true', () => {
+      const onFrame = vi.fn()
+      const deps = makeDeps({ gyro: null, onFrame, enableMotionGate: true })
+      const pipeline = new GhostMotionPipeline(deps)
+      ;(deps.raf as unknown as { flush(): void }).flush()
+      expect(onFrame).not.toHaveBeenCalled()
+      pipeline.destroy()
+    })
+
+    it('fires onFrame when gyro is null and enableMotionGate is false', () => {
+      const onFrame = vi.fn()
+      const deps = makeDeps({ gyro: null, onFrame, enableMotionGate: false })
+      const pipeline = new GhostMotionPipeline(deps)
+      ;(deps.raf as unknown as { flush(): void }).flush()
+      expect(onFrame).toHaveBeenCalled()
+      pipeline.destroy()
+    })
+  })
 })

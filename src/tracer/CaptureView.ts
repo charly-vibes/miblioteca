@@ -7,7 +7,7 @@ import { checkStorageBudget } from '../pwa/storageBudget'
 import type { StorageBudgetManager, StorageBudgetStatus } from '../pwa/storageBudget'
 import { requestUploadSync } from '../pwa/syncRegistration'
 import { GhostOverlayCanvas } from '../sensors/ghostOverlayCanvas'
-import type { GyroLike, MotionLike } from '../sensors/ghostOverlayCanvas'
+import type { GyroLike } from '../sensors/ghostOverlayCanvas'
 import type { AccelerometerLike } from '../sensors/imuRecorder'
 import { feedAccel, initialSteadinessState } from '../sensors/steadiness'
 import type { SteadinessState } from '../sensors/steadiness'
@@ -35,7 +35,6 @@ export type CaptureViewOptions = {
   uploadFetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Pick<Response, 'ok' | 'status'>>
   storageManager?: Partial<StorageBudgetManager>
   gyro?: GyroLike | null
-  motion?: MotionLike | null
   accel?: AccelerometerLike | null
   createImageBitmap?: (blob: Blob) => Promise<ImageBitmap>
   /** Returns a low-res frame for quality checks, or null when unavailable. */
@@ -78,8 +77,6 @@ export class CaptureView {
   private readonly logger: DebugLogger
   private ghostOverlay: GhostOverlayCanvas | null = null
   private steadinessState: SteadinessState = initialSteadinessState()
-  private betaDeg = 90
-  private readonly orientationHandler = (e: DeviceOrientationEvent) => { this.betaDeg = e.beta ?? 90 }
   private activeWarnings: QualityWarning[] = []
   private pollId: ReturnType<typeof setInterval> | null = null
 
@@ -255,7 +252,6 @@ export class CaptureView {
     }
     this.ghostOverlay?.destroy()
     this.ghostOverlay = null
-    window.removeEventListener('deviceorientation', this.orientationHandler)
     this.stopQualityPoll()
     this.stopAccel()
 
@@ -272,13 +268,10 @@ export class CaptureView {
     // see contains(video)=true and skip replaceChildren.
     this.render()
     if (s.kind === 'granted' && this.opts.gyro) {
-      window.addEventListener('deviceorientation', this.orientationHandler)
       const distParam = new URLSearchParams(location.search).get('distance')
       const distanceCm = distParam ? Number(distParam) : undefined
       this.ghostOverlay = new GhostOverlayCanvas(this.viewfinder, {
         gyro: this.opts.gyro,
-        motion: this.opts.motion,
-        getBeta: () => this.betaDeg,
         distanceCm,
       })
     }
@@ -597,7 +590,6 @@ export class CaptureView {
       this.cameraState.stream.getTracks().forEach((t) => t.stop())
     }
     this.ghostOverlay?.destroy()
-    window.removeEventListener('deviceorientation', this.orientationHandler)
     this.stopQualityPoll()
     this.stopAccel()
     this.bundleExportPanel?.destroy()

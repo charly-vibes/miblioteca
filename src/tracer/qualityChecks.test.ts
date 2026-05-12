@@ -72,6 +72,12 @@ describe('runQualityChecks', () => {
     const result = runQualityChecks(img, steadySensor)
     expect(result.overexposedFraction).toBe(0)
     expect(result.underexposedFraction).toBe(0)
+    expect(result.laplacianVariance).toBe(0)
+  })
+
+  it('handles 0×0 ImageData without throwing (laplacianVariance + exposureFractions guard)', () => {
+    const img = { data: new Uint8ClampedArray(0), width: 0, height: 0 } as unknown as ImageData
+    expect(() => runQualityChecks(img, steadySensor)).not.toThrow()
   })
 })
 

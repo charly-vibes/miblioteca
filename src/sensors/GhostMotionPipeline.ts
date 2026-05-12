@@ -7,20 +7,28 @@ import {
   clampYawToViewport,
   motionGateVisible,
   zeroVelocity,
+  initialOrientationState,
+  computeOrientationDelta,
   MOTION_GATE_SHOW_RAD_S,
   MOTION_GATE_HIDE_RAD_S,
 } from './ghostOverlay'
-import type { GhostOverlayState, GyroSample, GyroLike, MotionLike, GhostFrame } from './ghostOverlay'
+import type { GhostOverlayState, GyroSample, GyroLike, MotionLike, OrientationLike, OrientationTrackingState, GhostFrame } from './ghostOverlay'
+
+type DeviceOrientationSample = { alpha: number; beta: number; gamma: number }
 import { debugLogger } from '../debug/logger'
 
 export type GhostMotionPipelineDeps = {
   gyro: GyroLike | null
   motion?: MotionLike | null
+  orientation?: OrientationLike | null
   /** Returns current DeviceOrientationEvent.beta (tilt angle 0=flat, 90=upright). Used by feedGhostAccel. */
   getBeta?: () => number | null
   displayWidth: () => number
   displayHeight: () => number
-  getOrientation?: () => string
+  /** Returns the latest absolute device orientation sample from DeviceOrientationEvent. */
+  getOrientation?: () => DeviceOrientationSample | null
+  /** Returns the current screen orientation type (portrait-primary, landscape-primary, ...). */
+  getScreenOrientation?: () => string
   onFrame?: (frame: GhostFrame) => void
   /** Called after each gyro reading with current yaw/pitch. Use instead of monkey-patching gyro.onreading. */
   onGyroSample?: (state: { yawRad: number; pitchRad: number }) => void
@@ -34,6 +42,8 @@ export type GhostMotionPipelineDeps = {
 
 export class GhostMotionPipeline {
   private state: GhostOverlayState = initialGhostState()
+  private orientationState: OrientationTrackingState | null = null
+  private currentOrientation: DeviceOrientationSample | null = null
   private rafId = 0
   private destroyed = false
   private gateVisible = false
@@ -45,10 +55,12 @@ export class GhostMotionPipeline {
     this.deps = {
       gyro: deps.gyro,
       motion: deps.motion ?? null,
+      orientation: deps.orientation ?? null,
       getBeta: deps.getBeta ?? (() => null),
       displayWidth: deps.displayWidth,
       displayHeight: deps.displayHeight,
-      getOrientation: deps.getOrientation ?? (() =>
+      getOrientation: deps.getOrientation ?? (() => null),
+      getScreenOrientation: deps.getScreenOrientation ?? (() =>
         (typeof screen !== 'undefined' && screen.orientation?.type) || 'portrait-primary'),
       onFrame: deps.onFrame ?? (() => {}),
       onGyroSample: deps.onGyroSample ?? ((_s) => {}),
@@ -72,6 +84,11 @@ export class GhostMotionPipeline {
       this.deps.motion.start()
     }
 
+    if (this.deps.orientation) {
+      this.deps.orientation.onreading = () => this.onOrientationReading()
+      this.deps.orientation.start()
+    }
+
     this.rafId = this.deps.requestAnimationFrame(this.rafLoop)
   }
 
@@ -84,20 +101,84 @@ export class GhostMotionPipeline {
       gy: gyro.y ?? 0,
       gz: gyro.z ?? 0,
     }
-    const orientationType = this.deps.getOrientation()
-    const scanAxis: 'x' | 'y' = orientationType.startsWith('landscape') ? 'x' : 'y'
-    this.state = feedGhostGyro(this.state, sample, scanAxis)
+
+    const hasAbsoluteOrientation = this.orientationState !== null || this.deps.getOrientation() !== null || this.currentOrientation !== null
+    if (hasAbsoluteOrientation) {
+      // Absolute orientation active: gyro only updates omegaMag for motion gate / stillness detection
+      const omegaMag = Math.sqrt(sample.gx ** 2 + sample.gy ** 2 + sample.gz ** 2)
+      this.state = { ...this.state, omegaMag, lastT: sample.t }
+    } else {
+      // Fallback: full gyro integration (v1)
+      const orientationType = this.deps.getScreenOrientation()
+      const scanAxis: 'x' | 'y' = orientationType.startsWith('landscape') ? 'x' : 'y'
+      this.state = feedGhostGyro(this.state, sample, scanAxis)
+      const clamped = clampYawToViewport(this.state.yawIntegral)
+      if (clamped !== this.state.yawIntegral) {
+        this.state = { ...this.state, yawIntegral: clamped }
+      }
+    }
+
     const sinceLastLog = now - this.lastOrientationLogMs
     if (this.lastOrientationLogMs === 0 || sinceLastLog >= 500) {
-      this.deps.logger.log('sensor:orientation-sample', { gx: sample.gx, gy: sample.gy, gz: sample.gz, scanAxis, omegaMag: this.state.omegaMag })
+      this.deps.logger.log('sensor:orientation-sample', { gx: sample.gx, gy: sample.gy, gz: sample.gz, omegaMag: this.state.omegaMag })
       this.lastOrientationLogMs = now
     }
-    // Clamp yaw immediately to prevent over-accumulation between RAF ticks at high gyro rates
+    this.deps.onGyroSample(this.getState())
+  }
+
+  private onOrientationReading() {
+    const ori = this.deps.orientation!
+    const alpha = ori.alpha
+    const beta = ori.beta
+    const gamma = ori.gamma
+    if (alpha == null || beta == null || gamma == null) return
+    this.currentOrientation = { alpha, beta, gamma }
+
+    if (!this.orientationState) {
+      this.orientationState = initialOrientationState(alpha, beta, gamma, this.deps.now())
+      return
+    }
+
+    const { yaw, pitch, state } = computeOrientationDelta(this.orientationState, {
+      alphaDeg: alpha,
+      betaDeg: beta,
+      gammaDeg: gamma,
+      gyroMag: this.state.omegaMag,
+      nowMs: this.deps.now(),
+    })
+    this.orientationState = state
+    this.state = { ...this.state, yawIntegral: yaw, pitchIntegral: pitch }
+
     const clamped = clampYawToViewport(this.state.yawIntegral)
     if (clamped !== this.state.yawIntegral) {
       this.state = { ...this.state, yawIntegral: clamped }
     }
-    this.deps.onGyroSample(this.getState())
+  }
+
+  private refreshAbsoluteOrientation() {
+    const sample = this.deps.getOrientation() ?? this.currentOrientation
+    if (!sample) return
+
+    this.currentOrientation = sample
+    if (!this.orientationState) {
+      this.orientationState = initialOrientationState(sample.alpha, sample.beta, sample.gamma, this.deps.now())
+      return
+    }
+
+    const { yaw, pitch, state } = computeOrientationDelta(this.orientationState, {
+      alphaDeg: sample.alpha,
+      betaDeg: sample.beta,
+      gammaDeg: sample.gamma,
+      gyroMag: this.state.omegaMag,
+      nowMs: this.deps.now(),
+    })
+    this.orientationState = state
+    this.state = { ...this.state, yawIntegral: yaw, pitchIntegral: pitch }
+
+    const clamped = clampYawToViewport(this.state.yawIntegral)
+    if (clamped !== this.state.yawIntegral) {
+      this.state = { ...this.state, yawIntegral: clamped }
+    }
   }
 
   private onMotionReading() {
@@ -125,6 +206,8 @@ export class GhostMotionPipeline {
     const dw = this.deps.displayWidth()
     const dh = this.deps.displayHeight()
     const now = this.deps.now()
+
+    this.refreshAbsoluteOrientation()
 
     if (this.deps.enableMotionGate) {
       const shouldShow = motionGateVisible(this.state.omegaMag, !this.gateVisible, MOTION_GATE_SHOW_RAD_S, MOTION_GATE_HIDE_RAD_S)
@@ -173,6 +256,10 @@ export class GhostMotionPipeline {
 
   reset() {
     this.state = initialGhostState()
+    this.currentOrientation = this.deps.getOrientation() ?? this.currentOrientation
+    this.orientationState = this.currentOrientation
+      ? initialOrientationState(this.currentOrientation.alpha, this.currentOrientation.beta, this.currentOrientation.gamma, this.deps.now())
+      : null
     this.gateVisible = false
   }
 
@@ -190,6 +277,10 @@ export class GhostMotionPipeline {
     if (this.deps.motion) {
       this.deps.motion.onreading = null
       this.deps.motion.stop()
+    }
+    if (this.deps.orientation) {
+      this.deps.orientation.onreading = null
+      this.deps.orientation.stop()
     }
   }
 }

@@ -41,7 +41,7 @@ function makeGyro(x = 0, y = 0, z = 0): GyroLike & { fire(): void } {
 
 function makeFullOverlay(opts: {
   gyro?: GyroLike & { fire(): void }
-  getOrientation?: () => string
+  getScreenOrientation?: () => string
 } = {}) {
   let now = 0
   let rafCallback: FrameRequestCallback | null = null
@@ -50,7 +50,7 @@ function makeFullOverlay(opts: {
   makeCanvas()
   const overlay = new GhostOverlayCanvas(viewfinder, {
     gyro: opts.gyro ?? null,
-    getOrientation: opts.getOrientation,
+    getScreenOrientation: opts.getScreenOrientation,
     requestAnimationFrame: (cb) => { rafCallback = cb; return 1 },
     cancelAnimationFrame: vi.fn(),
     now: () => now,

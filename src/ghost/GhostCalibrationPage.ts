@@ -31,7 +31,7 @@ export type CalibrationPageDeps = {
   now?: () => number
   triggerDownload?: (filename: string, json: string) => void
   distanceCm?: number
-  getOrientation?: () => string
+  getScreenOrientation?: () => string
   captureSnapshot?: (video: HTMLVideoElement) => string | null
 }
 
@@ -107,7 +107,7 @@ export class GhostCalibrationPage {
   private readonly nowFn: () => number
   private readonly triggerDownload: (filename: string, json: string) => void
 
-  private readonly getOrientation: () => string
+  private readonly getScreenOrientation: () => string
   private betaDeg: number | null = null
 
   private cycles: CalibrationCycle[] = []
@@ -152,19 +152,22 @@ export class GhostCalibrationPage {
       a.click()
       URL.revokeObjectURL(a.href)
     })
-    this.getOrientation = deps.getOrientation ?? (() => (typeof screen !== 'undefined' && screen.orientation?.type) || 'portrait-primary')
-    this.captureSnapshotFn = deps.captureSnapshot ?? ((video) => {
-      try {
-        const c = document.createElement('canvas')
-        c.width = video.videoWidth || video.clientWidth || FALLBACK_VW
-        c.height = video.videoHeight || video.clientHeight || FALLBACK_VH
-        c.getContext('2d')?.drawImage(video, 0, 0, c.width, c.height)
-        return c.toDataURL('image/jpeg', 0.8)
-      } catch { return null }
-    })
 
     const doc = root.ownerDocument ?? document
     this.doc = doc
+    this.getScreenOrientation = deps.getScreenOrientation ?? (() => (typeof screen !== 'undefined' && screen.orientation?.type) || 'portrait-primary')
+    this.captureSnapshotFn = deps.captureSnapshot ?? ((video) => {
+      const canvasView = doc.defaultView
+      if (typeof canvasView?.CanvasRenderingContext2D === 'undefined') return null
+
+      const c = doc.createElement('canvas')
+      c.width = video.videoWidth || video.clientWidth || FALLBACK_VW
+      c.height = video.videoHeight || video.clientHeight || FALLBACK_VH
+      const ctx = c.getContext('2d')
+      if (!ctx) return null
+      ctx.drawImage(video, 0, 0, c.width, c.height)
+      return c.toDataURL('image/jpeg', 0.8)
+    })
     injectPulseStyle(doc)
 
     const vw = this.win.innerWidth || FALLBACK_VW
@@ -466,7 +469,7 @@ export class GhostCalibrationPage {
       gyro: this.gyro,
       displayWidth: () => this.win.innerWidth || FALLBACK_VW,
       displayHeight: () => this.win.innerHeight || FALLBACK_VH,
-      getOrientation: this.getOrientation,
+      getScreenOrientation: this.getScreenOrientation,
       onFrame: (frame) => this.onPipelineFrame(frame),
       onGyroSample: (pState) => {
         const g = this.gyro!
@@ -709,7 +712,7 @@ export class GhostCalibrationPage {
         devicePixelRatio: this.win.devicePixelRatio ?? 1,
         userAgent: this.win.navigator?.userAgent ?? '',
       },
-      orientation: this.getOrientation(),
+      orientation: this.getScreenOrientation(),
       hFovDeg: H_FOV_DEG,
       focalLengthPx: focalLengthPx(vw),
       cycles: this.cycles,

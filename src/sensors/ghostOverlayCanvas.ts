@@ -6,6 +6,8 @@ import {
   capToViewport,
 } from './ghostOverlay'
 import type { GyroLike, MotionLike, GhostFrame } from './ghostOverlay'
+
+type DeviceOrientationSample = { alpha: number; beta: number; gamma: number }
 import { GhostMotionPipeline } from './GhostMotionPipeline'
 import { debugLogger } from '../debug/logger'
 
@@ -27,6 +29,8 @@ export type GhostOverlayCanvasDeps = {
   motion?: MotionLike | null
   /** Returns current DeviceOrientationEvent.beta. Used by feedGhostAccel tilt guard. */
   getBeta?: () => number | null
+  /** Returns the latest DeviceOrientationEvent absolute orientation sample. */
+  getOrientation?: () => DeviceOrientationSample | null
   distanceCm?: number      // working distance to subject in cm; clamped to [WORKING_DISTANCE_MIN_CM, WORKING_DISTANCE_MAX_CM]; default WORKING_DISTANCE_DEFAULT_CM
   onFrame?: (frame: GhostFrame) => void  // fired each RAF tick after shift is computed
   /**
@@ -55,7 +59,7 @@ export type GhostOverlayCanvasDeps = {
    * Defaults to reading `screen.orientation` directly.
    * Override in tests to simulate portrait/landscape without a real screen object.
    */
-  getOrientation?: () => string
+  getScreenOrientation?: () => string
 }
 
 /**
@@ -84,7 +88,7 @@ export class GhostOverlayCanvas {
   private workingDistanceCm = WORKING_DISTANCE_DEFAULT_CM
   private tiltDeviationStartMs: number | null = null
   private tiltWarningActive = false
-  private readonly deps: Required<Omit<GhostOverlayCanvasDeps, 'motion' | 'getBeta' | 'distanceCm' | 'onFrame' | 'canvasClassName'>> & Pick<GhostOverlayCanvasDeps, 'onFrame'>
+  private readonly deps: Required<Omit<GhostOverlayCanvasDeps, 'motion' | 'getBeta' | 'getOrientation' | 'distanceCm' | 'onFrame' | 'canvasClassName'>> & Pick<GhostOverlayCanvasDeps, 'onFrame'>
 
   /**
    * @throws {Error} `'Canvas 2D context unavailable'` — thrown when the browser
@@ -100,7 +104,7 @@ export class GhostOverlayCanvas {
       cancelAnimationFrame: deps.cancelAnimationFrame ?? ((id) => window.cancelAnimationFrame(id)),
       now: deps.now ?? (() => performance.now()),
       logger: deps.logger ?? debugLogger,
-      getOrientation: deps.getOrientation ?? (() => (typeof screen !== 'undefined' && screen.orientation?.type) || 'portrait-primary'),
+      getScreenOrientation: deps.getScreenOrientation ?? (() => (typeof screen !== 'undefined' && screen.orientation?.type) || 'portrait-primary'),
     }
 
     const d = deps.distanceCm ?? WORKING_DISTANCE_DEFAULT_CM
@@ -132,7 +136,8 @@ export class GhostOverlayCanvas {
       getBeta: deps.getBeta,
       displayWidth: () => this.readDisplayDims().w || this.canvas.width,
       displayHeight: () => this.readDisplayDims().h || this.canvas.height,
-      getOrientation: this.deps.getOrientation,
+      getOrientation: deps.getOrientation,
+      getScreenOrientation: this.deps.getScreenOrientation,
       onFrame: (frame) => this.onPipelineFrame(frame),
       enableMotionGate: true,
       requestAnimationFrame: this.deps.requestAnimationFrame,

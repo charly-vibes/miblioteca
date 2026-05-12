@@ -12,6 +12,17 @@ import {
   motionGateVisible,
   capToViewport,
   ZUPT_TAU_S,
+  eulerToQuat,
+  quatMultiply,
+  quatConjugate,
+  initialOrientationState,
+  computeOrientationDelta,
+  STILL_THRESHOLD,
+  STILL_EMA_ALPHA,
+  STILL_GAIN,
+  MOVING_GAIN,
+  YAW_DEADBAND_RAD,
+  MAX_SHIFT_RATE_RAD_S,
 } from './ghostOverlay'
 
 describe('initialGhostState', () => {
@@ -574,5 +585,267 @@ describe('clampYawToViewport', () => {
     expect(clampYawToViewport(100, 90)).toBeCloseTo(maxYaw90)
     expect(clampYawToViewport(100, 65)).toBeCloseTo(maxYaw65)
     expect(maxYaw90).toBeGreaterThan(maxYaw65)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Quaternion math & absolute-orientation tracking (ghost overlay v2)
+// ---------------------------------------------------------------------------
+
+const S = Math.SQRT1_2 // √2/2 ≈ 0.70711
+const DEG = Math.PI / 180
+
+describe('eulerToQuat', () => {
+  it('(0,0,0) → identity quaternion', () => {
+    const q = eulerToQuat(0, 0, 0)
+    expect(q.w).toBeCloseTo(1)
+    expect(q.x).toBeCloseTo(0)
+    expect(q.y).toBeCloseTo(0)
+    expect(q.z).toBeCloseTo(0)
+  })
+
+  it('pure alpha=90° → rotation around Z: (√2/2, 0, 0, √2/2)', () => {
+    const q = eulerToQuat(90, 0, 0)
+    expect(q.w).toBeCloseTo(S)
+    expect(q.x).toBeCloseTo(0)
+    expect(q.y).toBeCloseTo(0)
+    expect(q.z).toBeCloseTo(S)
+  })
+
+  it('pure beta=90° → rotation around X: (√2/2, √2/2, 0, 0)', () => {
+    const q = eulerToQuat(0, 90, 0)
+    expect(q.w).toBeCloseTo(S)
+    expect(q.x).toBeCloseTo(S)
+    expect(q.y).toBeCloseTo(0)
+    expect(q.z).toBeCloseTo(0)
+  })
+
+  it('pure gamma=90° → rotation around Y: (√2/2, 0, √2/2, 0)', () => {
+    const q = eulerToQuat(0, 0, 90)
+    expect(q.w).toBeCloseTo(S)
+    expect(q.x).toBeCloseTo(0)
+    expect(q.y).toBeCloseTo(S)
+    expect(q.z).toBeCloseTo(0)
+  })
+
+  it('alpha=180° beta=90° gamma=0° → (0, 0, √2/2, √2/2)', () => {
+    const q = eulerToQuat(180, 90, 0)
+    expect(q.w).toBeCloseTo(0)
+    expect(q.x).toBeCloseTo(0)
+    expect(q.y).toBeCloseTo(S)
+    expect(q.z).toBeCloseTo(S)
+  })
+
+  it('always produces a unit quaternion for diverse inputs', () => {
+    const cases: [number, number, number][] = [
+      [0, 0, 0], [180, 90, 0], [45, 60, 30],
+      [270, -45, -30], [359, 89, -80],
+    ]
+    for (const [a, b, g] of cases) {
+      const q = eulerToQuat(a, b, g)
+      const norm = Math.sqrt(q.w ** 2 + q.x ** 2 + q.y ** 2 + q.z ** 2)
+      expect(norm).toBeCloseTo(1, 10)
+    }
+  })
+})
+
+describe('quatConjugate', () => {
+  it('negates x, y, z and preserves w', () => {
+    const c = quatConjugate({ w: 0.5, x: 0.1, y: 0.2, z: 0.3 })
+    expect(c.w).toBe(0.5)
+    expect(c.x).toBe(-0.1)
+    expect(c.y).toBe(-0.2)
+    expect(c.z).toBe(-0.3)
+  })
+
+  it('conjugate of identity is identity', () => {
+    const c = quatConjugate({ w: 1, x: 0, y: 0, z: 0 })
+    expect(c).toEqual({ w: 1, x: -0, y: -0, z: -0 })
+  })
+})
+
+describe('quatMultiply', () => {
+  const identity = { w: 1, x: 0, y: 0, z: 0 }
+
+  it('identity * q = q', () => {
+    const q = { w: 0.5, x: 0.5, y: 0.5, z: 0.5 }
+    const r = quatMultiply(identity, q)
+    expect(r.w).toBeCloseTo(q.w)
+    expect(r.x).toBeCloseTo(q.x)
+    expect(r.y).toBeCloseTo(q.y)
+    expect(r.z).toBeCloseTo(q.z)
+  })
+
+  it('q * identity = q', () => {
+    const q = { w: 0.5, x: 0.5, y: 0.5, z: 0.5 }
+    const r = quatMultiply(q, identity)
+    expect(r.w).toBeCloseTo(q.w)
+    expect(r.x).toBeCloseTo(q.x)
+    expect(r.y).toBeCloseTo(q.y)
+    expect(r.z).toBeCloseTo(q.z)
+  })
+
+  it('q * conjugate(q) ≈ identity (inverse property for unit quaternions)', () => {
+    const q = eulerToQuat(45, 30, 15)
+    const r = quatMultiply(q, quatConjugate(q))
+    expect(r.w).toBeCloseTo(1)
+    expect(r.x).toBeCloseTo(0)
+    expect(r.y).toBeCloseTo(0)
+    expect(r.z).toBeCloseTo(0)
+  })
+
+  it('two 90° Z-rotations compose to 180° Z-rotation', () => {
+    const rz90 = eulerToQuat(90, 0, 0)
+    const rz180 = quatMultiply(rz90, rz90)
+    const expected = eulerToQuat(180, 0, 0)
+    expect(rz180.w).toBeCloseTo(expected.w)
+    expect(rz180.x).toBeCloseTo(expected.x)
+    expect(rz180.y).toBeCloseTo(expected.y)
+    expect(rz180.z).toBeCloseTo(expected.z)
+  })
+
+  it('is not commutative', () => {
+    const a = eulerToQuat(90, 0, 0)
+    const b = eulerToQuat(0, 90, 0)
+    const ab = quatMultiply(a, b)
+    const ba = quatMultiply(b, a)
+    const diff = Math.abs(ab.w - ba.w) + Math.abs(ab.x - ba.x) +
+                 Math.abs(ab.y - ba.y) + Math.abs(ab.z - ba.z)
+    expect(diff).toBeGreaterThan(0.01)
+  })
+})
+
+describe('initialOrientationState', () => {
+  it('stores qRef as the quaternion for the given Euler angles', () => {
+    const state = initialOrientationState(180, 90, 0, 123)
+    const expectedQ = eulerToQuat(180, 90, 0)
+    expect(state.qRef.w).toBeCloseTo(expectedQ.w)
+    expect(state.qRef.x).toBeCloseTo(expectedQ.x)
+    expect(state.qRef.y).toBeCloseTo(expectedQ.y)
+    expect(state.qRef.z).toBeCloseTo(expectedQ.z)
+  })
+
+  it('starts with zero prevYaw, prevPitch, stillness, and stores lastT', () => {
+    const state = initialOrientationState(0, 0, 0, 456)
+    expect(state.prevYaw).toBe(0)
+    expect(state.prevPitch).toBe(0)
+    expect(state.stillness).toBe(0)
+    expect(state.lastT).toBe(456)
+  })
+})
+
+describe('computeOrientationDelta', () => {
+  const delta = (
+    ref: [number, number, number],
+    cur: [number, number, number],
+    opts?: { gyroMag?: number; state?: ReturnType<typeof initialOrientationState>; nowMs?: number },
+  ) => {
+    const state = opts?.state ?? initialOrientationState(...ref, 0)
+    return computeOrientationDelta(state, {
+      alphaDeg: cur[0],
+      betaDeg: cur[1],
+      gammaDeg: cur[2],
+      gyroMag: opts?.gyroMag ?? 1.0,
+      nowMs: opts?.nowMs ?? 16,
+    })
+  }
+
+  it('same orientation as reference → yaw ≈ 0, pitch ≈ 0', () => {
+    const { yaw, pitch } = delta([180, 90, 0], [180, 90, 0])
+    expect(yaw).toBeCloseTo(0, 4)
+    expect(pitch).toBeCloseTo(0, 4)
+  })
+
+  it('1° alpha increase at β=90° → positive yaw', () => {
+    const { yaw, pitch } = delta([180, 90, 0], [181, 90, 0], { nowMs: 1000 })
+    expect(yaw).toBeCloseTo(MOVING_GAIN * DEG, 4)
+    expect(pitch).toBeCloseTo(0, 3)
+  })
+
+  it('1° beta increase → positive pitch', () => {
+    const { yaw, pitch } = delta([180, 90, 0], [180, 91, 0], { nowMs: 1000 })
+    expect(pitch).toBeCloseTo(MOVING_GAIN * DEG, 4)
+    expect(yaw).toBeCloseTo(0, 3)
+  })
+
+  it('gamma change at β=90° produces the same yaw as alpha change', () => {
+    const fromAlpha = delta([180, 90, 0], [181, 90, 0], { nowMs: 1000 })
+    const fromGamma = delta([180, 90, 0], [180, 90, 1], { nowMs: 1000 })
+    expect(fromGamma.yaw).toBeCloseTo(fromAlpha.yaw, 3)
+  })
+
+  it('applies deadband near zero', () => {
+    const smallDeg = (YAW_DEADBAND_RAD * 0.5) / DEG
+    const d = delta([180, 90, 0], [180 + smallDeg, 90, 0], { nowMs: 1000 })
+    expect(d.yaw).toBeCloseTo(0, 6)
+  })
+
+  it('with high gyroMag uses moving gain and converges toward target', () => {
+    const d = delta([180, 90, 0], [181, 90, 0], { gyroMag: 1.0, nowMs: 1000 })
+    expect(d.yaw).toBeCloseTo(MOVING_GAIN * DEG, 4)
+  })
+
+  it('with high stillness uses still gain but still converges', () => {
+    let state = initialOrientationState(180, 90, 0, 0)
+    for (let i = 1; i <= 100; i++) {
+      state = computeOrientationDelta(state, { alphaDeg: 180, betaDeg: 90, gammaDeg: 0, gyroMag: 0.01, nowMs: i * 16 }).state
+    }
+    const result = computeOrientationDelta(state, { alphaDeg: 181, betaDeg: 90, gammaDeg: 0, gyroMag: 0.01, nowMs: 2000 })
+    expect(result.state.stillness).toBeGreaterThan(0.9)
+    expect(result.yaw).toBeCloseTo(STILL_GAIN * DEG, 3)
+  })
+
+  it('stillness decays when gyro spikes', () => {
+    let state = initialOrientationState(180, 90, 0, 0)
+    for (let i = 1; i <= 100; i++) {
+      state = computeOrientationDelta(state, { alphaDeg: 180, betaDeg: 90, gammaDeg: 0, gyroMag: 0.01, nowMs: i * 16 }).state
+    }
+    expect(state.stillness).toBeGreaterThan(0.9)
+    for (let i = 101; i <= 160; i++) {
+      state = computeOrientationDelta(state, { alphaDeg: 180, betaDeg: 90, gammaDeg: 0, gyroMag: 1.0, nowMs: i * 16 }).state
+    }
+    expect(state.stillness).toBeLessThan(0.1)
+  })
+
+  it('rate limiter is dt-based', () => {
+    const d = delta([180, 90, 0], [183, 90, 0], { nowMs: 10 })
+    expect(d.yaw).toBeCloseTo(MAX_SHIFT_RATE_RAD_S * 0.01, 5)
+  })
+
+  it('converges to a non-zero target while still', () => {
+    let state = initialOrientationState(180, 90, 0, 0)
+    for (let i = 1; i <= 120; i++) {
+      const result = computeOrientationDelta(state, { alphaDeg: 185, betaDeg: 90, gammaDeg: 0, gyroMag: 0.01, nowMs: i * 16 })
+      state = result.state
+    }
+    expect(state.prevYaw).toBeGreaterThan(4 * DEG)
+    expect(state.prevYaw).toBeLessThan(5.1 * DEG)
+  })
+
+  it('updates stillness EMA in the returned state', () => {
+    const result = delta([180, 90, 0], [180, 90, 0], { gyroMag: STILL_THRESHOLD / 2 })
+    const expected = 1 - STILL_EMA_ALPHA
+    expect(result.state.stillness).toBeCloseTo(expected, 10)
+  })
+
+  it('preserves qRef across calls', () => {
+    const state = initialOrientationState(180, 90, 0, 0)
+    const result = computeOrientationDelta(state, { alphaDeg: 181, betaDeg: 90, gammaDeg: 0, gyroMag: 1.0, nowMs: 1000 })
+    expect(result.state.qRef.w).toBeCloseTo(state.qRef.w)
+    expect(result.state.qRef.x).toBeCloseTo(state.qRef.x)
+    expect(result.state.qRef.y).toBeCloseTo(state.qRef.y)
+    expect(result.state.qRef.z).toBeCloseTo(state.qRef.z)
+  })
+
+  it('handles q_delta.w < 0 via negation', () => {
+    const state = initialOrientationState(180, 90, 0, 0)
+    const normal = computeOrientationDelta(state, { alphaDeg: 181, betaDeg: 90, gammaDeg: 0, gyroMag: 1.0, nowMs: 1000 })
+    const negState = {
+      ...state,
+      qRef: { w: -state.qRef.w, x: -state.qRef.x, y: -state.qRef.y, z: -state.qRef.z },
+    }
+    const negResult = computeOrientationDelta(negState, { alphaDeg: 181, betaDeg: 90, gammaDeg: 0, gyroMag: 1.0, nowMs: 1000 })
+    expect(negResult.yaw).toBeCloseTo(normal.yaw, 4)
+    expect(negResult.pitch).toBeCloseTo(normal.pitch, 4)
   })
 })

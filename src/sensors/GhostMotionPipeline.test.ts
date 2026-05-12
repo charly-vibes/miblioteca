@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { GhostMotionPipeline } from './GhostMotionPipeline'
 import type { GhostMotionPipelineDeps } from './GhostMotionPipeline'
-import type { GyroLike } from './ghostOverlay'
+import type { GyroLike, OrientationLike } from './ghostOverlay'
 
 function makeGyro(): GyroLike & { fire(gx: number, gy: number, gz: number, t: number): void } {
   const g: GyroLike & { fire(gx: number, gy: number, gz: number, t: number): void } = {
@@ -185,13 +185,13 @@ describe('GhostMotionPipeline', () => {
     })
   })
 
-  describe('scanAxis follows getOrientation() result', () => {
+  describe('scanAxis follows getScreenOrientation() result', () => {
     it('uses gx for yaw in landscape orientation', () => {
       const gyro = makeGyro()
       const onFrame = vi.fn()
       const deps = makeDeps({
         gyro, onFrame, enableMotionGate: false,
-        getOrientation: () => 'landscape-primary',
+        getScreenOrientation: () => 'landscape-primary',
       })
       const pipeline = new GhostMotionPipeline(deps)
       // In landscape, gx is yaw axis. Fire gx=0.5, gy=0 → should see yaw accumulate
@@ -208,7 +208,7 @@ describe('GhostMotionPipeline', () => {
       const onFrame = vi.fn()
       const deps = makeDeps({
         gyro, onFrame, enableMotionGate: false,
-        getOrientation: () => 'portrait-primary',
+        getScreenOrientation: () => 'portrait-primary',
       })
       const pipeline = new GhostMotionPipeline(deps)
       gyro.fire(0, 0.5, 0, 1000)
@@ -417,5 +417,161 @@ describe('GhostMotionPipeline — onGyroSample hook', () => {
       gyro.fire(0, 0, 0, 100)
       pipeline.destroy()
     }).not.toThrow()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Absolute orientation path (DeviceOrientationEvent-based tracking)
+// ---------------------------------------------------------------------------
+
+function makeOrientation(): OrientationLike & { fire(alpha: number, beta: number, gamma: number): void } {
+  const o: OrientationLike & { fire(alpha: number, beta: number, gamma: number): void } = {
+    onreading: null,
+    alpha: null, beta: null, gamma: null,
+    start: vi.fn(),
+    stop: vi.fn(),
+    fire(a, b, g) {
+      this.alpha = a; this.beta = b; this.gamma = g
+      this.onreading?.()
+    },
+  }
+  return o
+}
+
+describe('GhostMotionPipeline — absolute orientation', () => {
+  it('uses orientation delta for yaw/pitch instead of gyro integration', () => {
+    const gyro = makeGyro()
+    const orientation = makeOrientation()
+    const onFrame = vi.fn()
+    const deps = makeDeps({ gyro, orientation, onFrame, enableMotionGate: false })
+    const pipeline = new GhostMotionPipeline(deps)
+
+    // First orientation reading sets reference
+    orientation.fire(180, 90, 0)
+    // Gyro fires but should only update omegaMag, not yaw/pitch
+    gyro.fire(0, 0.5, 0, 1000)
+    gyro.fire(0, 0.5, 0, 1100)
+    // Second orientation reading: 2° alpha change → ~2° yaw
+    orientation.fire(182, 90, 0)
+
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    const frame = onFrame.mock.calls[0][0]
+    // Should reflect orientation delta (~0.02 rad for first frame due to rate limiter),
+    // NOT gyro integration (which would give -0.05 rad)
+    expect(frame.yawRad).toBeGreaterThan(0)
+    expect(frame.yawRad).toBeLessThan(0.04)
+    pipeline.destroy()
+  })
+
+  it('uses getOrientation callback when no orientation sensor is provided', () => {
+    const gyro = makeGyro()
+    let sample: { alpha: number; beta: number; gamma: number } | null = { alpha: 180, beta: 90, gamma: 0 }
+    const onFrame = vi.fn()
+    const deps = makeDeps({
+      gyro,
+      onFrame,
+      enableMotionGate: false,
+      getOrientation: () => sample,
+    })
+    const pipeline = new GhostMotionPipeline(deps)
+
+    gyro.fire(0, 0, 0, 1000)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    sample = { alpha: 182, beta: 90, gamma: 0 }
+    gyro.fire(0, 0, 0, 1100)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+
+    const frame = onFrame.mock.calls.at(-1)![0]
+    expect(frame.yawRad).toBeGreaterThan(0)
+    expect(frame.yawRad).toBeLessThan(0.04)
+    pipeline.destroy()
+  })
+
+  it('gyro still provides omegaMag for motion gate when orientation is active', () => {
+    const gyro = makeGyro()
+    const orientation = makeOrientation()
+    const onFrame = vi.fn()
+    const deps = makeDeps({ gyro, orientation, onFrame, enableMotionGate: true })
+    const pipeline = new GhostMotionPipeline(deps)
+
+    orientation.fire(180, 90, 0)
+    // High gyro → omegaMag above threshold → gate should close
+    gyro.fire(0, 2.0, 0, 1000)
+    gyro.fire(0, 2.0, 0, 1100)
+    orientation.fire(182, 90, 0)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    const openFrames = onFrame.mock.calls.filter(([f]) => f.gateOpen)
+    expect(openFrames).toHaveLength(0)
+    pipeline.destroy()
+  })
+
+  it('falls back to gyro integration when orientation is not provided', () => {
+    const gyro = makeGyro()
+    const onFrame = vi.fn()
+    const deps = makeDeps({ gyro, onFrame, enableMotionGate: false })
+    const pipeline = new GhostMotionPipeline(deps)
+
+    gyro.fire(0, 0.5, 0, 1000)
+    gyro.fire(0, 0.5, 0, 1100)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    const frame = onFrame.mock.calls[0][0]
+    // Gyro integration: yaw = -(0.5 * 0.1) = -0.05
+    expect(frame.yawRad).toBeCloseTo(-0.05, 5)
+    pipeline.destroy()
+  })
+
+  it('reset() makes next orientation reading the new reference', () => {
+    const gyro = makeGyro()
+    const orientation = makeOrientation()
+    const onFrame = vi.fn()
+    const deps = makeDeps({ gyro, orientation, onFrame, enableMotionGate: false })
+    const pipeline = new GhostMotionPipeline(deps)
+
+    orientation.fire(180, 90, 0)
+    orientation.fire(185, 90, 0)
+    gyro.fire(0, 0, 0, 1000)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    expect(onFrame.mock.calls[0][0].yawRad).toBeGreaterThan(0)
+
+    pipeline.reset()
+    onFrame.mockClear()
+    // New reference at 185°
+    orientation.fire(185, 90, 0)
+    // Same angle as new reference → yaw should be 0
+    orientation.fire(185, 90, 0)
+    gyro.fire(0, 0, 0, 1200)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    expect(onFrame.mock.calls[0][0].yawRad).toBeCloseTo(0, 4)
+    pipeline.destroy()
+  })
+
+  it('destroy() stops orientation sensor', () => {
+    const gyro = makeGyro()
+    const orientation = makeOrientation()
+    const deps = makeDeps({ gyro, orientation, enableMotionGate: false })
+    const pipeline = new GhostMotionPipeline(deps)
+    pipeline.destroy()
+    expect(orientation.stop).toHaveBeenCalled()
+    expect(orientation.onreading).toBeNull()
+  })
+
+  it('skips orientation reading when alpha/beta/gamma are null', () => {
+    const gyro = makeGyro()
+    const orientation = makeOrientation()
+    const onFrame = vi.fn()
+    const deps = makeDeps({ gyro, orientation, onFrame, enableMotionGate: false })
+    const pipeline = new GhostMotionPipeline(deps)
+
+    // Fire with null values — should not initialize orientation state
+    orientation.alpha = null; orientation.beta = null; orientation.gamma = null
+    orientation.onreading?.()
+
+    // Gyro should still integrate (fallback path since orientation not initialized)
+    gyro.fire(0, 0.5, 0, 1000)
+    gyro.fire(0, 0.5, 0, 1100)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    const frame = onFrame.mock.calls[0][0]
+    expect(frame.yawRad).toBeCloseTo(-0.05, 5)
+    pipeline.destroy()
   })
 })

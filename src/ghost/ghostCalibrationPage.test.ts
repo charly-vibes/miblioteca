@@ -712,8 +712,8 @@ describe('GhostCalibrationPage — double integration prevention', () => {
 describe('GhostCalibrationPage — scan axis', () => {
   it('landscape orientation uses gx for horizontal scan', () => {
     const gyro = makeGyro(0.5, 0, 0)  // gx=0.5 rad/s, gy=0
-    const getOrientation = vi.fn().mockReturnValue('landscape-primary')
-    const page = new GhostCalibrationPage(container, { win: makeWin(800, 600), gyro, getOrientation })
+    const getScreenOrientation = vi.fn().mockReturnValue('landscape-primary')
+    const page = new GhostCalibrationPage(container, { win: makeWin(800, 600), gyro, getScreenOrientation })
 
     gyro.timestamp = 0; gyro.trigger()
     gyro.timestamp = 100; gyro.trigger()  // dt=0.1s, gx drives yaw in landscape
@@ -782,6 +782,11 @@ describe('GhostCalibrationPage — yaw clamping', () => {
 })
 
 describe('GhostCalibrationPage — ghost overlay', () => {
+  it('default snapshot capture returns null when canvas 2d is unavailable', () => {
+    const page = new GhostCalibrationPage(container, { win }) as unknown as { captureSnapshotFn: (video: HTMLVideoElement) => string | null; videoEl: HTMLVideoElement }
+    expect(page.captureSnapshotFn(page.videoEl)).toBeNull()
+  })
+
   it('ghost overlay element is hidden in idle phase', () => {
     new GhostCalibrationPage(container, { win })
     const overlay = container.querySelector<HTMLElement>('[data-testid="ghost-overlay"]')

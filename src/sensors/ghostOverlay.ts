@@ -85,8 +85,11 @@ export function feedGhostAccel(
   // Compute dt up front so both the ZUPT and integration branches share the same value.
   // First sample falls back to interval_ms (capped at 100ms). Subsequent samples cap at 500ms
   // to guard against phantom drift after the app is backgrounded — matching feedGhostGyro's lastT guard.
+  // Some browsers (Chromium desktop) report DeviceMotionEvent.interval in seconds instead of ms.
+  // Guard: if interval_ms < 1, assume it's in seconds and convert.
+  const intervalMs = sample.interval_ms < 1 ? sample.interval_ms * 1000 : sample.interval_ms
   const dt = state.lastAccelT === -Infinity
-    ? Math.min(sample.interval_ms / 1000, 0.1)
+    ? Math.min(intervalMs / 1000, 0.1)
     : Math.min((sample.t - state.lastAccelT) / 1000, 0.5)
   const maxTiltDeg = sample.gravitySubtracted ? 45 : 30
   if (Math.abs(sample.betaDeg - 90) > maxTiltDeg) {

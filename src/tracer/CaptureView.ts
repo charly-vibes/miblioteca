@@ -285,8 +285,9 @@ export class CaptureView {
       const stored = localStorage.getItem(LS_KEY)
       const distParam = new URLSearchParams(location.search).get('distance')
       const raw = stored ?? distParam
-      const distanceCm = raw ? Number(raw) : undefined
-      if (distanceCm !== undefined && Number.isFinite(distanceCm)) {
+      const parsed = raw ? Number(raw) : NaN
+      const distanceCm = Number.isFinite(parsed) ? parsed : undefined
+      if (distanceCm !== undefined) {
         localStorage.setItem(LS_KEY, String(distanceCm))
       }
       this.ghostOverlay = new GhostOverlayCanvas(this.viewfinder, {

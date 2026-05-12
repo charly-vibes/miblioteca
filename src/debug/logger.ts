@@ -39,6 +39,7 @@ export class DebugLogger {
   clear(): void {
     this.count = 0
     this.head = 0
+    this.seq = 0
   }
 
   export(): string {

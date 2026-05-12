@@ -108,6 +108,16 @@ describe('DebugLogger — enabled mode', () => {
     const { events } = JSON.parse(l.export())
     expect(events).toEqual([])
   })
+
+  it('clear() resets seq so next entry starts at seq=1', () => {
+    const l = new DebugLogger(enabled)
+    l.log('a', 1)
+    l.log('b', 2)
+    l.clear()
+    l.log('c', 3)
+    const { events } = JSON.parse(l.export())
+    expect(events[0].seq).toBe(1)
+  })
 })
 
 describe('DebugLogger — ring buffer overflow', () => {

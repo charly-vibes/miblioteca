@@ -301,6 +301,38 @@ describe('GhostOverlayCanvas setSnapshot reset', () => {
     expect(overlay.getDebugState().rotShiftPy).toBe(0)
     viewfinder.remove()
   })
+
+  it('WHEN setSnapshot called THEN canvas.style.transform resets to translate3d(0, 0, 0)', () => {
+    const gyro = makeGyro()
+    const { overlay, viewfinder, setTime, el } = makeFullOverlay({ gyro })
+    overlay.setSnapshot(makeBitmap(640, 480))
+
+    // Accumulate yaw so transform is non-zero
+    setTime(0); gyro.timestamp = 0; gyro.y = 0; gyro.fire()
+    setTime(200); gyro.timestamp = 200; gyro.y = -0.3; gyro.fire()
+
+    // Second setSnapshot must reset the transform immediately (no RAF tick needed)
+    overlay.setSnapshot(makeBitmap(640, 480))
+    expect(el.style.transform.replace(/0px/g, '0')).toBe('translate3d(0, 0, 0)')
+    viewfinder.remove()
+  })
+
+  it('WHEN setSnapshot called THEN openGate is invoked so overlay renders on next tick', () => {
+    const gyro = makeGyro()
+    const { overlay, viewfinder, tick, setTime, el } = makeFullOverlay({ gyro })
+    overlay.setSnapshot(makeBitmap(640, 480))
+
+    // Close the gate via a high-omegaMag reading (enableMotionGate is always true)
+    setTime(0); gyro.timestamp = 0; gyro.y = 0; gyro.fire(); tick()
+    setTime(100); gyro.timestamp = 100; gyro.z = 2.0; gyro.fire(); tick()
+    expect(el.hidden).toBe(true)
+
+    // setSnapshot must call openGate() so canvas becomes visible on next low-omegaMag tick
+    overlay.setSnapshot(makeBitmap(640, 480))
+    setTime(200); gyro.timestamp = 200; gyro.z = 0; gyro.y = 0.1; gyro.fire(); tick()
+    expect(el.hidden).toBe(false)
+    viewfinder.remove()
+  })
 })
 
 

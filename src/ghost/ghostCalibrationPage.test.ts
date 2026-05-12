@@ -376,6 +376,31 @@ describe('GhostCalibrationPage — REPOSITIONING phase', () => {
     expect(parseInt(rect.style.left, 10)).toBe(-140)
   })
 
+  it('moveDrag is a no-op in idle phase (non-repositioning)', () => {
+    const page = new GhostCalibrationPage(container, { win: makeWin(800, 600) })
+    const rect = container.querySelector<HTMLElement>('[data-testid="calibration-rectangle"]')!
+    const initialLeft = parseInt(rect.style.left, 10)
+    // Simulate mousedown + mousemove while in idle phase
+    rect.dispatchEvent(new MouseEvent('mousedown', { clientX: 400, clientY: 300, bubbles: true }))
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 700, clientY: 300, bubbles: true }))
+    expect(parseInt(rect.style.left, 10)).toBe(initialLeft)
+    expect(page.getPhase()).toBe('idle')
+  })
+
+  it('stopDrag (mouseup) nullifies drag state so subsequent mousemoves are no-ops', () => {
+    enterRepositioning()
+    const rect = container.querySelector<HTMLElement>('[data-testid="calibration-rectangle"]')!
+    rect.dispatchEvent(new MouseEvent('mousedown', { clientX: 400, clientY: 300, bubbles: true }))
+    // Move while dragging: rect should move
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 500, clientY: 300, bubbles: true }))
+    const leftAfterDrag = parseInt(rect.style.left, 10)
+    // Release drag
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+    // Move again after release: rect must not move
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 900, clientY: 300, bubbles: true }))
+    expect(parseInt(rect.style.left, 10)).toBe(leftAfterDrag)
+  })
+
   it('Confirm records groundTruthPosition, deltaPixels, and transitions to CAPTURED', () => {
     const page = enterRepositioning()
     page.getConfirmBtn().click()

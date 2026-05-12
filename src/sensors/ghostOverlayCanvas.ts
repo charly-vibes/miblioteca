@@ -268,6 +268,12 @@ export class GhostOverlayCanvas {
     }
   }
 
+  setWorkingDistance(cm: number) {
+    if (!Number.isFinite(cm)) return
+    this.workingDistanceCm = Math.max(WORKING_DISTANCE_MIN_CM, Math.min(WORKING_DISTANCE_MAX_CM, cm))
+    this.deps.logger.log('ghost:working-distance-updated', { workingDistanceCm: this.workingDistanceCm })
+  }
+
   // Call when the camera session ends or the view unmounts.
   destroy() {
     this.pipeline.destroy()

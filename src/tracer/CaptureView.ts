@@ -22,6 +22,8 @@ import { qualityWarnings, qualityChecksFromMetrics, exposureFractions } from './
 import type { QualityWarning } from './qualityChecks'
 import { createLocalStorageTracerBulletStore } from './storage'
 import { uploadCapture } from './upload'
+import { DistanceCalibrationOverlay } from './DistanceCalibrationOverlay'
+import { DEFAULT_HFOV_DEG } from '../sensors/ghostOverlay'
 
 export type CaptureSnapshotResult = {
   imageBlob: Blob
@@ -104,6 +106,7 @@ export class CaptureView {
   private readonly backBtn: HTMLButtonElement | null
   private bundleExportPanel: BundleExportPanel | null = null
   private debugPanel: DebugPanel | null = null
+  private calibrationOverlay: DistanceCalibrationOverlay | null = null
   private onVisibilityChange: (() => void) | null = null
   private onUnhandledRejection: ((ev: PromiseRejectionEvent) => void) | null = null
   private onWindowError: ((ev: ErrorEvent) => void) | null = null
@@ -215,6 +218,31 @@ export class CaptureView {
     window.addEventListener('unhandledrejection', this.onUnhandledRejection)
     window.addEventListener('error', this.onWindowError)
     this.debugPanel = new DebugPanel(document.body, this.logger)
+
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.setAttribute('data-testid', 'calibrate-distance-btn')
+    btn.textContent = '⚙ Calibrate distance'
+    btn.addEventListener('click', () => this.openCalibrationOverlay())
+    this.viewfinder.appendChild(btn)
+    void btn
+  }
+
+  private openCalibrationOverlay() {
+    if (this.calibrationOverlay) return
+    const LS_KEY = 'miblioteca.workingDistanceCm'
+    this.calibrationOverlay = new DistanceCalibrationOverlay(this.viewfinder, {
+      viewfinderWidthPx: this.viewfinder.clientWidth || 640,
+      hFovDeg: DEFAULT_HFOV_DEG,
+      onDone: (distanceCm) => {
+        this.calibrationOverlay = null
+        localStorage.setItem(LS_KEY, String(distanceCm))
+        this.ghostOverlay?.setWorkingDistance(distanceCm)
+      },
+      onCancel: () => {
+        this.calibrationOverlay = null
+      },
+    })
   }
 
   private async init() {
@@ -654,6 +682,7 @@ export class CaptureView {
     if (this.onVisibilityChange) document.removeEventListener('visibilitychange', this.onVisibilityChange)
     if (this.onUnhandledRejection) window.removeEventListener('unhandledrejection', this.onUnhandledRejection)
     if (this.onWindowError) window.removeEventListener('error', this.onWindowError)
+    this.calibrationOverlay?.destroy()
     this.debugPanel?.destroy()
     this.thumbnailUrls.forEach((u) => URL.revokeObjectURL(u))
     this.thumbnailUrls = []

@@ -195,4 +195,41 @@ describe('DeviceMotionLinearAccelAdapter', () => {
     win.dispatch('devicemotion', { acceleration: { x: 0, y: 0 }, interval: 33 })
     expect(adapter.interval).toBe(33)
   })
+
+  it('falls back to accelerationIncludingGravity when acceleration is null, sets usingRawAccel=true', () => {
+    adapter.start()
+    win.dispatch('devicemotion', {
+      acceleration: null,
+      accelerationIncludingGravity: { x: 1.2, y: -0.8 },
+      interval: 20,
+    })
+    expect(adapter.x).toBe(1.2)
+    expect(adapter.y).toBe(-0.8)
+    expect(adapter.usingRawAccel).toBe(true)
+    expect(adapter.gravitySubtracted).toBe(false)
+    expect(adapter.interval).toBe(20)
+  })
+
+  it('fires onreading on accelerationIncludingGravity fallback', () => {
+    const cb = vi.fn()
+    adapter.onreading = cb
+    adapter.start()
+    win.dispatch('devicemotion', {
+      acceleration: null,
+      accelerationIncludingGravity: { x: 0.5, y: 0.1 },
+      interval: 16,
+    })
+    expect(cb).toHaveBeenCalledOnce()
+  })
+
+  it('sets usingRawAccel=false when hardware gravity subtraction is available', () => {
+    adapter.start()
+    win.dispatch('devicemotion', {
+      acceleration: { x: 0.1, y: 0.2 },
+      accelerationIncludingGravity: { x: 0.1, y: 9.8 },
+      interval: 16,
+    })
+    expect(adapter.usingRawAccel).toBe(false)
+    expect(adapter.gravitySubtracted).toBe(true)
+  })
 })

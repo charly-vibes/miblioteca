@@ -32,6 +32,27 @@ export function laplacianVariance(imageData: ImageData): number {
   return n === 0 ? 0 : m2 / n
 }
 
+export function downscaleImageData(src: ImageData, dstW: number, dstH: number): ImageData {
+  if (src.width <= dstW && src.height <= dstH) return src
+  const { data: s, width: sw, height: sh } = src
+  const out = new Uint8ClampedArray(dstW * dstH * 4)
+  const xRatio = sw / dstW
+  const yRatio = sh / dstH
+  for (let dy = 0; dy < dstH; dy++) {
+    const sy = Math.floor(dy * yRatio)
+    for (let dx = 0; dx < dstW; dx++) {
+      const sx = Math.floor(dx * xRatio)
+      const si = (sy * sw + sx) * 4
+      const di = (dy * dstW + dx) * 4
+      out[di] = s[si]
+      out[di + 1] = s[si + 1]
+      out[di + 2] = s[si + 2]
+      out[di + 3] = s[si + 3]
+    }
+  }
+  return { data: out, width: dstW, height: dstH, colorSpace: src.colorSpace } as ImageData
+}
+
 export type MakeThumbnailDeps = {
   createImageBitmap?: (blob: Blob) => Promise<{ width: number; height: number; close(): void }>
   createOffscreenCanvas?: (w: number, h: number) => {

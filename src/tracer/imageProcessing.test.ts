@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { laplacianVariance, makeThumbnail } from './imageProcessing'
+import { laplacianVariance, makeThumbnail, downscaleImageData } from './imageProcessing'
 import type { MakeThumbnailDeps } from './imageProcessing'
 
 // jsdom lacks ImageData constructor without the 'canvas' package; create a compatible POJO
@@ -93,6 +93,33 @@ describe('laplacianVariance in-place accumulation', () => {
     const data = new Uint8ClampedArray(320 * 240 * 4).fill(128)
     const img = { data, width: 320, height: 240, colorSpace: 'srgb' } as ImageData
     expect(typeof laplacianVariance(img)).toBe('number')
+  })
+})
+
+describe('downscaleImageData', () => {
+  it('nearest-neighbor 2× downscale of a 640×480 checkerboard yields uniform output (LV=0)', () => {
+    const w = 640, h = 480
+    const data = new Uint8ClampedArray(w * h * 4)
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const v = (x + y) % 2 === 0 ? 255 : 0
+        const i = (y * w + x) * 4
+        data[i] = data[i + 1] = data[i + 2] = v
+        data[i + 3] = 255
+      }
+    }
+    const src = { data, width: w, height: h, colorSpace: 'srgb' } as ImageData
+    const dst = downscaleImageData(src, 320, 240)
+    expect(dst.width).toBe(320)
+    expect(dst.height).toBe(240)
+    expect(laplacianVariance(dst)).toBe(0)
+  })
+
+  it('does not upscale — returns original dimensions when source is already smaller than target', () => {
+    const src = makeImageData(160, 120, [100, 100, 100, 255])
+    const dst = downscaleImageData(src, 320, 240)
+    expect(dst.width).toBe(160)
+    expect(dst.height).toBe(120)
   })
 })
 

@@ -54,6 +54,19 @@ describe('runQualityChecks', () => {
     expect(runQualityChecks(img, steadySensor).underexposedFraction).toBeCloseTo(0.2)
   })
 
+  it('downscales input to 320×240 before computing laplacianVariance for large images', () => {
+    // 640×480 checkerboard: high LV at full resolution.
+    // Nearest-neighbor 2× downscale samples only even (x+y) src pixels →
+    // all same color → LV drops to 0.
+    const w = 640, h = 480
+    const img = makeImageData(w, h, (i) => {
+      const x = i % w
+      const y = Math.floor(i / w)
+      return (x + y) % 2 === 0 ? [255, 255, 255, 255] : [0, 0, 0, 255]
+    })
+    expect(runQualityChecks(img, steadySensor).laplacianVariance).toBe(0)
+  })
+
   it('returns zero fractions for empty image data', () => {
     const img = { data: new Uint8ClampedArray(0), width: 0, height: 0 } as unknown as ImageData
     const result = runQualityChecks(img, steadySensor)

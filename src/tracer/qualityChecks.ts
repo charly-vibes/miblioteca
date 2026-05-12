@@ -1,4 +1,4 @@
-import { laplacianVariance } from './imageProcessing'
+import { laplacianVariance, downscaleImageData } from './imageProcessing'
 import type { CaptureRecord } from './capture'
 
 export type QualityChecks = CaptureRecord['qualityChecks']
@@ -21,7 +21,7 @@ export const THRESHOLDS = {
 } as const
 
 export function runQualityChecks(imageData: ImageData, sensor: QualitySensorState): QualityChecks {
-  const lv = laplacianVariance(imageData)
+  const lv = laplacianVariance(downscaleImageData(imageData, 320, 240))
   const { overexposed, underexposed, meanLuma } = exposureFractions(imageData)
   return {
     laplacianVariance: lv,

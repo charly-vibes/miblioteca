@@ -1,3 +1,5 @@
+export const THUMBNAIL_MAX_EDGE_PX = 640
+
 /**
  * Blur score: variance of the 3×3 Laplacian response on the luma channel.
  * Higher = sharper. Near-zero = blurry.
@@ -63,7 +65,7 @@ export type MakeThumbnailDeps = {
 
 export async function makeThumbnail(
   blob: Blob,
-  maxEdgePx = 640,
+  maxEdgePx = THUMBNAIL_MAX_EDGE_PX,
   deps: MakeThumbnailDeps = {}
 ): Promise<Blob> {
   const createBitmap = deps.createImageBitmap ?? globalThis.createImageBitmap.bind(globalThis)

@@ -15,7 +15,7 @@ import { feedAccel, initialSteadinessState } from '../sensors/steadiness'
 import type { SteadinessState } from '../sensors/steadiness'
 import { bootstrapTracerBullet, type BootstrapResult } from './bootstrap'
 import { createCaptureRecord } from './capture'
-import { makeThumbnail, laplacianVariance } from './imageProcessing'
+import { makeThumbnail, laplacianVariance, THUMBNAIL_MAX_EDGE_PX } from './imageProcessing'
 import { createMockScanFetch } from './mockScanApi'
 import { getAllRecords, loadThumbnail, openShelfwalkDb, saveCapture } from './persistence'
 import { qualityWarnings, qualityChecksFromMetrics, exposureFractions } from './qualityChecks'
@@ -464,8 +464,7 @@ export class CaptureView {
     try {
       const { session, scan } = this.bootstrapState.result
       const snapshot = await (this.opts.captureSnapshot ?? (() => this.captureFromLiveVideo()))()
-      const MAX_THUMB_EDGE = 640
-      const thumbScale = Math.min(MAX_THUMB_EDGE / snapshot.width, MAX_THUMB_EDGE / snapshot.height, 1)
+      const thumbScale = Math.min(THUMBNAIL_MAX_EDGE_PX / snapshot.width, THUMBNAIL_MAX_EDGE_PX / snapshot.height, 1)
       const thumbnailWidth = Math.max(1, Math.round(snapshot.width * thumbScale))
       const thumbnailHeight = Math.max(1, Math.round(snapshot.height * thumbScale))
 

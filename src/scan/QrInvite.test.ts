@@ -20,8 +20,10 @@ describe('createQrInvite', () => {
   })
 
   it('encodes joinToken in the QR url', () => {
-    const el = createQrInvite({ scan: SCAN, baseUrl: 'https://example.com/miblioteca' })
-    expect(el.querySelector('svg')).not.toBeNull()
+    const el1 = createQrInvite({ scan: SCAN, baseUrl: 'https://example.com' })
+    const el2 = createQrInvite({ scan: { ...SCAN, joinToken: 'different-token' }, baseUrl: 'https://example.com' })
+    // Different joinTokens must produce different QR matrices — proves the token is encoded
+    expect(el1.querySelector('svg')!.outerHTML).not.toBe(el2.querySelector('svg')!.outerHTML)
   })
 
   it('applies a custom size', () => {

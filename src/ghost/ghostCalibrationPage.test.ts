@@ -510,6 +510,25 @@ describe('GhostCalibrationPage — CAPTURED phase', () => {
     expect(cycle2.startPosition?.y).toBeCloseTo(draggedTop  + 240 / 2, 0)
   })
 
+  it('transitionToIdle keeps previous rectInitTop when style.top is empty (NaN guard)', () => {
+    const w = makeWin(800, 600)
+    const page = new GhostCalibrationPage(container, { win: w })
+    page.getCenterDot().click()
+    ;(container.querySelector<HTMLElement>('[data-testid="stop-btn"]'))!.click()
+
+    const rect = container.querySelector<HTMLElement>('[data-testid="calibration-rectangle"]')!
+    // rectInitTop = Math.round((600 - 240) / 2) = 180
+    const originalTop = rect.style.top  // '180px'
+
+    rect.style.top = ''  // force parseInt to return NaN
+
+    page.getConfirmBtn().click()
+    page.getNextCycleBtn().click()
+
+    // NaN guard must have kept rectInitTop at 180; transitionToIdle resets rect to that
+    expect(rect.style.top).toBe(originalTop)
+  })
+
   it('Next Cycle allows starting a second recording', () => {
     const page = enterCaptured()
     page.getNextCycleBtn().click()

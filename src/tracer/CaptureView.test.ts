@@ -522,6 +522,74 @@ describe('CaptureView — displacement tracking', () => {
   })
 })
 
+// ── Tilt sanity warning ───────────────────────────────────────────────────────
+
+describe('CaptureView — tilt sanity warning (spec: add-distance-config)', () => {
+  afterEach(() => { vi.useRealTimers() })
+
+  function fireOrientation(beta: number) {
+    const ev = new Event('deviceorientation')
+    Object.defineProperty(ev, 'beta', { value: beta })
+    window.dispatchEvent(ev)
+  }
+
+  it('GIVEN camera open and phone tilted >30° off vertical for >1s THEN tilt warning appears after first capture', async () => {
+    vi.useFakeTimers()
+    mockGetUserMedia.mockResolvedValue(makeFakeStream())
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+
+    new CaptureView(container, {
+      captureSnapshot: mockCaptureSnapshot,
+      uploadFetch: mockUploadFetch(200),
+    })
+    await vi.waitFor(() => screen.getByRole('button', { name: /open camera/i }))
+    await user.click(screen.getByRole('button', { name: /open camera/i }))
+    await vi.waitFor(() => screen.getByRole('button', { name: /take photo/i }))
+
+    // First capture (suppresses tilt warning before first capture)
+    await user.click(screen.getByRole('button', { name: /take photo/i }))
+    await vi.waitFor(() => screen.getByRole('button', { name: /take photo/i }))
+
+    // Fire deviceorientation with beta=50° (|50-90|=40° > 30°)
+    fireOrientation(50)
+
+    // No warning yet — debounce 1s
+    expect(container.querySelector('[data-tilt-warning]')).toBeNull()
+
+    // Advance 1.1s
+    vi.advanceTimersByTime(1100)
+
+    await vi.waitFor(() => {
+      expect(container.querySelector('[data-tilt-warning]')).not.toBeNull()
+    })
+  })
+
+  it('GIVEN phone tilted WHEN brought upright THEN tilt warning disappears', async () => {
+    vi.useFakeTimers()
+    mockGetUserMedia.mockResolvedValue(makeFakeStream())
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+
+    new CaptureView(container, {
+      captureSnapshot: mockCaptureSnapshot,
+      uploadFetch: mockUploadFetch(200),
+    })
+    await vi.waitFor(() => screen.getByRole('button', { name: /open camera/i }))
+    await user.click(screen.getByRole('button', { name: /open camera/i }))
+    await vi.waitFor(() => screen.getByRole('button', { name: /take photo/i }))
+    await user.click(screen.getByRole('button', { name: /take photo/i }))
+    await vi.waitFor(() => screen.getByRole('button', { name: /take photo/i }))
+
+    // Tilt
+    fireOrientation(50)
+    vi.advanceTimersByTime(1100)
+    await vi.waitFor(() => expect(container.querySelector('[data-tilt-warning]')).not.toBeNull())
+
+    // Bring upright
+    fireOrientation(88)
+    await vi.waitFor(() => expect(container.querySelector('[data-tilt-warning]')).toBeNull())
+  })
+})
+
 // ── Captures gallery ─────────────────────────────────────────────────────────
 
 describe('CaptureView — captures gallery', () => {

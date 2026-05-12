@@ -84,6 +84,9 @@ export class CaptureView {
   private steadinessState: SteadinessState = initialSteadinessState()
   private activeWarnings: QualityWarning[] = []
   private pollId: ReturnType<typeof setInterval> | null = null
+  private tiltWarnTimer: ReturnType<typeof setTimeout> | null = null
+  private tiltWarnEl: HTMLDivElement | null = null
+  private onDeviceOrientation: ((ev: Event) => void) | null = null
 
   private readonly root: HTMLDivElement
   private readonly viewfinder: HTMLDivElement
@@ -259,6 +262,7 @@ export class CaptureView {
     this.ghostOverlay = null
     this.stopQualityPoll()
     this.stopAccel()
+    this.stopTiltWarning()
 
     this.cameraState = s
     if (s.kind !== 'granted') {
@@ -268,6 +272,7 @@ export class CaptureView {
       this.video.srcObject = s.stream
       this.startAccel()
       this.startQualityPoll()
+      this.startTiltWarning()
     }
     // render() must run before GhostOverlayCanvas is created: the first render with
     // cameraReady=true calls replaceChildren on the viewfinder, which would discard
@@ -314,6 +319,43 @@ export class CaptureView {
     accel.onreading = null
     accel.stop()
     this.steadinessState = initialSteadinessState()
+  }
+
+  private startTiltWarning() {
+    this.onDeviceOrientation = (ev: Event) => {
+      const beta = (ev as DeviceOrientationEvent).beta
+      const tiltedOff = beta !== null && Math.abs(beta - 90) > 30
+      if (tiltedOff) {
+        if (!this.tiltWarnTimer) {
+          this.tiltWarnTimer = setTimeout(() => {
+            // Suppress before first capture
+            if (this.captureIndex === 0) return
+            if (!this.tiltWarnEl) {
+              this.tiltWarnEl = document.createElement('div')
+              this.tiltWarnEl.className = 'camera-tilt-warning'
+              this.tiltWarnEl.dataset.tiltWarning = 'true'
+              this.tiltWarnEl.textContent = 'Hold phone upright for best alignment'
+              this.root.append(this.tiltWarnEl)
+            }
+          }, 1000)
+        }
+      } else {
+        if (this.tiltWarnTimer) { clearTimeout(this.tiltWarnTimer); this.tiltWarnTimer = null }
+        this.tiltWarnEl?.remove()
+        this.tiltWarnEl = null
+      }
+    }
+    window.addEventListener('deviceorientation', this.onDeviceOrientation)
+  }
+
+  private stopTiltWarning() {
+    if (this.onDeviceOrientation) {
+      window.removeEventListener('deviceorientation', this.onDeviceOrientation)
+      this.onDeviceOrientation = null
+    }
+    if (this.tiltWarnTimer) { clearTimeout(this.tiltWarnTimer); this.tiltWarnTimer = null }
+    this.tiltWarnEl?.remove()
+    this.tiltWarnEl = null
   }
 
   private computeTiltDeg(): number {
@@ -611,6 +653,7 @@ export class CaptureView {
     this.ghostOverlay?.destroy()
     this.stopQualityPoll()
     this.stopAccel()
+    this.stopTiltWarning()
     this.bundleExportPanel?.destroy()
     if (this.onVisibilityChange) document.removeEventListener('visibilitychange', this.onVisibilityChange)
     if (this.onUnhandledRejection) window.removeEventListener('unhandledrejection', this.onUnhandledRejection)

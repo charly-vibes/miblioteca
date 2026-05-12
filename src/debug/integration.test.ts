@@ -44,14 +44,17 @@ describe('camera:init-result', () => {
     const stream = { getVideoTracks: () => [track] } as unknown as MediaStream
     const deps: CameraInitDeps = { getUserMedia: vi.fn().mockResolvedValue(stream) }
     await initCamera(deps)
-    expect(hasEvent('camera:init-result')).toBe(true)
+    expect(hasEventWithPayload('camera:init-result', (p) => {
+      const payload = p as { ok: boolean; facingMode?: string; deviceId?: string }
+      return payload.ok === true && payload.facingMode === 'environment' && payload.deviceId === 'cam-1'
+    })).toBe(true)
   })
 })
 
 // ── sensor:probe-result + sensor:permission-result ───────────────────────────
 
 describe('sensor:probe-result + sensor:permission-result', () => {
-  it('logs sensor:probe-result when generic sensor is available', async () => {
+  it('logs sensor:probe-result with status=granted and via=generic-sensor when generic sensor is available', async () => {
     const deps: SensorProbeDeps = {
       hasAccelerometer: true,
       hasGyroscope: false,
@@ -60,7 +63,10 @@ describe('sensor:probe-result + sensor:permission-result', () => {
       hasDeviceMotionEvent: false,
     }
     await probeSensors(deps)
-    expect(hasEvent('sensor:probe-result')).toBe(true)
+    expect(hasEventWithPayload('sensor:probe-result', (p) => {
+      const payload = p as { status: string; via?: string }
+      return payload.status === 'granted' && payload.via === 'generic-sensor'
+    })).toBe(true)
   })
 
   it('logs sensor:permission-requested, sensor:permission-result, and sensor:probe-result on iOS permission path', async () => {

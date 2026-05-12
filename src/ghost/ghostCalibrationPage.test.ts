@@ -911,3 +911,46 @@ describe('GhostCalibrationPage — cycle snapshots', () => {
     expect(payload.cycles[0].endSnapshot).toBe('data:image/jpeg;base64,END')
   })
 })
+
+// RED: helper method extraction tests — these fail until constructor is refactored
+describe('GhostCalibrationPage — builder helper methods', () => {
+  it('buildBaseElements creates video, warnBanner, and telemetry elements', () => {
+    const page = new GhostCalibrationPage(container, { win }) as unknown as Record<string, unknown>
+    expect(typeof page['buildBaseElements']).toBe('function')
+  })
+
+  it('buildRectangle creates rectangle and center dot elements', () => {
+    const page = new GhostCalibrationPage(container, { win }) as unknown as Record<string, unknown>
+    expect(typeof page['buildRectangle']).toBe('function')
+  })
+
+  it('buildRecordingUI creates hint, indicator, stop and confirm buttons', () => {
+    const page = new GhostCalibrationPage(container, { win }) as unknown as Record<string, unknown>
+    expect(typeof page['buildRecordingUI']).toBe('function')
+  })
+
+  it('buildSummaryUI creates summary panel, export and next-cycle buttons', () => {
+    const page = new GhostCalibrationPage(container, { win }) as unknown as Record<string, unknown>
+    expect(typeof page['buildSummaryUI']).toBe('function')
+  })
+
+  it('buildOverlayLayer creates the fixed overlay container div', () => {
+    const page = new GhostCalibrationPage(container, { win }) as unknown as Record<string, unknown>
+    expect(typeof page['buildOverlayLayer']).toBe('function')
+  })
+
+  it('wireDragEvents attaches mousemove/mouseup/touchmove/touchend to document', () => {
+    const page = new GhostCalibrationPage(container, { win }) as unknown as Record<string, unknown>
+    expect(typeof page['wireDragEvents']).toBe('function')
+  })
+
+  it('wireSensors attaches deviceorientation and devicemotion to win', () => {
+    const page = new GhostCalibrationPage(container, { win }) as unknown as Record<string, unknown>
+    expect(typeof page['wireSensors']).toBe('function')
+  })
+
+  it('wirePipeline creates the GhostMotionPipeline and returns it', () => {
+    const page = new GhostCalibrationPage(container, { win }) as unknown as Record<string, unknown>
+    expect(typeof page['wirePipeline']).toBe('function')
+  })
+})

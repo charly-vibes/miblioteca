@@ -76,19 +76,19 @@ function msToMMSS(ms: number): string {
 }
 
 export class GhostCalibrationPage {
-  private readonly videoEl: HTMLVideoElement
-  private readonly warnBannerEl: HTMLElement
-  private readonly telemetryEl: HTMLElement
-  private readonly rectangleEl: HTMLElement
-  private readonly centerDotEl: HTMLElement
-  private readonly hintEl: HTMLElement
-  private readonly recordingIndicatorEl: HTMLElement
-  private readonly timerSpanEl: HTMLSpanElement
-  private readonly stopBtnEl: HTMLButtonElement
-  private readonly confirmBtnEl: HTMLButtonElement
-  private readonly summaryPanelEl: HTMLElement
-  private readonly exportBtnEl: HTMLButtonElement
-  private readonly nextCycleBtnEl: HTMLButtonElement
+  private videoEl!: HTMLVideoElement
+  private warnBannerEl!: HTMLElement
+  private telemetryEl!: HTMLElement
+  private rectangleEl!: HTMLElement
+  private centerDotEl!: HTMLElement
+  private hintEl!: HTMLElement
+  private recordingIndicatorEl!: HTMLElement
+  private timerSpanEl!: HTMLSpanElement
+  private stopBtnEl!: HTMLButtonElement
+  private confirmBtnEl!: HTMLButtonElement
+  private summaryPanelEl!: HTMLElement
+  private exportBtnEl!: HTMLButtonElement
+  private nextCycleBtnEl!: HTMLButtonElement
 
   private phase: Phase = 'idle'
   private latestFrame: GhostFrame | null = null
@@ -96,8 +96,8 @@ export class GhostCalibrationPage {
   private destroyed = false
 
   private sensorVals = { gx: 0, gy: 0, gz: 0, ax: 0, ay: 0, az: 0 }
-  private readonly motionHandler: EventListenerOrEventListenerObject
-  private readonly orientationHandler: EventListenerOrEventListenerObject
+  private motionHandler!: EventListenerOrEventListenerObject
+  private orientationHandler!: EventListenerOrEventListenerObject
   private readonly win: WindowLike
 
   private readonly doc: Document
@@ -112,7 +112,7 @@ export class GhostCalibrationPage {
 
   private cycles: CalibrationCycle[] = []
   private currentCycle: Partial<CalibrationCycle> | null = null
-  private readonly pipeline: GhostMotionPipeline
+  private pipeline!: GhostMotionPipeline
   private lastYawRad = 0
   private lastPitchRad = 0
   private recordingStartedAt = 0
@@ -120,17 +120,17 @@ export class GhostCalibrationPage {
   private dragStartTouch: { clientX: number; clientY: number } | null = null
   private dragStartRect = { left: 0, top: 0 }
 
-  private readonly onDocMouseMove: (e: MouseEvent) => void
-  private readonly onDocMouseUp: () => void
-  private readonly onDocTouchMove: (e: Event) => void
-  private readonly onDocTouchEnd: () => void
+  private onDocMouseMove!: (e: MouseEvent) => void
+  private onDocMouseUp!: () => void
+  private onDocTouchMove!: (e: Event) => void
+  private onDocTouchEnd!: () => void
 
-  private rectInitLeft: number
-  private rectInitTop: number
-  private readonly rectW: number
-  private readonly rectH: number
+  private rectInitLeft!: number
+  private rectInitTop!: number
+  private rectW!: number
+  private rectH!: number
 
-  private readonly ghostOverlayEl: HTMLImageElement
+  private ghostOverlayEl!: HTMLImageElement
   private readonly captureSnapshotFn: (video: HTMLVideoElement) => string | null
 
   constructor(
@@ -152,9 +152,7 @@ export class GhostCalibrationPage {
       a.click()
       URL.revokeObjectURL(a.href)
     })
-
     this.getOrientation = deps.getOrientation ?? (() => (typeof screen !== 'undefined' && screen.orientation?.type) || 'portrait-primary')
-
     this.captureSnapshotFn = deps.captureSnapshot ?? ((video) => {
       try {
         const c = document.createElement('canvas')
@@ -169,6 +167,22 @@ export class GhostCalibrationPage {
     this.doc = doc
     injectPulseStyle(doc)
 
+    const vw = this.win.innerWidth || FALLBACK_VW
+    const vh = this.win.innerHeight || FALLBACK_VH
+
+    this.buildBaseElements(doc)
+    this.buildRectangle(doc, vw, vh)
+    this.buildRecordingUI(doc, vh)
+    this.buildSummaryUI(doc)
+    this.buildOverlayLayer(doc)
+    this.wireDragEvents(doc)
+    this.wireSensors()
+    this.wirePipeline()
+
+    void this.startCamera(deps.getUserMedia)
+  }
+
+  private buildBaseElements(doc: Document): void {
     this.videoEl = doc.createElement('video')
     this.videoEl.setAttribute('playsinline', '')
     this.videoEl.setAttribute('autoplay', '')
@@ -200,9 +214,9 @@ export class GhostCalibrationPage {
       lineHeight: '1.4', whiteSpace: 'pre', zIndex: '5',
     })
     this.renderTelemetry()
+  }
 
-    const vw = this.win.innerWidth || FALLBACK_VW
-    const vh = this.win.innerHeight || FALLBACK_VH
+  private buildRectangle(doc: Document, vw: number, vh: number): void {
     const rw = Math.round(vw * RECT_W_RATIO)
     const rh = Math.round(vh * RECT_H_RATIO)
     const rx = Math.round((vw - rw) / 2)
@@ -246,7 +260,9 @@ export class GhostCalibrationPage {
     this.centerDotEl.addEventListener('click', () => this.onCenterTap())
     this.centerDotEl.addEventListener('touchend', (e) => { e.preventDefault(); this.onCenterTap() })
     this.rectangleEl.appendChild(this.centerDotEl)
+  }
 
+  private buildRecordingUI(doc: Document, vh: number): void {
     this.hintEl = doc.createElement('div')
     this.hintEl.setAttribute('data-testid', 'hint-text')
     this.hintEl.textContent = 'TAP CENTER TO START'
@@ -302,7 +318,9 @@ export class GhostCalibrationPage {
       fontFamily: 'sans-serif', fontSize: '1rem', cursor: 'pointer', zIndex: '6',
     })
     this.confirmBtnEl.addEventListener('click', () => this.onConfirm())
+  }
 
+  private buildSummaryUI(doc: Document): void {
     this.summaryPanelEl = doc.createElement('div')
     this.summaryPanelEl.setAttribute('data-testid', 'summary-panel')
     this.summaryPanelEl.hidden = true
@@ -339,7 +357,9 @@ export class GhostCalibrationPage {
     })
     this.nextCycleBtnEl.addEventListener('click', () => this.transitionToIdle())
     this.exportBtnEl.addEventListener('click', () => this.exportJson())
+  }
 
+  private buildOverlayLayer(doc: Document): void {
     this.ghostOverlayEl = doc.createElement('img')
     this.ghostOverlayEl.setAttribute('data-testid', 'ghost-overlay')
     this.ghostOverlayEl.alt = ''
@@ -367,6 +387,7 @@ export class GhostCalibrationPage {
       zIndex: '10', pointerEvents: 'none', padding: '2px 0',
     })
 
+    const root = this.root
     root.appendChild(this.videoEl)
     root.appendChild(this.ghostOverlayEl)
     root.appendChild(this.warnBannerEl)
@@ -380,6 +401,9 @@ export class GhostCalibrationPage {
     root.appendChild(this.exportBtnEl)
     root.appendChild(this.nextCycleBtnEl)
 
+  }
+
+  private wireDragEvents(doc: Document): void {
     this.onDocMouseMove = (e: MouseEvent) => this.moveDrag(e.clientX, e.clientY)
     this.onDocMouseUp = () => this.stopDrag()
     this.onDocTouchMove = (e: Event) => {
@@ -393,7 +417,9 @@ export class GhostCalibrationPage {
     doc.addEventListener('mouseup', this.onDocMouseUp)
     doc.addEventListener('touchmove', this.onDocTouchMove, { passive: false })
     doc.addEventListener('touchend', this.onDocTouchEnd)
+  }
 
+  private wireSensors(): void {
     this.orientationHandler = (ev: Event) => {
       const e = ev as DeviceOrientationEvent
       this.betaDeg = e.beta
@@ -433,7 +459,9 @@ export class GhostCalibrationPage {
       this.renderTelemetry()
     }
     this.win.addEventListener('devicemotion', this.motionHandler)
+  }
 
+  private wirePipeline(): void {
     // Pipeline handles gyro integration and RAF-driven rendering (enableMotionGate: false for continuous recording).
     this.pipeline = new GhostMotionPipeline({
       gyro: this.gyro,
@@ -476,8 +504,6 @@ export class GhostCalibrationPage {
         this.renderTelemetry()
       }
     }
-
-    void this.startCamera(deps.getUserMedia)
   }
 
   private onPipelineFrame(frame: GhostFrame): void {
@@ -748,13 +774,13 @@ export class GhostCalibrationPage {
 
   destroy(): void {
     this.destroyed = true
-    this.pipeline.destroy()
-    this.win.removeEventListener('devicemotion', this.motionHandler)
-    this.win.removeEventListener('deviceorientation', this.orientationHandler)
-    this.doc.removeEventListener('mousemove', this.onDocMouseMove)
-    this.doc.removeEventListener('mouseup', this.onDocMouseUp)
-    this.doc.removeEventListener('touchmove', this.onDocTouchMove)
-    this.doc.removeEventListener('touchend', this.onDocTouchEnd)
+    this.pipeline?.destroy()
+    if (this.motionHandler) this.win.removeEventListener('devicemotion', this.motionHandler)
+    if (this.orientationHandler) this.win.removeEventListener('deviceorientation', this.orientationHandler)
+    if (this.onDocMouseMove) this.doc.removeEventListener('mousemove', this.onDocMouseMove)
+    if (this.onDocMouseUp) this.doc.removeEventListener('mouseup', this.onDocMouseUp)
+    if (this.onDocTouchMove) this.doc.removeEventListener('touchmove', this.onDocTouchMove)
+    if (this.onDocTouchEnd) this.doc.removeEventListener('touchend', this.onDocTouchEnd)
     this.stream?.getTracks().forEach(t => t.stop())
     this.root.replaceChildren()
   }

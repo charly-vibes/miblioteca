@@ -61,18 +61,21 @@ describe('shutter', () => {
     expect(saved?.uploadState).toBe('pending')
   })
 
-  it('saves the image blob to IDB', async () => {
+  it('saves the image blob to IDB and records its size', async () => {
     const { record } = await shutter(BASE_CTX, STEADY_SENSOR, makeDeps(db))
-    // fake-indexeddb does not faithfully round-trip Blobs; asserting defined suffices
+    // jsdom structured-clone strips Blob to {}; verify presence via the store key and record metadata
     const blob = await loadBlob(db, record.recordId)
     expect(blob).toBeDefined()
+    expect(record.image.sizeBytes).toBe(IMAGE_BLOB.size)
+    expect(record.image.mimeType).toBe(IMAGE_BLOB.type)
   })
 
-  it('saves the thumbnail blob to IDB', async () => {
+  it('saves the thumbnail blob to IDB and records its size', async () => {
     const { record } = await shutter(BASE_CTX, STEADY_SENSOR, makeDeps(db))
-    // fake-indexeddb does not faithfully round-trip Blobs; asserting defined suffices
+    // jsdom structured-clone strips Blob to {}; verify presence via the store key and record metadata
     const thumb = await loadThumbnail(db, record.recordId)
     expect(thumb).toBeDefined()
+    expect(record.image.thumbnailSizeBytes).toBe(THUMB_BLOB.size)
   })
 
   it('populates qualityChecks.steadyAtCapture from sensor state', async () => {

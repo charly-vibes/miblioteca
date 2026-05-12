@@ -11,6 +11,7 @@ import {
   clampYawToViewport,
   motionGateVisible,
   capToViewport,
+  ZUPT_TAU_S,
 } from './ghostOverlay'
 
 describe('initialGhostState', () => {
@@ -386,6 +387,28 @@ describe('feedGhostAccel', () => {
   it('returns gate: "tilt" when phone is near-horizontal', () => {
     const { gate } = feedGhostAccel(base(), sample({ ax: 9.8, betaDeg: 0, t: 0 }))
     expect(gate).toBe('tilt')
+  })
+
+  it('ZUPT decay constant: after dt=tau velocity ≈ initial × exp(-1)', () => {
+    // Give a large accel to build up velocity, then switch to near-zero (ZUPT)
+    const sMoving = feedGhostAccel(base(), sample({ ax: 1.0, interval_ms: 100, betaDeg: 90, t: 0 })).state
+    const v0 = sMoving.velX
+    // tau = ZUPT_TAU_S; set dt = tau so decay = exp(-1)
+    const tauMs = ZUPT_TAU_S * 1000
+    const sDead = feedGhostAccel(sMoving, sample({ ax: 0.01, ay: 0.01, interval_ms: tauMs, betaDeg: 90, t: tauMs })).state
+    const expected = v0 * Math.exp(-1)
+    expect(sDead.velX).toBeCloseTo(expected, 5)
+  })
+
+  it('ZUPT decay never hard-zeros over 20 ticks (asymptotic, always > 0)', () => {
+    const sMoving = feedGhostAccel(base(), sample({ ax: 1.0, interval_ms: 100, betaDeg: 90, t: 0 })).state
+    let s = sMoving
+    // Apply 20 ZUPT ticks at 20ms each; velocity should shrink but never reach 0
+    for (let i = 1; i <= 20; i++) {
+      const result = feedGhostAccel(s, sample({ ax: 0, ay: 0, interval_ms: 20, betaDeg: 90, t: i * 20 }))
+      s = result.state
+      expect(s.velX).toBeGreaterThan(0)
+    }
   })
 })
 

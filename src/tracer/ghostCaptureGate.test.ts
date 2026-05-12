@@ -20,6 +20,15 @@ describe('ghostCaptureGate', () => {
     expect(decision).toMatchObject({ allowed: false, reason: 'hidden' })
   })
 
+  it('allows captures at exactly the horizontal threshold (boundary inclusive)', () => {
+    const decision = evaluateGhostCapture({
+      captureIndex: 1,
+      ghost: { shiftPx: 40, shiftPy: 1, visible: true, workingDistanceCm: 60 },
+      recentShiftXs: [4],
+    })
+    expect(decision).toMatchObject({ allowed: true, reason: null })
+  })
+
   it('blocks later captures when horizontal error is too large', () => {
     const decision = evaluateGhostCapture({
       captureIndex: 1,

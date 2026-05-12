@@ -568,7 +568,7 @@ describe('GhostMotionPipeline — absolute orientation', () => {
     const pipeline = new GhostMotionPipeline(deps)
 
     orientation.fire(180, 90, 0)
-    const rng = (seed: number) => Math.sin(seed * 12.9898 + 78.233) * 43758.5453 % 1
+    const rng = (seed: number) => Math.abs(Math.sin(seed * 12.9898 + 78.233) * 43758.5453 % 1)
     for (let i = 1; i <= 120; i++) {
       nowMs = i * 16
       const jitter = (rng(i) - 0.5) * 4

@@ -840,7 +840,7 @@ describe('computeOrientationDelta', () => {
   it('magnetometer noise on a still device stays within capture gate threshold', () => {
     let state = initialOrientationState(180, 90, 0, 0)
     // ±1.5° per axis is realistic worst-case indoor magnetometer jitter
-    const rng = (seed: number) => Math.sin(seed * 12.9898 + 78.233) * 43758.5453 % 1
+    const rng = (seed: number) => Math.abs(Math.sin(seed * 12.9898 + 78.233) * 43758.5453 % 1)
     let maxAbsYaw = 0
     for (let i = 1; i <= 200; i++) {
       const jitterAlpha = (rng(i) - 0.5) * 3

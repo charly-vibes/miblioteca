@@ -153,6 +153,25 @@ describe('feedAccel — robustness', () => {
     state = feedAccel(state, { t: 120, ax: 0, ay: 0, az: 0 })
     expect(state.lastT).toBe(120)
   })
+
+  it('drops duplicate-timestamp samples to prevent unbounded window growth', () => {
+    let state = initialSteadinessState()
+    state = feedAccel(state, { t: 100, ax: 0, ay: 0, az: 0 })
+    const before = state
+    // Same timestamp as lastT — should be treated as duplicate and discarded
+    state = feedAccel(state, { t: 100, ax: 5, ay: 5, az: 5 })
+    expect(state).toBe(before)
+  })
+
+  it('window stays bounded at max 200ms/16ms ≈ 13 samples under duplicate-timestamp spam', () => {
+    let state = initialSteadinessState()
+    // Feed 100 samples all at t=100 (all duplicates after the first)
+    state = feedAccel(state, { t: 100, ax: 0, ay: 0, az: 0 })
+    for (let i = 0; i < 99; i++) {
+      state = feedAccel(state, { t: 100, ax: 0, ay: 0, az: 0 })
+    }
+    expect(state.window).toHaveLength(1)
+  })
 })
 
 describe('VARIANCE_THRESHOLD_DEFAULT', () => {

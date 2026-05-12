@@ -32,9 +32,11 @@ export function feedAccel(
   threshold = VARIANCE_THRESHOLD_DEFAULT
 ): SteadinessState {
   if (!isFiniteSample(sample)) return state
-  // Discard out-of-order samples (browser throttling, event-queue drain).
-  // Stale samples would inflate the window or corrupt cutoff computation.
-  if (sample.t < state.lastT) return state
+  // Discard out-of-order and duplicate-timestamp samples (browser throttling,
+  // event-queue drain, or degraded sensors emitting repeated timestamps).
+  // Duplicate timestamps grow the window unboundedly since the cutoff filter
+  // retains all entries with t >= (same timestamp - WINDOW_MS).
+  if (sample.t <= state.lastT) return state
 
   const cutoff = sample.t - WINDOW_MS
   // >= is intentional: a sample exactly WINDOW_MS old is within the 200ms window.

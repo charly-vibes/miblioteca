@@ -1,5 +1,5 @@
 import type { GhostFrame, GyroLike } from '../sensors/ghostOverlay'
-import { computeShiftPx, computeShiftPy, focalLengthPx, DEFAULT_HFOV_DEG } from '../sensors/ghostOverlay'
+import { focalLengthPx, DEFAULT_HFOV_DEG } from '../sensors/ghostOverlay'
 import { GhostMotionPipeline } from '../sensors/GhostMotionPipeline'
 import type { Phase, SensorFrame, CalibrationCycle, CalibrationExport } from './types'
 
@@ -483,15 +483,14 @@ export class GhostCalibrationPage {
         const g = this.gyro!
         const gx = g.x ?? 0, gy = g.y ?? 0, gz = g.z ?? 0
         const pState = this.pipeline.getState()
-        const w = this.win.innerWidth || FALLBACK_VW
-        const h = this.win.innerHeight || FALLBACK_VH
-        const shiftPx = computeShiftPx(pState.yawRad, w)
-        const shiftPy = computeShiftPy(pState.pitchRad, w, h)
         this.lastYawRad = pState.yawRad
         this.lastPitchRad = pState.pitchRad
+        // Use previous RAF-computed shiftPx/pitchShiftPx to avoid recomputing here
+        const prev = this.latestFrame
         this.latestFrame = {
           t: this.nowFn(), yawRad: pState.yawRad, pitchRad: pState.pitchRad,
-          shiftPx, pitchShiftPx: shiftPy, dx_m: 0, dy_m: 0, gateOpen: true,
+          shiftPx: prev?.shiftPx ?? 0, pitchShiftPx: prev?.pitchShiftPx ?? 0,
+          dx_m: 0, dy_m: 0, gateOpen: true,
         }
         if (this.phase === 'recording' && this.currentCycle?.frames) {
           this.currentCycle.frames.push({
@@ -509,10 +508,8 @@ export class GhostCalibrationPage {
   private onPipelineFrame(frame: GhostFrame): void {
     this.lastYawRad = frame.yawRad
     this.lastPitchRad = frame.pitchRad
-    const vw = this.win.innerWidth || FALLBACK_VW
-    const vh = this.win.innerHeight || FALLBACK_VH
-    const shiftPx = computeShiftPx(frame.yawRad, vw)
-    const shiftPy = computeShiftPy(frame.pitchRad, vw, vh)
+    const shiftPx = frame.shiftPx
+    const shiftPy = frame.pitchShiftPx
     this.latestFrame = {
       t: frame.t, yawRad: frame.yawRad, pitchRad: frame.pitchRad,
       shiftPx, pitchShiftPx: shiftPy, dx_m: frame.dx_m, dy_m: frame.dy_m, gateOpen: true,

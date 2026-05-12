@@ -954,3 +954,33 @@ describe('GhostCalibrationPage — builder helper methods', () => {
     expect(typeof page['wirePipeline']).toBe('function')
   })
 })
+
+// RED: onPipelineFrame should consume frame.shiftPx directly, not recompute via computeShiftPx
+describe('GhostCalibrationPage — onPipelineFrame uses frame.shiftPx directly', () => {
+  it('uses frame.shiftPx for rectangle position, not computeShiftPx(frame.yawRad)', () => {
+    const raf = vi.fn(() => 1)
+    const page = new GhostCalibrationPage(container, {
+      win: makeWin(800, 600),
+      requestAnimationFrame: raf,
+      cancelAnimationFrame: vi.fn(),
+    }) as unknown as Record<string, unknown>
+
+    // Set up RECORDING phase state
+    ;(page as unknown as { phase: string }).phase = 'recording'
+    const p = page as Record<string, unknown>
+    p['rectInitLeft'] = 0
+    p['rectInitTop'] = 0
+    p['recordingStartedAt'] = 0
+    p['currentCycle'] = { frames: [], ghostFrames: [] }
+
+    const rect = container.querySelector<HTMLElement>('[data-testid="calibration-rectangle"]')!
+
+    // sentinel shiftPx = 42 px; computeShiftPx(0.1, 800) ≈ -110 px — clearly different
+    const frame = { t: 100, yawRad: 0.1, pitchRad: 0, shiftPx: 42, pitchShiftPx: 0, dx_m: 0, dy_m: 0, gateOpen: true }
+    ;(p['onPipelineFrame'] as (f: typeof frame) => void)(frame)
+
+    // If frame.shiftPx is used: left = 0 + round(42) = 42px
+    // If computeShiftPx is used: left = 0 + round(-110) = -110px
+    expect(rect.style.left).toBe('42px')
+  })
+})

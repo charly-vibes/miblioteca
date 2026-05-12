@@ -66,24 +66,30 @@ test.describe('Suite 8: Ghost overlay', () => {
     await expect(page.locator('.ghost-overlay')).toBeVisible({ timeout: 2000 })
   })
 
-  test('8.5 yaw accumulation pans overlay (transform has non-zero translateX)', async ({ page }) => {
+  test('8.5 yaw accumulation pans overlay — direction and magnitude validated', async ({ page }) => {
     await mockCamera(page)
     await mockGyro(page)
     await navigateToCaptureWithCamera(page)
     await page.locator('.shutter-btn').click()
     await expect(page.locator('.camera-gallery-thumb')).toHaveCount(1, { timeout: 5000 })
-    // Inject multiple readings at low speed to accumulate yaw without triggering motion gate
+    // Inject readings with positive gy rate: yawOmega = gy > 0
+    // → yawIntegral decreases (yawIntegral -= yawOmega * dt < 0)
+    // → shiftPx = -focalLength × negative = positive → translateX > 0
     for (let i = 0; i < 10; i++) {
       await triggerGyroReading(page, 0.3)
     }
-    const transform = await page.locator('.ghost-overlay').evaluate(
-      (el) => (el as HTMLElement).style.transform
-    )
-    // Should be translate3d(Xpx, 0, 0) where X is not 0
+    const { transform, canvasWidth } = await page.locator('.ghost-overlay').evaluate((el) => ({
+      transform: (el as HTMLElement).style.transform,
+      canvasWidth: (el as HTMLCanvasElement).width || el.clientWidth || 375,
+    }))
     expect(transform).toMatch(/translate3d\(-?\d+(\.\d+)?px, 0px?, 0px?\)/)
     const match = /translate3d\((-?\d+(?:\.\d+)?)px/.exec(transform)
     expect(match).not.toBeNull()
-    expect(parseFloat(match![1])).not.toBe(0)
+    const translateX = parseFloat(match![1])
+    // Direction: positive gy → translateX > 0 (ghost pans right as device sweeps left)
+    expect(translateX).toBeGreaterThan(0)
+    // Magnitude: non-trivial shift, but clamped to viewport half-width
+    expect(translateX).toBeLessThanOrEqual(canvasWidth / 2 + 1)
   })
 
   test('8.7 yaw resets to zero after a second capture', async ({ page }) => {

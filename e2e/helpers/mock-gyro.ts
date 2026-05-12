@@ -31,9 +31,12 @@ export async function mockGyro(page: Page): Promise<void> {
     }
 
     ;(window as Record<string, unknown>)['Gyroscope'] = MockGyroscope
-    ;(window as Record<string, unknown>)['__triggerGyroReading'] = (gz: number) => {
+    ;(window as Record<string, unknown>)['__triggerGyroReading'] = (rate: number) => {
       if (!active?.onreading) return
-      active.z = gz
+      // Set y (portrait yaw axis) so yawIntegral accumulates; z produces the same
+      // omegaMag so the motion gate still works for hide/show tests.
+      active.y = rate
+      active.z = rate
       active.timestamp = performance.now()
       active.onreading()
     }

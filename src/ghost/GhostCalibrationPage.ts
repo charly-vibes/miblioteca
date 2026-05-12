@@ -10,6 +10,8 @@ const DOT_COLOR = '#FF3B30'
 const RECT_W_RATIO = 0.6
 const RECT_H_RATIO = 0.4
 const H_FOV_DEG = DEFAULT_HFOV_DEG
+const FALLBACK_VW = 375
+const FALLBACK_VH = 667
 
 export type WindowLike = {
   addEventListener: (type: string, cb: EventListenerOrEventListenerObject) => void
@@ -156,8 +158,8 @@ export class GhostCalibrationPage {
     this.captureSnapshotFn = deps.captureSnapshot ?? ((video) => {
       try {
         const c = document.createElement('canvas')
-        c.width = video.videoWidth || video.clientWidth || 375
-        c.height = video.videoHeight || video.clientHeight || 667
+        c.width = video.videoWidth || video.clientWidth || FALLBACK_VW
+        c.height = video.videoHeight || video.clientHeight || FALLBACK_VH
         c.getContext('2d')?.drawImage(video, 0, 0, c.width, c.height)
         return c.toDataURL('image/jpeg', 0.8)
       } catch { return null }
@@ -199,8 +201,8 @@ export class GhostCalibrationPage {
     })
     this.renderTelemetry()
 
-    const vw = this.win.innerWidth || 375
-    const vh = this.win.innerHeight || 667
+    const vw = this.win.innerWidth || FALLBACK_VW
+    const vh = this.win.innerHeight || FALLBACK_VH
     const rw = Math.round(vw * RECT_W_RATIO)
     const rh = Math.round(vh * RECT_H_RATIO)
     const rx = Math.round((vw - rw) / 2)
@@ -435,8 +437,8 @@ export class GhostCalibrationPage {
     // Pipeline handles gyro integration and RAF-driven rendering (enableMotionGate: false for continuous recording).
     this.pipeline = new GhostMotionPipeline({
       gyro: this.gyro,
-      displayWidth: () => this.win.innerWidth || 375,
-      displayHeight: () => this.win.innerHeight || 667,
+      displayWidth: () => this.win.innerWidth || FALLBACK_VW,
+      displayHeight: () => this.win.innerHeight || FALLBACK_VH,
       getOrientation: this.getOrientation,
       onFrame: (frame) => this.onPipelineFrame(frame),
       enableMotionGate: false,
@@ -453,8 +455,8 @@ export class GhostCalibrationPage {
         const g = this.gyro!
         const gx = g.x ?? 0, gy = g.y ?? 0, gz = g.z ?? 0
         const pState = this.pipeline.getState()
-        const w = this.win.innerWidth || 375
-        const h = this.win.innerHeight || 667
+        const w = this.win.innerWidth || FALLBACK_VW
+        const h = this.win.innerHeight || FALLBACK_VH
         const shiftPx = computeShiftPx(pState.yawRad, w)
         const shiftPy = computeShiftPy(pState.pitchRad, w, h)
         this.lastYawRad = pState.yawRad
@@ -480,8 +482,8 @@ export class GhostCalibrationPage {
   private onPipelineFrame(frame: GhostFrame): void {
     this.lastYawRad = frame.yawRad
     this.lastPitchRad = frame.pitchRad
-    const vw = this.win.innerWidth || 375
-    const vh = this.win.innerHeight || 667
+    const vw = this.win.innerWidth || FALLBACK_VW
+    const vh = this.win.innerHeight || FALLBACK_VH
     const shiftPx = computeShiftPx(frame.yawRad, vw)
     const shiftPy = computeShiftPy(frame.pitchRad, vw, vh)
     this.latestFrame = {
@@ -651,7 +653,7 @@ export class GhostCalibrationPage {
     const cycle = this.cycles.at(-1)
     if (!cycle) return
 
-    const vw = this.win.innerWidth || 375
+    const vw = this.win.innerWidth || FALLBACK_VW
     const fl = focalLengthPx(vw)
     const durationMs = (cycle.endedAt ?? cycle.startedAt) - cycle.startedAt
     const lastGhostYawDeg = (cycle.ghostFrames.at(-1)?.yawRad ?? 0) * 180 / Math.PI
@@ -682,13 +684,13 @@ export class GhostCalibrationPage {
   }
 
   private exportJson(): void {
-    const vw = this.win.innerWidth || 375
+    const vw = this.win.innerWidth || FALLBACK_VW
     const now = new Date()
     const payload: CalibrationExport = {
       exportedAt: now.toISOString(),
       deviceInfo: {
         viewportWidth: vw,
-        viewportHeight: this.win.innerHeight || 667,
+        viewportHeight: this.win.innerHeight || FALLBACK_VH,
         devicePixelRatio: this.win.devicePixelRatio ?? 1,
         userAgent: this.win.navigator?.userAgent ?? '',
       },

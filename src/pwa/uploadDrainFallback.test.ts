@@ -84,14 +84,25 @@ describe('mountUploadDrainFallback', () => {
     const unmount = mountUploadDrainFallback({ openDb: async () => db, fetch })
 
     window.dispatchEvent(new Event('online'))
-    // Wait for inFlight to settle (drain should catch and not re-throw)
     await vi.waitFor(() => expect(fetch).toHaveBeenCalled())
-    // Give the catch/.finally chain a tick to complete
     await new Promise((r) => setTimeout(r, 0))
 
     // Record remains pending (not uploaded)
     const loaded = await loadCaptureRecord(db, 'rec-throw')
     expect(loaded?.uploadState).not.toBe('uploaded')
+    unmount()
+  })
+
+  it('logs pwa:drain-failed via structured logger when openDb rejects', async () => {
+    const logSpy = vi.fn()
+    const openDb = vi.fn().mockRejectedValue(new Error('DB unavailable'))
+    const unmount = mountUploadDrainFallback({ openDb, logger: { log: logSpy } })
+
+    window.dispatchEvent(new Event('online'))
+    await vi.waitFor(() => expect(logSpy).toHaveBeenCalledWith(
+      'pwa:drain-failed',
+      expect.objectContaining({ message: 'DB unavailable' })
+    ))
     unmount()
   })
 

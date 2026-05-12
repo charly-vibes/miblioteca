@@ -160,7 +160,9 @@ export function createImuRecorder(sessionId: string, deps: ImuRecorderDeps): Imu
         data: buf.slice(0, rowCount * FIELD_COUNT).buffer,
         pauseGaps,
       }
-      await deps.writeTrace(sessionId, trace)
+      await deps.writeTrace(sessionId, trace).catch((err: unknown) => {
+        console.error('imuRecorder: failed to write trace', err)
+      })
     },
   }
 }

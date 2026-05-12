@@ -1,5 +1,5 @@
 import type { GhostFrame, GyroLike } from '../sensors/ghostOverlay'
-import { computeShiftPx, computeShiftPy, focalLengthPx } from '../sensors/ghostOverlay'
+import { computeShiftPx, computeShiftPy, focalLengthPx, DEFAULT_HFOV_DEG } from '../sensors/ghostOverlay'
 import { GhostMotionPipeline } from '../sensors/GhostMotionPipeline'
 import type { Phase, SensorFrame, CalibrationCycle, CalibrationExport } from './types'
 
@@ -9,8 +9,7 @@ const DOT_PX = 24
 const DOT_COLOR = '#FF3B30'
 const RECT_W_RATIO = 0.6
 const RECT_H_RATIO = 0.4
-// ~40° effective: matches natural phone-tilt projection loss (see DEFAULT_HFOV_DEG in ghostOverlay.ts)
-const H_FOV_DEG = 40
+const H_FOV_DEG = DEFAULT_HFOV_DEG
 
 export type WindowLike = {
   addEventListener: (type: string, cb: EventListenerOrEventListenerObject) => void

@@ -28,7 +28,9 @@ export type GhostOverlayState = {
 
 // ~40° empirically matches phone-held-at-natural-tilt (~55° forward): cos(55°)≈0.57 projection
 // loss on beta means the effective angular capture per pixel ≈ 40° equivalent FOV.
-const DEFAULT_HFOV_DEG = 40
+export const DEFAULT_HFOV_DEG = 40
+export const ZUPT_THRESHOLD_MS2 = 0.10
+export const ZUPT_TAU_S = 0.20
 
 export function initialGhostState(): GhostOverlayState {
   return { yawIntegral: 0, pitchIntegral: 0, lastT: -Infinity, lastAccelT: -Infinity, omegaMag: 0, velX: 0, velY: 0, dx_m: 0, dy_m: 0 }
@@ -100,11 +102,9 @@ export function feedGhostAccel(
   }
   // ZUPT (Zero-Velocity Update): hardware gravity subtraction leaves ~0.03–0.05 m/s² of
   // persistent sensor bias. Double-integrating this over seconds creates spurious displacement.
-  // L2 norm threshold (0.10 m/s² ≈ 2σ above measured noise floor of σ≈0.065) gates ~95% of
-  // zero-motion samples. Exponential decay (τ=200ms) bleeds residual velocity smoothly rather
+  // L2 norm threshold (ZUPT_THRESHOLD_MS2 ≈ 2σ above measured noise floor of σ≈0.065) gates ~95% of
+  // zero-motion samples. Exponential decay (τ=ZUPT_TAU_S) bleeds residual velocity smoothly rather
   // than hard-zeroing, avoiding the velocity discontinuity of the old binary gate.
-  const ZUPT_THRESHOLD_MS2 = 0.10
-  const ZUPT_TAU_S = 0.20
   const accelMag = Math.sqrt(sample.ax ** 2 + sample.ay ** 2)
   if (accelMag < ZUPT_THRESHOLD_MS2) {
     const decay = Math.exp(-dt / ZUPT_TAU_S)

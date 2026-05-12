@@ -22,6 +22,8 @@ export type GhostMotionPipelineDeps = {
   displayHeight: () => number
   getOrientation?: () => string
   onFrame?: (frame: GhostFrame) => void
+  /** Called after each gyro reading with current yaw/pitch. Use instead of monkey-patching gyro.onreading. */
+  onGyroSample?: (state: { yawRad: number; pitchRad: number }) => void
   /** false = always render (calibration page); true = apply visibility gate (shows when still, hides when moving too fast) */
   enableMotionGate?: boolean
   requestAnimationFrame?: (cb: FrameRequestCallback) => number
@@ -49,6 +51,7 @@ export class GhostMotionPipeline {
       getOrientation: deps.getOrientation ?? (() =>
         (typeof screen !== 'undefined' && screen.orientation?.type) || 'portrait-primary'),
       onFrame: deps.onFrame ?? (() => {}),
+      onGyroSample: deps.onGyroSample ?? ((_s) => {}),
       enableMotionGate: deps.enableMotionGate ?? true,
       requestAnimationFrame: deps.requestAnimationFrame ?? ((cb) => window.requestAnimationFrame(cb)),
       cancelAnimationFrame: deps.cancelAnimationFrame ?? ((id) => window.cancelAnimationFrame(id)),
@@ -94,6 +97,7 @@ export class GhostMotionPipeline {
     if (clamped !== this.state.yawIntegral) {
       this.state = { ...this.state, yawIntegral: clamped }
     }
+    this.deps.onGyroSample(this.getState())
   }
 
   private onMotionReading() {

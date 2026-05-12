@@ -378,3 +378,44 @@ describe('gyro onerror handler (robustness spec mibilioteca-cf0)', () => {
     pipeline.destroy()
   })
 })
+
+describe('GhostMotionPipeline — onGyroSample hook', () => {
+  it('onGyroSample is called after each gyro reading with current state', () => {
+    const gyro = makeGyro()
+    const onGyroSample = vi.fn()
+    const pipeline = new GhostMotionPipeline({
+      gyro,
+      onGyroSample,
+      displayWidth: () => 390,
+      displayHeight: () => 844,
+      requestAnimationFrame: () => 0,
+      cancelAnimationFrame: vi.fn(),
+      now: () => 100,
+    })
+
+    gyro.fire(0.2, 0, 0, 100)
+
+    expect(onGyroSample).toHaveBeenCalledOnce()
+    const state = onGyroSample.mock.calls[0][0]
+    expect(typeof state.yawRad).toBe('number')
+    expect(typeof state.pitchRad).toBe('number')
+
+    pipeline.destroy()
+  })
+
+  it('pipeline works correctly when onGyroSample is not provided', () => {
+    const gyro = makeGyro()
+    expect(() => {
+      const pipeline = new GhostMotionPipeline({
+        gyro,
+        displayWidth: () => 390,
+        displayHeight: () => 844,
+        requestAnimationFrame: () => 0,
+        cancelAnimationFrame: vi.fn(),
+        now: () => 100,
+      })
+      gyro.fire(0, 0, 0, 100)
+      pipeline.destroy()
+    }).not.toThrow()
+  })
+})

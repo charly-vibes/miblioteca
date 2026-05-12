@@ -462,30 +462,17 @@ export class GhostCalibrationPage {
   }
 
   private wirePipeline(): void {
-    // Pipeline handles gyro integration and RAF-driven rendering (enableMotionGate: false for continuous recording).
     this.pipeline = new GhostMotionPipeline({
       gyro: this.gyro,
       displayWidth: () => this.win.innerWidth || FALLBACK_VW,
       displayHeight: () => this.win.innerHeight || FALLBACK_VH,
       getOrientation: this.getOrientation,
       onFrame: (frame) => this.onPipelineFrame(frame),
-      enableMotionGate: false,
-      requestAnimationFrame: this.raf,
-      cancelAnimationFrame: this.caf,
-      now: this.nowFn,
-    })
-
-    // Wrap gyro.onreading (set by pipeline constructor) to also record SensorFrames and update telemetry.
-    if (this.gyro) {
-      const pipelineOnReading = this.gyro.onreading
-      this.gyro.onreading = () => {
-        pipelineOnReading?.()
+      onGyroSample: (pState) => {
         const g = this.gyro!
         const gx = g.x ?? 0, gy = g.y ?? 0, gz = g.z ?? 0
-        const pState = this.pipeline.getState()
         this.lastYawRad = pState.yawRad
         this.lastPitchRad = pState.pitchRad
-        // Use previous RAF-computed shiftPx/pitchShiftPx to avoid recomputing here
         const prev = this.latestFrame
         this.latestFrame = {
           t: this.nowFn(), yawRad: pState.yawRad, pitchRad: pState.pitchRad,
@@ -501,8 +488,12 @@ export class GhostCalibrationPage {
           })
         }
         this.renderTelemetry()
-      }
-    }
+      },
+      enableMotionGate: false,
+      requestAnimationFrame: this.raf,
+      cancelAnimationFrame: this.caf,
+      now: this.nowFn,
+    })
   }
 
   private onPipelineFrame(frame: GhostFrame): void {

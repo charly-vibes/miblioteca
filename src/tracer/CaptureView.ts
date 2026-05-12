@@ -83,6 +83,7 @@ export class CaptureView {
   private ghostOverlay: GhostOverlayCanvas | null = null
   private steadinessState: SteadinessState = initialSteadinessState()
   private activeWarnings: QualityWarning[] = []
+  private lastPollQuality: ReturnType<typeof qualityChecksFromMetrics> | undefined = undefined
   private pollId: ReturnType<typeof setInterval> | null = null
   private tiltWarnTimer: ReturnType<typeof setTimeout> | null = null
   private tiltWarnEl: HTMLDivElement | null = null
@@ -379,8 +380,10 @@ export class CaptureView {
         const { overexposed: over, underexposed: under, meanLuma } = exposureFractions(frame)
         const tiltDeg = this.opts.accel ? this.computeTiltDeg() : 0
         const checks = qualityChecksFromMetrics(lv, over, under, this.steadinessState.steady, tiltDeg, meanLuma)
+        this.lastPollQuality = checks
         this.activeWarnings = qualityWarnings(checks)
       } else {
+        this.lastPollQuality = undefined
         this.activeWarnings = []
       }
       this.renderWarnings()
@@ -466,14 +469,7 @@ export class CaptureView {
       const thumbnailWidth = Math.max(1, Math.round(snapshot.width * thumbScale))
       const thumbnailHeight = Math.max(1, Math.round(snapshot.height * thumbScale))
 
-      const qualityFrame = this.opts.getQualityFrame?.()
-      let shutterQuality: ReturnType<typeof qualityChecksFromMetrics> | undefined
-      if (qualityFrame) {
-        const lv = laplacianVariance(qualityFrame)
-        const { overexposed: over, underexposed: under, meanLuma } = exposureFractions(qualityFrame)
-        const tiltDeg = this.opts.accel ? this.computeTiltDeg() : 0
-        shutterQuality = qualityChecksFromMetrics(lv, over, under, this.steadinessState.steady, tiltDeg, meanLuma)
-      }
+      const shutterQuality = this.lastPollQuality
       this.logger.log('capture:shutter', {
         index: this.captureIndex,
         qualityChecks: shutterQuality ? qualityWarnings(shutterQuality) : [],

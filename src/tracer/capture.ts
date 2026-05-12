@@ -1,3 +1,17 @@
+export type QualityChecks = {
+  laplacianVariance: number
+  overexposedFraction: number
+  underexposedFraction: number
+  steadyAtCapture: boolean
+  tiltDegrees: number
+  blurry: boolean
+  overexposed: boolean
+  underexposed: boolean
+  dark: boolean
+  estimatedYawDeltaSincePrev?: number
+  displacementMeters?: number
+}
+
 export type CaptureRecord = {
   recordId: string
   sessionId: string
@@ -50,19 +64,7 @@ export type CaptureRecord = {
   motionWindow?: {
     samples: Array<{ t: number; ax: number; ay: number; az: number; gx: number; gy: number; gz: number }>
   }
-  qualityChecks: {
-    laplacianVariance: number
-    overexposedFraction: number
-    underexposedFraction: number
-    steadyAtCapture: boolean
-    tiltDegrees: number
-    blurry: boolean
-    overexposed: boolean
-    underexposed: boolean
-    dark: boolean
-    estimatedYawDeltaSincePrev?: number
-    displacementMeters?: number
-  }
+  qualityChecks: QualityChecks
   exif?: Record<string, unknown>
   uploadState: 'pending' | 'uploading' | 'uploaded' | 'failed' | 'rejected'
   uploadAttempts: number
@@ -99,19 +101,7 @@ export type CaptureRecordInput = {
     thumbnailHeight: number
     sourceApi: 'ImageCapture' | 'CanvasSnapshot' | 'InputFileCapture'
   }
-  qualityChecks?: {
-    laplacianVariance: number
-    overexposedFraction: number
-    underexposedFraction: number
-    steadyAtCapture: boolean
-    tiltDegrees: number
-    blurry: boolean
-    overexposed: boolean
-    underexposed: boolean
-    dark: boolean
-    estimatedYawDeltaSincePrev?: number
-    displacementMeters?: number
-  }
+  qualityChecks?: QualityChecks
 }
 
 type CaptureRecordDeps = {

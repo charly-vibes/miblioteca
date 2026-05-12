@@ -48,6 +48,8 @@ export type ImuRecorder = {
 }
 
 const INITIAL_CAPACITY = 1024
+// 30 min × 60 Hz = 108,000 rows; hard cap prevents OOM on extended sessions
+const MAX_ROWS = 108_000
 
 export function createImuRecorder(sessionId: string, deps: ImuRecorderDeps): ImuRecorder {
   let capacity = INITIAL_CAPACITY
@@ -69,6 +71,7 @@ export function createImuRecorder(sessionId: string, deps: ImuRecorderDeps): Imu
   }
 
   function appendRow(t: number) {
+    if (rowCount >= MAX_ROWS) return
     if (rowCount >= capacity) grow()
     feedSample(buf, rowCount, {
       t,
@@ -91,7 +94,7 @@ export function createImuRecorder(sessionId: string, deps: ImuRecorderDeps): Imu
       lastAz = deps.accel!.z ?? 0
       appendRow(deps.accel!.timestamp ?? deps.now())
     }
-    deps.accel.onerror = null
+    deps.accel.onerror = (ev) => console.warn('imuRecorder: accel error', ev.error?.message)
     deps.accel.start()
   }
 
@@ -102,7 +105,7 @@ export function createImuRecorder(sessionId: string, deps: ImuRecorderDeps): Imu
       lastGz = deps.gyro!.z ?? 0
       if (primary === deps.gyro) appendRow(deps.gyro!.timestamp ?? deps.now())
     }
-    deps.gyro.onerror = null
+    deps.gyro.onerror = (ev) => console.warn('imuRecorder: gyro error', ev.error?.message)
     deps.gyro.start()
   }
 
@@ -112,7 +115,7 @@ export function createImuRecorder(sessionId: string, deps: ImuRecorderDeps): Imu
       if (q) { lastQx = q[0]; lastQy = q[1]; lastQz = q[2]; lastQw = q[3] }
       if (primary === deps.absOri) appendRow(deps.absOri!.timestamp ?? deps.now())
     }
-    deps.absOri.onerror = null
+    deps.absOri.onerror = (ev) => console.warn('imuRecorder: absOri error', ev.error?.message)
     deps.absOri.start()
   }
 
@@ -123,7 +126,7 @@ export function createImuRecorder(sessionId: string, deps: ImuRecorderDeps): Imu
       lastGrz = deps.grav!.z ?? 0
       if (primary === deps.grav) appendRow(deps.now())
     }
-    deps.grav.onerror = null
+    deps.grav.onerror = (ev) => console.warn('imuRecorder: grav error', ev.error?.message)
     deps.grav.start()
   }
 

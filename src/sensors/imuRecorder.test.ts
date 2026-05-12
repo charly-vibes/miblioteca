@@ -189,3 +189,43 @@ describe('createImuRecorder', () => {
     expect(trace!.data.byteLength).toBe(1100 * FIELD_COUNT * 4)
   })
 })
+
+describe('imuRecorder robustness (mibilioteca-f3w, mibilioteca-fpvy)', () => {
+  it('accel onerror is not null after createImuRecorder (sensor errors must not be silently swallowed)', () => {
+    const accel = makeMockAccel()
+    const recorder = createImuRecorder('sess-err', {
+      accel,
+      gyro: null,
+      absOri: null,
+      grav: null,
+      now: () => performance.now(),
+      onVisibilityChange: makeNoop(),
+      writeTrace: (_id, _trace) => Promise.resolve(),
+    })
+    expect(accel.onerror).not.toBeNull()
+    void recorder.stop()
+  })
+
+  it('grow() is bounded by MAX_ROWS: rowCount stops at cap, no OOM doubling past limit', async () => {
+    const accel = makeMockAccel()
+    let now = 1000
+    let capturedRowCount = 0
+    const recorder = createImuRecorder('sess-cap', {
+      accel,
+      gyro: null,
+      absOri: null,
+      grav: null,
+      now: () => now++,
+      onVisibilityChange: makeNoop(),
+      writeTrace: (_id, trace) => {
+        capturedRowCount = trace.rowCount
+        return Promise.resolve()
+      },
+    })
+    // Fire 200,000 readings — well past any reasonable max (spec: 108,000 = 30min × 60Hz)
+    for (let i = 0; i < 200_000; i++) accel.fireReading()
+    await recorder.stop()
+    // rowCount must be capped at MAX_ROWS (108,000), not 200,000
+    expect(capturedRowCount).toBeLessThanOrEqual(108_000)
+  })
+})

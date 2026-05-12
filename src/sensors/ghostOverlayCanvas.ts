@@ -46,6 +46,8 @@ export class GhostOverlayCanvas {
   private firstFrameFired = false
   private lastShiftLogMs = 0
   private workingDistanceCm = WORKING_DISTANCE_DEFAULT_CM
+  private tiltDeviationStartMs: number | null = null
+  private tiltWarningActive = false
   private readonly deps: Required<Omit<GhostOverlayCanvasDeps, 'motion' | 'getBeta' | 'distanceCm' | 'onFrame' | 'canvasClassName'>> & Pick<GhostOverlayCanvasDeps, 'onFrame'>
 
   constructor(viewfinder: HTMLElement, deps: GhostOverlayCanvasDeps) {
@@ -265,6 +267,25 @@ export class GhostOverlayCanvas {
       visible: !this.canvas.hidden,
       displayWidth,
       displayHeight,
+    }
+  }
+
+  /** Feed beta from DeviceOrientationEvent. Debounces tilt warning: fires after >30° deviation from 90° for >1 s. */
+  feedBeta(beta: number, nowMs: number) {
+    const deviation = Math.abs(beta - 90)
+    if (deviation > 30) {
+      if (this.tiltDeviationStartMs === null) {
+        this.tiltDeviationStartMs = nowMs
+      } else if (!this.tiltWarningActive && nowMs - this.tiltDeviationStartMs > 1000) {
+        this.tiltWarningActive = true
+        this.deps.logger.log('ghost:tilt-warning', { visible: true, beta })
+      }
+    } else {
+      if (this.tiltWarningActive) {
+        this.tiltWarningActive = false
+        this.deps.logger.log('ghost:tilt-warning', { visible: false, beta })
+      }
+      this.tiltDeviationStartMs = null
     }
   }
 

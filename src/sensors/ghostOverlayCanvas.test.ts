@@ -728,3 +728,71 @@ describe('GhostOverlayCanvas distanceCm out-of-range clamping (spec: add-distanc
     viewfinder.remove()
   })
 })
+
+describe('GhostOverlayCanvas — tilt warning', () => {
+  beforeEach(() => { vi.restoreAllMocks() })
+
+  function makeOverlayWithBeta(getBeta: () => number | null) {
+    let now = 0
+    const logger = { log: vi.fn() }
+    const viewfinder = document.createElement('div')
+    document.body.appendChild(viewfinder)
+    makeCanvas()
+    const overlay = new GhostOverlayCanvas(viewfinder, {
+      gyro: null,
+      getBeta,
+      logger,
+      requestAnimationFrame: () => 1,
+      cancelAnimationFrame: vi.fn(),
+      now: () => now,
+    })
+    const setTime = (ms: number) => { now = ms }
+    return { overlay, viewfinder, logger, setTime }
+  }
+
+  it('does not emit ghost:tilt-warning when beta is within 30° of 90°', () => {
+    let beta = 80  // |80 - 90| = 10° — within range
+    const { overlay, viewfinder, logger, setTime } = makeOverlayWithBeta(() => beta)
+    overlay.feedBeta(beta, 0)
+    setTime(2000)
+    overlay.feedBeta(beta, 2000)
+    expect(logger.log).not.toHaveBeenCalledWith('ghost:tilt-warning', expect.anything())
+    overlay.destroy()
+    viewfinder.remove()
+  })
+
+  it('does not emit ghost:tilt-warning when deviation >30° but duration <1s', () => {
+    let beta = 30  // |30 - 90| = 60° > 30°
+    const { overlay, viewfinder, logger, setTime } = makeOverlayWithBeta(() => beta)
+    overlay.feedBeta(beta, 0)
+    setTime(500)
+    overlay.feedBeta(beta, 500)
+    expect(logger.log).not.toHaveBeenCalledWith('ghost:tilt-warning', expect.anything())
+    overlay.destroy()
+    viewfinder.remove()
+  })
+
+  it('emits ghost:tilt-warning when deviation >30° for >1s', () => {
+    let beta = 30  // |30 - 90| = 60° > 30°
+    const { overlay, viewfinder, logger } = makeOverlayWithBeta(() => beta)
+    overlay.feedBeta(beta, 0)
+    overlay.feedBeta(beta, 1100)
+    expect(logger.log).toHaveBeenCalledWith('ghost:tilt-warning', { visible: true, beta: 30 })
+    overlay.destroy()
+    viewfinder.remove()
+  })
+
+  it('clears ghost:tilt-warning immediately when beta returns to safe range', () => {
+    let beta = 30
+    const { overlay, viewfinder, logger } = makeOverlayWithBeta(() => beta)
+    overlay.feedBeta(beta, 0)
+    overlay.feedBeta(beta, 1100)  // warning fires
+    beta = 80  // back in range
+    overlay.feedBeta(beta, 1200)
+    const calls = logger.log.mock.calls.filter(c => c[0] === 'ghost:tilt-warning')
+    const lastCall = calls[calls.length - 1]
+    expect(lastCall[1]).toMatchObject({ visible: false })
+    overlay.destroy()
+    viewfinder.remove()
+  })
+})

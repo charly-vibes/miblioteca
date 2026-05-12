@@ -33,4 +33,16 @@ describe('requestUploadSync', () => {
 
     expect(register).toHaveBeenCalledWith('upload-pending')
   })
+
+  it('propagates rejection when register() rejects (e.g. permission denied)', async () => {
+    const register = vi.fn().mockRejectedValue(new DOMException('Not allowed', 'NotAllowedError'))
+    const ready = Promise.resolve({ sync: { register } })
+    Object.defineProperty(navigator, 'serviceWorker', {
+      value: { ready },
+      configurable: true,
+    })
+    ;(window as unknown as Record<string, unknown>).SyncManager = class {}
+
+    await expect(requestUploadSync()).rejects.toThrow('Not allowed')
+  })
 })

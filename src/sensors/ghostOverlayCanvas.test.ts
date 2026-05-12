@@ -585,3 +585,62 @@ describe('GhostOverlayCanvas translation shift (spec: add-translation-tracking)'
   })
 })
 
+
+describe('GhostOverlayCanvas distanceCm out-of-range clamping (spec: add-distance-config)', () => {
+  beforeEach(() => vi.restoreAllMocks())
+
+  it('GIVEN distanceCm=10 (below min 20) THEN clamped to 20 and console.warn emitted', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    makeCanvas()
+    const viewfinder = document.createElement('div')
+    document.body.appendChild(viewfinder)
+    const overlay = new GhostOverlayCanvas(viewfinder, {
+      gyro: null,
+      distanceCm: 10,
+      requestAnimationFrame: () => 1,
+      cancelAnimationFrame: vi.fn(),
+      now: () => 0,
+    })
+    const state = overlay.getDebugState()
+    expect(state.workingDistanceCm).toBe(20)
+    expect(warnSpy).toHaveBeenCalled()
+    overlay.destroy()
+    viewfinder.remove()
+  })
+
+  it('GIVEN distanceCm=200 (above max 150) THEN clamped to 150 and console.warn emitted', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    makeCanvas()
+    const viewfinder = document.createElement('div')
+    document.body.appendChild(viewfinder)
+    const overlay = new GhostOverlayCanvas(viewfinder, {
+      gyro: null,
+      distanceCm: 200,
+      requestAnimationFrame: () => 1,
+      cancelAnimationFrame: vi.fn(),
+      now: () => 0,
+    })
+    const state = overlay.getDebugState()
+    expect(state.workingDistanceCm).toBe(150)
+    expect(warnSpy).toHaveBeenCalled()
+    overlay.destroy()
+    viewfinder.remove()
+  })
+
+  it('GIVEN distanceCm=80 (valid) THEN no console.warn emitted', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    makeCanvas()
+    const viewfinder = document.createElement('div')
+    document.body.appendChild(viewfinder)
+    const overlay = new GhostOverlayCanvas(viewfinder, {
+      gyro: null,
+      distanceCm: 80,
+      requestAnimationFrame: () => 1,
+      cancelAnimationFrame: vi.fn(),
+      now: () => 0,
+    })
+    expect(warnSpy).not.toHaveBeenCalled()
+    overlay.destroy()
+    viewfinder.remove()
+  })
+})

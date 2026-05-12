@@ -59,7 +59,9 @@ export class GhostMotionPipeline {
 
     if (this.deps.gyro) {
       this.deps.gyro.onreading = () => this.onGyroReading()
-      this.deps.gyro.onerror = null
+      this.deps.gyro.onerror = (e: Event) => {
+        this.deps.logger.log('ghost:gyro-error', { message: (e as ErrorEvent).message ?? 'sensor error' })
+      }
       this.deps.gyro.start()
     }
 

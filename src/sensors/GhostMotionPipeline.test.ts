@@ -322,3 +322,17 @@ describe('GhostMotionPipeline', () => {
     })
   })
 })
+
+describe('gyro onerror handler (robustness spec mibilioteca-cf0)', () => {
+  it('GIVEN gyro error fires THEN onerror is not null (should be a real handler)', () => {
+    const gyro = makeGyro()
+    const deps = makeDeps({ gyro, enableMotionGate: false })
+    const pipeline = new GhostMotionPipeline(deps)
+
+    // After construction the pipeline must NOT leave onerror as null —
+    // it should wire a real handler so sensor errors don't crash silently.
+    expect(gyro.onerror).not.toBeNull()
+
+    pipeline.destroy()
+  })
+})

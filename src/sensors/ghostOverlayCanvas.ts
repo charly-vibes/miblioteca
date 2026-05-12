@@ -54,7 +54,17 @@ export class GhostOverlayCanvas {
     }
 
     const d = deps.distanceCm ?? 60
-    this.workingDistanceCm = Number.isFinite(d) && d >= 20 && d <= 150 ? d : 60
+    if (!Number.isFinite(d)) {
+      this.workingDistanceCm = 60
+    } else if (d < 20) {
+      console.warn(`GhostOverlayCanvas: distanceCm ${d} is below minimum 20, clamping to 20`)
+      this.workingDistanceCm = 20
+    } else if (d > 150) {
+      console.warn(`GhostOverlayCanvas: distanceCm ${d} exceeds maximum 150, clamping to 150`)
+      this.workingDistanceCm = 150
+    } else {
+      this.workingDistanceCm = d
+    }
 
     this.canvas = document.createElement('canvas')
     this.canvas.className = deps.canvasClassName ?? 'ghost-overlay'

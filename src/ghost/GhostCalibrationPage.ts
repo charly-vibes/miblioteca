@@ -588,8 +588,8 @@ export class GhostCalibrationPage {
     if (this.currentCycle) {
       this.currentCycle.endedAt = endedAt
       this.currentCycle.endSnapshot = this.captureSnapshotFn(this.videoEl)
-      const left = parseInt(this.rectangleEl.style.left, 10)
-      const top = parseInt(this.rectangleEl.style.top, 10)
+      const left = (parseInt(this.rectangleEl.style.left, 10) || 0)
+      const top = (parseInt(this.rectangleEl.style.top, 10) || 0)
       this.currentCycle.algorithmPosition = {
         x: left + this.rectW / 2,
         y: top + this.rectH / 2,
@@ -609,8 +609,8 @@ export class GhostCalibrationPage {
     if (this.phase !== 'repositioning') return
     this.dragStartTouch = { clientX, clientY }
     this.dragStartRect = {
-      left: parseInt(this.rectangleEl.style.left, 10),
-      top: parseInt(this.rectangleEl.style.top, 10),
+      left: (parseInt(this.rectangleEl.style.left, 10) || 0) || 0,
+      top: (parseInt(this.rectangleEl.style.top, 10) || 0) || 0,
     }
   }
 
@@ -628,8 +628,8 @@ export class GhostCalibrationPage {
 
   private onConfirm(): void {
     if (this.phase !== 'repositioning' || !this.currentCycle) return
-    const left = parseInt(this.rectangleEl.style.left, 10)
-    const top = parseInt(this.rectangleEl.style.top, 10)
+    const left = (parseInt(this.rectangleEl.style.left, 10) || 0)
+    const top = (parseInt(this.rectangleEl.style.top, 10) || 0)
     const gtX = left + this.rectW / 2
     const gtY = top + this.rectH / 2
     this.currentCycle.groundTruthPosition = { x: gtX, y: gtY }
@@ -703,7 +703,7 @@ export class GhostCalibrationPage {
 
   private transitionToIdle(): void {
     // Persist the current GT rectangle position as the starting reference for the next cycle.
-    const curLeft = parseInt(this.rectangleEl.style.left, 10)
+    const curLeft = (parseInt(this.rectangleEl.style.left, 10) || 0)
     const curTop  = parseInt(this.rectangleEl.style.top,  10)
     if (!isNaN(curLeft)) this.rectInitLeft = curLeft
     if (!isNaN(curTop))  this.rectInitTop  = curTop

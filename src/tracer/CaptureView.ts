@@ -23,6 +23,7 @@ import type { QualityWarning } from './qualityChecks'
 import { createLocalStorageTracerBulletStore } from './storage'
 import { uploadCapture } from './upload'
 import { DistanceCalibrationOverlay } from './DistanceCalibrationOverlay'
+import { evaluateGhostCapture } from './ghostCaptureGate'
 import { DEFAULT_HFOV_DEG } from '../sensors/ghostOverlay'
 
 export type CaptureSnapshotResult = {
@@ -79,6 +80,7 @@ export class CaptureView {
   private storageBudget: StorageBudgetStatus = { kind: 'ok' }
   private captureIndex = 0
   private prevCapturedAtMonotonic: number | undefined = undefined
+  private recentAcceptedGhostShiftXs: number[] = []
 
   private readonly store
   private readonly mockFetch
@@ -91,6 +93,7 @@ export class CaptureView {
   private pollId: ReturnType<typeof setInterval> | null = null
   private tiltWarnTimer: ReturnType<typeof setTimeout> | null = null
   private tiltWarnEl: HTMLDivElement | null = null
+  private latestDeviceOrientation: { alpha: number; beta: number; gamma: number } | null = null
   private onDeviceOrientation: ((ev: Event) => void) | null = null
 
   private readonly root: HTMLDivElement
@@ -299,6 +302,7 @@ export class CaptureView {
     this.cameraState = s
     if (s.kind !== 'granted') {
       this.prevCapturedAtMonotonic = undefined
+      this.recentAcceptedGhostShiftXs = []
     }
     if (s.kind === 'granted') {
       this.video.srcObject = s.stream
@@ -325,6 +329,8 @@ export class CaptureView {
       this.ghostOverlay = new GhostOverlayCanvas(this.viewfinder, {
         gyro: this.opts.gyro,
         distanceCm,
+        getBeta: () => this.latestDeviceOrientation?.beta ?? null,
+        getOrientation: () => this.latestDeviceOrientation,
       })
     }
 
@@ -385,7 +391,12 @@ export class CaptureView {
 
   private startTiltWarning() {
     this.onDeviceOrientation = (ev: Event) => {
+      const alpha = (ev as DeviceOrientationEvent).alpha
       const beta = (ev as DeviceOrientationEvent).beta
+      const gamma = (ev as DeviceOrientationEvent).gamma
+      this.latestDeviceOrientation = alpha !== null && beta !== null && gamma !== null
+        ? { alpha, beta, gamma }
+        : null
       const tiltedOff = beta !== null && Math.abs(beta - 90) > 30
       if (tiltedOff) {
         if (!this.tiltWarnTimer) {
@@ -415,6 +426,7 @@ export class CaptureView {
       window.removeEventListener('deviceorientation', this.onDeviceOrientation)
       this.onDeviceOrientation = null
     }
+    this.latestDeviceOrientation = null
     if (this.tiltWarnTimer) { clearTimeout(this.tiltWarnTimer); this.tiltWarnTimer = null }
     this.tiltWarnEl?.remove()
     this.tiltWarnEl = null
@@ -533,10 +545,43 @@ export class CaptureView {
       const thumbnailHeight = Math.max(1, Math.round(snapshot.height * thumbScale))
 
       const shutterQuality = this.lastPollQuality
+      const ghost = this.ghostOverlay?.getDebugState() ?? null
+      const captureIndex = this.captureIndex
+      const ghostDecision = evaluateGhostCapture({
+        captureIndex,
+        ghost,
+        recentShiftXs: this.recentAcceptedGhostShiftXs,
+      })
+      this.logger.log('capture:evaluate', {
+        index: captureIndex,
+        shiftPx: ghost?.shiftPx ?? null,
+        shiftPy: ghost?.shiftPy ?? null,
+        magPx: ghostDecision.magPx,
+        visible: ghost?.visible ?? null,
+        workingDistanceCm: ghost?.workingDistanceCm ?? null,
+        allowed: ghostDecision.allowed,
+        reason: ghostDecision.reason,
+        recentShiftX: this.recentAcceptedGhostShiftXs,
+        recentSignFlips: ghostDecision.recentSignFlips,
+      })
+      if (!ghostDecision.allowed) {
+        this.logger.log('capture:blocked', {
+          index: captureIndex,
+          reason: ghostDecision.reason,
+          shiftPx: ghost?.shiftPx ?? null,
+          shiftPy: ghost?.shiftPy ?? null,
+          magPx: ghostDecision.magPx,
+          visible: ghost?.visible ?? null,
+          recentShiftX: this.recentAcceptedGhostShiftXs,
+          recentSignFlips: ghostDecision.recentSignFlips,
+        })
+        this.setCaptureState({ kind: 'error', message: ghostDecision.message ?? 'Recenter the ghost overlay before taking the next photo.' })
+        return
+      }
       this.logger.log('capture:shutter', {
-        index: this.captureIndex,
+        index: captureIndex,
         qualityChecks: shutterQuality ? qualityWarnings(shutterQuality) : [],
-        ghost: this.ghostOverlay?.getDebugState() ?? null,
+        ghost,
       })
 
       const db = await openShelfwalkDb()
@@ -571,6 +616,9 @@ export class CaptureView {
         db,
       })
       this.logger.log('capture:saved', { uploadState })
+      if (ghost && captureIndex > 0) {
+        this.recentAcceptedGhostShiftXs = [...this.recentAcceptedGhostShiftXs, ghost.shiftPx].slice(-4)
+      }
       if (uploadState !== 'uploaded') void requestUploadSync()
       if (this.ghostOverlay) {
         const bitmapFn = this.opts.createImageBitmap ?? ((b) => createImageBitmap(b))

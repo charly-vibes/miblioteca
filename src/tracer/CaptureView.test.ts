@@ -381,6 +381,105 @@ describe('CaptureView — capture and upload', () => {
   })
 })
 
+describe('CaptureView — ghost capture gate', () => {
+  let activeView: CaptureView | null = null
+
+  afterEach(() => {
+    activeView?.destroy()
+    activeView = null
+  })
+
+  async function bootstrapWithDebugLogger() {
+    mockGetUserMedia.mockResolvedValue(makeFakeStream())
+    const user = userEvent.setup()
+    const logger = new DebugLogger(new URLSearchParams('debug'))
+    const createImageBitmap = vi.fn().mockResolvedValue({ close: vi.fn() } as unknown as ImageBitmap)
+    const view = new CaptureView(container, {
+      captureSnapshot: mockCaptureSnapshot,
+      uploadFetch: mockUploadFetch(200),
+      logger,
+      createImageBitmap,
+    })
+    await vi.waitFor(() => screen.getByRole('button', { name: /open camera/i }))
+    await user.click(screen.getByRole('button', { name: /open camera/i }))
+    await vi.waitFor(() => screen.getByRole('button', { name: /take photo/i }))
+    activeView = view
+    return { user, logger, view, createImageBitmap }
+  }
+
+  function setGhostState(view: CaptureView, ghost: { shiftPx: number; shiftPy: number; visible: boolean; workingDistanceCm: number }) {
+    ;(view as any).ghostOverlay = {
+      getDebugState: () => ({ ...ghost, rotShiftPx: ghost.shiftPx, rotShiftPy: ghost.shiftPy, transShiftPx: 0, transShiftPy: 0, yawIntegral: 0, pitchIntegral: 0, dx_cm: 0, dy_cm: 0, velX: 0, velY: 0, displayWidth: 414, displayHeight: 851 }),
+      setSnapshot: vi.fn(),
+      destroy: vi.fn(),
+    }
+  }
+
+  function debugEvents(logger: DebugLogger) {
+    return JSON.parse(logger.export()).events as Array<{ type: string; payload: Record<string, unknown> }>
+  }
+
+  it('blocks capture when the ghost is hidden after the first reference frame', async () => {
+    const saveSpy = vi.spyOn(persistence, 'saveCapture')
+    const { user, logger, view } = await bootstrapWithDebugLogger()
+    ;(view as any).captureIndex = 1
+    setGhostState(view, { shiftPx: 4, shiftPy: 1, visible: false, workingDistanceCm: 60 })
+
+    await user.click(screen.getByRole('button', { name: /take photo/i }))
+
+    await vi.waitFor(() => expect(screen.getByText(/wait for the ghost overlay to reappear/i)).toBeInTheDocument())
+    expect(saveSpy).not.toHaveBeenCalled()
+    expect(debugEvents(logger).find((e) => e.type === 'capture:blocked')?.payload.reason).toBe('hidden')
+    saveSpy.mockRestore()
+  })
+
+  it('blocks capture when horizontal ghost error exceeds the threshold', async () => {
+    const saveSpy = vi.spyOn(persistence, 'saveCapture')
+    const { user, logger, view } = await bootstrapWithDebugLogger()
+    ;(view as any).captureIndex = 1
+    setGhostState(view, { shiftPx: 31, shiftPy: 2, visible: true, workingDistanceCm: 60 })
+
+    await user.click(screen.getByRole('button', { name: /take photo/i }))
+
+    await vi.waitFor(() => expect(screen.getByText(/recenter the ghost overlay/i)).toBeInTheDocument())
+    expect(saveSpy).not.toHaveBeenCalled()
+    expect(debugEvents(logger).find((e) => e.type === 'capture:blocked')?.payload.reason).toBe('large-horizontal-error')
+    saveSpy.mockRestore()
+  })
+
+  it('blocks capture when recent accepted shifts oscillate left-right-left-right', async () => {
+    const saveSpy = vi.spyOn(persistence, 'saveCapture')
+    const { user, logger, view } = await bootstrapWithDebugLogger()
+    ;(view as any).captureIndex = 4
+    ;(view as any).recentAcceptedGhostShiftXs = [35, -38, 33]
+    setGhostState(view, { shiftPx: -24, shiftPy: 1, visible: true, workingDistanceCm: 60 })
+
+    await user.click(screen.getByRole('button', { name: /take photo/i }))
+
+    await vi.waitFor(() => expect(screen.getByText(/advance steadily in one direction/i)).toBeInTheDocument())
+    expect(saveSpy).not.toHaveBeenCalled()
+    expect(debugEvents(logger).find((e) => e.type === 'capture:blocked')?.payload.reason).toBe('oscillation')
+    saveSpy.mockRestore()
+  })
+
+  it('allows centered captures and records the accepted shift history', async () => {
+    const saveSpy = vi.spyOn(persistence, 'saveCapture')
+    const { user, logger, view } = await bootstrapWithDebugLogger()
+    ;(view as any).captureIndex = 2
+    ;(view as any).recentAcceptedGhostShiftXs = [18]
+    setGhostState(view, { shiftPx: 6, shiftPy: -2, visible: true, workingDistanceCm: 60 })
+
+    await user.click(screen.getByRole('button', { name: /take photo/i }))
+
+    await vi.waitFor(() => expect(saveSpy).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect((view as any).recentAcceptedGhostShiftXs).toEqual([18, 6]))
+    const evaluateEvent = debugEvents(logger).find((e) => e.type === 'capture:evaluate')
+    expect(evaluateEvent?.payload.allowed).toBe(true)
+    expect(evaluateEvent?.payload.reason).toBeNull()
+    saveSpy.mockRestore()
+  })
+})
+
 // ── Thumbnail dimensions ──────────────────────────────────────────────────────
 
 describe('CaptureView — thumbnail dimensions', () => {
@@ -687,7 +786,7 @@ describe('CaptureView — working distance persistence', () => {
       })
     }
     const user = userEvent.setup()
-    new CaptureView(container, {
+    const view = new CaptureView(container, {
       captureSnapshot: mockCaptureSnapshot,
       uploadFetch: mockUploadFetch(200),
       gyro: (opts.gyro ?? fakeGyro) as never,
@@ -695,7 +794,7 @@ describe('CaptureView — working distance persistence', () => {
     await vi.waitFor(() => screen.getByRole('button', { name: /open camera/i }))
     await user.click(screen.getByRole('button', { name: /open camera/i }))
     await vi.waitFor(() => screen.getByRole('button', { name: /take photo/i }))
-    return user
+    return { user, view }
   }
 
   afterEach(() => {
@@ -722,6 +821,21 @@ describe('CaptureView — working distance persistence', () => {
   it('non-numeric URL param falls back to default and does not persist', async () => {
     await bootstrapWithGyro({ searchParams: '?distance=abc' })
     expect(storage.get(LS_KEY)).toBeUndefined()
+  })
+
+  it('captures deviceorientation samples and passes them to the ghost overlay callback', async () => {
+    const { view } = await bootstrapWithGyro()
+    const ev = new Event('deviceorientation')
+    Object.defineProperties(ev, {
+      alpha: { value: 181, configurable: true },
+      beta: { value: 89, configurable: true },
+      gamma: { value: 2, configurable: true },
+    })
+    window.dispatchEvent(ev)
+
+    expect((view as any).latestDeviceOrientation).toEqual({ alpha: 181, beta: 89, gamma: 2 })
+    expect((view as any).ghostOverlay.pipeline.deps.getOrientation()).toEqual({ alpha: 181, beta: 89, gamma: 2 })
+    expect((view as any).ghostOverlay.pipeline.deps.getBeta()).toBe(89)
   })
 })
 

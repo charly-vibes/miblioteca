@@ -529,7 +529,7 @@ export class GhostCalibrationPage {
       }
     }
 
-    this.renderTelemetry()
+    if (this.phase === 'recording') this.renderTelemetry()
   }
 
   private async startCamera(getUserMedia?: CalibrationPageDeps['getUserMedia']): Promise<void> {

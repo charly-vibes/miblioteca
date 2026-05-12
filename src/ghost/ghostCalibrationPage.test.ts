@@ -984,3 +984,51 @@ describe('GhostCalibrationPage — onPipelineFrame uses frame.shiftPx directly',
     expect(rect.style.left).toBe('42px')
   })
 })
+
+describe('GhostCalibrationPage — renderTelemetry throttle', () => {
+  let container: HTMLDivElement
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+  })
+
+  afterEach(() => {
+    container.remove()
+    vi.restoreAllMocks()
+  })
+
+  function makeTestPage() {
+    const gyro = makeGyro(0.01, 0, 0)
+    const p = new GhostCalibrationPage(container, { win, gyro })
+    // Spy on renderTelemetry
+    const spy = vi.spyOn(p as unknown as { renderTelemetry(): void }, 'renderTelemetry')
+    return { p, spy, gyro }
+  }
+
+  it('renderTelemetry is NOT called by onPipelineFrame in repositioning phase', () => {
+    const { p, spy } = makeTestPage()
+    // Enter repositioning phase (tap center to start recording, then confirm)
+    p.getCenterDot().click()
+    // Now phase='recording'; advance to repositioning via stop-btn
+    const stopBtn = container.querySelector<HTMLButtonElement>('[data-testid="stop-btn"]')!
+    stopBtn.click()
+    expect(p.getPhase()).toBe('repositioning')
+
+    spy.mockClear()
+    const frame = { t: 200, yawRad: 0, pitchRad: 0, shiftPx: 0, pitchShiftPx: 0, dx_m: 0, dy_m: 0, gateOpen: true }
+    ;(p as unknown as { onPipelineFrame(f: typeof frame): void }).onPipelineFrame(frame)
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('renderTelemetry IS called by onPipelineFrame in recording phase', () => {
+    const { p, spy } = makeTestPage()
+    p.getCenterDot().click()
+    expect(p.getPhase()).toBe('recording')
+
+    spy.mockClear()
+    const frame = { t: 200, yawRad: 0, pitchRad: 0, shiftPx: 0, pitchShiftPx: 0, dx_m: 0, dy_m: 0, gateOpen: true }
+    ;(p as unknown as { onPipelineFrame(f: typeof frame): void }).onPipelineFrame(frame)
+    expect(spy).toHaveBeenCalledOnce()
+  })
+})

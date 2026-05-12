@@ -47,6 +47,8 @@ export type CaptureViewOptions = {
   getImuSlice?: (from: number, to: number) => ImuSample[]
   /** Interval between quality frame polls in ms. Default: 100. */
   pollIntervalMs?: number
+  /** Set true on iOS Safari (no ImageCapture API) to use file-input capture instead of live video. */
+  useInputFileCapture?: boolean
   /** Called when user taps the back button to return to sessions list. */
   onBack?: () => void
   logger?: DebugLogger
@@ -107,6 +109,7 @@ export class CaptureView {
   private bundleExportPanel: BundleExportPanel | null = null
   private debugPanel: DebugPanel | null = null
   private calibrationOverlay: DistanceCalibrationOverlay | null = null
+  private iosFileInput: HTMLInputElement | null = null
   private onVisibilityChange: (() => void) | null = null
   private onUnhandledRejection: ((ev: PromiseRejectionEvent) => void) | null = null
   private onWindowError: ((ev: ErrorEvent) => void) | null = null
@@ -324,6 +327,35 @@ export class CaptureView {
         distanceCm,
       })
     }
+
+    if (s.kind === 'granted' && this.opts.useInputFileCapture) {
+      this.iosFileInput = this.buildIosFileInput()
+      this.viewfinder.appendChild(this.iosFileInput)
+    }
+  }
+
+  private buildIosFileInput(): HTMLInputElement {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'image/*'
+    input.setAttribute('capture', 'environment')
+    input.style.cssText = 'position:absolute;width:0;height:0;opacity:0;pointer-events:none'
+    input.addEventListener('change', () => {
+      const file = input.files?.[0]
+      if (!file) return
+      void this.takePhotoFromFile(file)
+    })
+    return input
+  }
+
+  private async takePhotoFromFile(file: File): Promise<void> {
+    if (this.bootstrapState.kind !== 'ready') return
+    const imageBlob: Blob = file
+    const thumbnailBlob = await makeThumbnail(imageBlob)
+    const bmp = await createImageBitmap(imageBlob)
+    const { width, height } = bmp
+    bmp.close()
+    await this.takePhoto({ imageBlob, thumbnailBlob, width, height })
   }
 
   private startAccel() {
@@ -484,14 +516,18 @@ export class CaptureView {
     return { imageBlob, thumbnailBlob, width: canvas.width, height: canvas.height }
   }
 
-  private async takePhoto() {
+  private async takePhoto(prebuilt?: CaptureSnapshotResult) {
     if (this.bootstrapState.kind !== 'ready') return
+    if (!prebuilt && this.iosFileInput) {
+      this.iosFileInput.click()
+      return
+    }
     await this.refreshStorageBudget({ requestPersist: false })
     if (this.storageBudget.kind === 'blocking') return
     this.setCaptureState({ kind: 'capturing' })
     try {
       const { session, scan } = this.bootstrapState.result
-      const snapshot = await (this.opts.captureSnapshot ?? (() => this.captureFromLiveVideo()))()
+      const snapshot = prebuilt ?? await (this.opts.captureSnapshot ?? (() => this.captureFromLiveVideo()))()
       const thumbScale = Math.min(THUMBNAIL_MAX_EDGE_PX / snapshot.width, THUMBNAIL_MAX_EDGE_PX / snapshot.height, 1)
       const thumbnailWidth = Math.max(1, Math.round(snapshot.width * thumbScale))
       const thumbnailHeight = Math.max(1, Math.round(snapshot.height * thumbScale))

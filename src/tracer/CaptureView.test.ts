@@ -713,3 +713,39 @@ describe('CaptureView — working distance persistence', () => {
     expect(storage.get(LS_KEY)).toBeUndefined()
   })
 })
+
+describe('CaptureView — iOS InputFileCapture fallback', () => {
+  beforeEach(() => {
+    mockGetUserMedia.mockResolvedValue(makeFakeStream())
+  })
+
+  it('shows a Take photo button (file input trigger) on iOS when ImageCapture is absent', async () => {
+    const user = userEvent.setup()
+    new CaptureView(container, {
+      captureSnapshot: mockCaptureSnapshot,
+      uploadFetch: mockUploadFetch(200),
+      useInputFileCapture: true,
+    })
+    await vi.waitFor(() => screen.getByRole('button', { name: /open camera/i }))
+    await user.click(screen.getByRole('button', { name: /open camera/i }))
+
+    await vi.waitFor(() => {
+      expect(screen.getByRole('button', { name: /take photo/i })).toBeInTheDocument()
+    })
+  })
+
+  it('renders a hidden file input with capture=environment when ImageCapture is absent', async () => {
+    const user = userEvent.setup()
+    new CaptureView(container, {
+      captureSnapshot: mockCaptureSnapshot,
+      uploadFetch: mockUploadFetch(200),
+      useInputFileCapture: true,
+    })
+    await vi.waitFor(() => screen.getByRole('button', { name: /open camera/i }))
+    await user.click(screen.getByRole('button', { name: /open camera/i }))
+
+    await vi.waitFor(() => screen.getByRole('button', { name: /take photo/i }))
+    const fileInput = container.querySelector('input[type="file"][capture="environment"]')
+    expect(fileInput).not.toBeNull()
+  })
+})

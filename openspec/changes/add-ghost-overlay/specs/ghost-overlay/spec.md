@@ -26,7 +26,9 @@ already handles canvas creation, RAF loop, yaw integration, `setSnapshot()`, and
 ### Requirement: Gyro-Driven Horizontal Shift
 The ghost canvas SHALL be shifted horizontally via CSS `transform: translate3d` driven by
 accumulated gyro yaw since the most recent shutter event, following the formula
-`shiftX = -(videoWidth/2) / tan(hFOV_rad/2) * yawIntegral`, with default hFOV of 65°.
+`shiftX = -(videoWidth/2) / tan(hFOV_rad/2) * yawIntegral`, with default hFOV of 40°
+(empirically matched to a phone held at ~55° natural tilt: cos(55°)≈0.57 projection loss
+makes the effective angular capture per pixel equivalent to ~40° FOV).
 The shift SHALL be clamped to ±(videoWidth/2) pixels.
 
 #### Scenario: Rightward device rotation shifts overlay left

@@ -509,7 +509,7 @@ describe('CaptureView — displacement tracking', () => {
     // First capture — establishes prevCapturedAtMonotonic
     await user.click(screen.getByRole('button', { name: /take photo/i }))
     await vi.waitFor(() => expect(saveSpy).toHaveBeenCalledTimes(1))
-    await vi.waitFor(() => screen.getByRole('button', { name: /take photo/i }))
+    await vi.waitFor(() => expect(screen.getByRole('button', { name: /take photo/i })).not.toBeDisabled())
 
     // Second capture — should compute displacement
     await user.click(screen.getByRole('button', { name: /take photo/i }))

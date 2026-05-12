@@ -107,4 +107,21 @@ describe('estimateDisplacement', () => {
     const samples = Array.from({ length: 101 }, (_, i) => s(i * 10, 1, 0))
     expect(estimateDisplacement(samples)).toBeCloseTo(0.5, 1)
   })
+
+  it('stationary device at 90° pitch subtracts world-frame gravity correctly → ≈ 0 m', () => {
+    // Device tilted 90° pitch (front pointing up): gravity appears along device +Y axis.
+    // GravitySensor gives gravity in world frame: grz = 9.81 (gravity is -Z in world).
+    // Correct fix: rotate ax/ay/az to world frame first, then subtract grx/gry/grz.
+    // Bug: subtracts world-frame grz from device-frame az (wrong frame) → huge spurious accel.
+    const s90 = Math.SQRT1_2
+    const q90pitch = { qx: s90, qy: 0, qz: 0, qw: s90 }
+    const stationary90: ImuSample[] = Array.from({ length: 21 }, (_, i) => ({
+      t: i * 10,
+      ax: 0, ay: 9.81, az: 0,
+      gx: 0, gy: 0, gz: 0,
+      ...q90pitch,
+      grx: 0, gry: 0, grz: 9.81,
+    }))
+    expect(estimateDisplacement(stationary90)).toBeCloseTo(0, 2)
+  })
 })

@@ -39,10 +39,11 @@ export function estimateDisplacement(samples: ImuSample[]): number {
     const dt = Math.min((curr.t - samples[i - 1].t) / 1000, MAX_DT_S)
     if (dt <= 0) continue
 
-    const world = rotateVec(
-      { x: curr.ax - curr.grx, y: curr.ay - curr.gry, z: curr.az - curr.grz },
+    const worldAccel = rotateVec(
+      { x: curr.ax, y: curr.ay, z: curr.az },
       { x: curr.qx, y: curr.qy, z: curr.qz, w: curr.qw },
     )
+    const world = { x: worldAccel.x - curr.grx, y: worldAccel.y - curr.gry, z: worldAccel.z - curr.grz }
 
     vx += world.x * dt
     vy += world.y * dt

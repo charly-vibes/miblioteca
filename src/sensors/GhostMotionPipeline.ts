@@ -5,6 +5,7 @@ import {
   computeShiftPy,
   clampYawToViewport,
   motionGateVisible,
+  zeroVelocity,
 } from './ghostOverlay'
 import type { GhostOverlayState, GyroSample, GyroLike, GhostFrame } from './ghostOverlay'
 import { debugLogger } from '../debug/logger'
@@ -102,6 +103,8 @@ export class GhostMotionPipeline {
           // Do NOT reset yawIntegral/pitchIntegral here — the sensor keeps integrating
           // while the gate is closed so that when it reopens the ghost shows the correct
           // position relative to the last capture, not relative to the gate-close moment.
+          // But velX/velY SHALL be hard-zeroed (spec: ZUPT on gate close).
+          this.state = zeroVelocity(this.state)
           this.deps.onFrame({ t: now, yawRad: 0, pitchRad: 0, shiftPx: 0, pitchShiftPx: 0, gateOpen: false })
         }
         return

@@ -269,6 +269,39 @@ describe('GhostMotionPipeline', () => {
     })
   })
 
+  describe('gate close hard-zeros velX/velY (ZUPT spec)', () => {
+    it('velX and velY are 0 in internal state immediately after gate closes', () => {
+      const gyro = makeGyro()
+      const onFrame = vi.fn()
+      const deps = makeDeps({ gyro, onFrame, enableMotionGate: true })
+      const pipeline = new GhostMotionPipeline(deps)
+
+      // Manually inject non-zero velX/velY into the private state so the test
+      // is not dependent on accel integration logic.
+      const pAny = pipeline as unknown as { state: { velX: number; velY: number; [k: string]: unknown } }
+      pAny.state = { ...pAny.state, velX: 1.5, velY: -0.8 }
+
+      // Step 1: slow motion → gate opens
+      gyro.fire(0, 0.1, 0, 1000)
+      gyro.fire(0, 0.1, 0, 1100)
+      ;(deps.raf as unknown as { flush(): void }).flush()
+      expect(onFrame.mock.calls.at(-1)?.[0].gateOpen).toBe(true)
+
+      // Step 2: fast pan → gate closes
+      onFrame.mockClear()
+      gyro.fire(0, 1.0, 0, 1200)
+      gyro.fire(0, 1.0, 0, 1300)
+      ;(deps.raf as unknown as { flush(): void }).flush()
+      expect(onFrame.mock.calls.find(([f]) => f.gateOpen === false)).toBeTruthy()
+
+      // Spec: velX and velY SHALL be hard-zeroed when gate closes
+      expect(pAny.state.velX).toBe(0)
+      expect(pAny.state.velY).toBe(0)
+
+      pipeline.destroy()
+    })
+  })
+
   describe('no-gyro + enableMotionGate guard', () => {
     it('does not fire onFrame when gyro is null and enableMotionGate is true', () => {
       const onFrame = vi.fn()

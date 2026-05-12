@@ -159,4 +159,23 @@ describe('VARIANCE_THRESHOLD_DEFAULT', () => {
   it('is exported and positive', () => {
     expect(VARIANCE_THRESHOLD_DEFAULT).toBeGreaterThan(0)
   })
+
+  it('samples with variance just below threshold → steady', () => {
+    // 2-sample window, ax = ±d → componentVarianceSum = d²
+    // Use 0.99×sqrt(threshold) so d² ≈ 0.98×threshold < threshold
+    const d = Math.sqrt(VARIANCE_THRESHOLD_DEFAULT) * 0.99
+    let s = initialSteadinessState()
+    s = feedAccel(s, { t: 0,   ax:  d, ay: 0, az: 0 })
+    s = feedAccel(s, { t: 100, ax: -d, ay: 0, az: 0 })
+    expect(s.steady).toBe(true)
+  })
+
+  it('samples with variance just above threshold → not steady', () => {
+    // Use 1.01×sqrt(threshold) so d² ≈ 1.02×threshold > threshold
+    const d = Math.sqrt(VARIANCE_THRESHOLD_DEFAULT) * 1.01
+    let s = initialSteadinessState()
+    s = feedAccel(s, { t: 0,   ax:  d, ay: 0, az: 0 })
+    s = feedAccel(s, { t: 100, ax: -d, ay: 0, az: 0 })
+    expect(s.steady).toBe(false)
+  })
 })

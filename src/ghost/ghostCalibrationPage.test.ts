@@ -456,6 +456,32 @@ describe('GhostCalibrationPage — CAPTURED phase', () => {
     expect(cycle.deltaPixels.y).toBeCloseTo(gt.y - alg.y, 5)
   })
 
+  it('deltaPixels is zero when rectangle is not dragged (GT === algorithm position)', () => {
+    // No drag → GT position is same as rectangle position when stop was tapped
+    const page = new GhostCalibrationPage(container, { win: makeWin(800, 600) })
+    page.getCenterDot().click()
+    ;(container.querySelector<HTMLElement>('[data-testid="stop-btn"]'))!.click()
+    page.getConfirmBtn().click()
+    const cycle = page.getCycles()[0]
+    expect(cycle.deltaPixels.x).toBeCloseTo(0, 5)
+    expect(cycle.deltaPixels.y).toBeCloseTo(0, 5)
+  })
+
+  it('missing algorithmPosition causes early return: cycle not pushed, phase stays repositioning', () => {
+    const page = new GhostCalibrationPage(container, { win: makeWin(800, 600) })
+    page.getCenterDot().click()
+    ;(container.querySelector<HTMLElement>('[data-testid="stop-btn"]'))!.click()
+
+    const partial = page.getCurrentCycle()!
+    delete partial.algorithmPosition  // simulate missing algorithm position
+
+    page.getConfirmBtn().click()
+
+    // Cycle must not be pushed when algorithmPosition is absent
+    expect(page.getCycles()).toHaveLength(0)
+    expect(page.getPhase()).toBe('repositioning')
+  })
+
   it('Next Cycle resets to IDLE, retains prior cycles, and restores rectangle', () => {
     const page = enterCaptured()
     expect(page.getCycles()).toHaveLength(1)

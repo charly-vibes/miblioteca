@@ -156,4 +156,18 @@ test.describe('Suite 9: Ghost calibration', () => {
 
     await expect(page.locator('[data-testid="camera-warning"]')).toBeVisible({ timeout: 5000 })
   })
+
+  test('9.7 initial idle UI is correct on load', async ({ page }) => {
+    await mockCamera(page)
+    await mockGyro(page)
+    await navigateToGhost(page)
+
+    await expect(page.locator('[data-testid="calibration-rectangle"]')).toBeVisible()
+    await expect(page.locator('[data-testid="center-dot"]')).toBeVisible()
+    await expect(page.locator('[data-testid="center-dot"]')).toHaveClass(/ghost-center-dot/)
+    await expect(page.locator('[data-testid="hint-text"]')).toContainText('TAP CENTER TO START')
+    await expect(page.locator('[data-testid="recording-indicator"]')).toHaveAttribute('hidden', '')
+    await expect(page.locator('[data-testid="stop-btn"]')).toHaveAttribute('hidden', '')
+    await expect(page.locator('[data-testid="summary-panel"]')).toHaveAttribute('hidden', '')
+  })
 })

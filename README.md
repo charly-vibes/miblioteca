@@ -18,6 +18,64 @@ Miblioteca is a TypeScript PWA for capturing images of bookshelf spines.
    ```
 4. **Open the app in your browser** at the URL provided by the `dev` command.
 
+## Testing on Android Chrome
+
+Sensors (`DeviceMotion`, `DeviceOrientation`) and `getUserMedia` require a secure
+context (HTTPS or `localhost`). The dev server runs over HTTPS using a locally-trusted
+certificate created by `mkcert`.
+
+### What `just setup` does
+
+```bash
+just setup
+```
+
+Runs `npm install`, then `mkcert -install` (installs the local CA into the system
+trust store) and `mkcert localhost` (creates `localhost.pem` + `localhost-key.pem`
+in the project root). Requires `mkcert` to be installed — see
+[mkcert installation](https://github.com/FiloSottile/mkcert#installation).
+
+### Trusting the cert on Android
+
+Two options — **port forwarding is simpler**:
+
+**Option A — Port forwarding (recommended)**
+
+Avoids all certificate trust steps. `localhost` is already a secure context on
+Android Chrome.
+
+1. Connect the Android device via USB with USB debugging enabled.
+2. Run:
+   ```bash
+   adb reverse tcp:5173 tcp:5173
+   ```
+3. Start the dev server:
+   ```bash
+   just dev
+   ```
+4. On the Android device, open `https://localhost:5173`.
+
+**Option B — Install the mkcert CA on Android**
+
+1. Locate the CA root certificate:
+   ```bash
+   mkcert -CAROOT
+   ```
+2. Push the `rootCA.pem` to the device:
+   ```bash
+   adb push "$(mkcert -CAROOT)/rootCA.pem" /sdcard/mkcert-rootCA.crt
+   ```
+3. On Android: **Settings → Security → Encryption & credentials →
+   Install a certificate → CA certificate**, then select the pushed file.
+4. In Chrome, enable "Trust user certificates" if prompted (Android 14+).
+5. Navigate to the HTTPS address shown by `just dev` (e.g. `https://192.168.x.x:5173`).
+
+### Starting the dev server
+
+```bash
+just dev
+```
+
 ## Tools
 
 This project uses the following tools to help with development:

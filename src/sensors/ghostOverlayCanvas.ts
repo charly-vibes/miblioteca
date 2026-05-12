@@ -19,20 +19,56 @@ export const WORKING_DISTANCE_MAX_CM = 150
 export const WORKING_DISTANCE_DEFAULT_CM = 60
 
 export type GhostOverlayCanvasDeps = {
+  /**
+   * Gyroscope event source. Pass `null` when no gyroscope is available —
+   * the overlay will not be rendered (ghost stays hidden).
+   */
   gyro: GyroLike | null
   motion?: MotionLike | null
   /** Returns current DeviceOrientationEvent.beta. Used by feedGhostAccel tilt guard. */
   getBeta?: () => number | null
   distanceCm?: number      // working distance to subject in cm; clamped to [WORKING_DISTANCE_MIN_CM, WORKING_DISTANCE_MAX_CM]; default WORKING_DISTANCE_DEFAULT_CM
   onFrame?: (frame: GhostFrame) => void  // fired each RAF tick after shift is computed
+  /**
+   * Schedules an animation-frame callback. Defaults to `window.requestAnimationFrame`.
+   * Override in tests to drive frames synchronously without a real browser animation loop.
+   */
   requestAnimationFrame?: (cb: FrameRequestCallback) => number
+  /**
+   * Cancels a scheduled animation-frame callback. Defaults to `window.cancelAnimationFrame`.
+   * Override in tests alongside `requestAnimationFrame` to avoid leaking fake timers.
+   */
   cancelAnimationFrame?: (id: number) => void
+  /**
+   * Returns the current high-resolution timestamp in milliseconds.
+   * Defaults to `performance.now()`. Override in tests to control time deterministically.
+   */
   now?: () => DOMHighResTimeStamp
   canvasClassName?: string          // CSS class for the overlay canvas; default 'ghost-overlay'
-  logger?: { log(...args: unknown[]): void }  // default: debugLogger
-  getOrientation?: () => string     // returns screen.orientation.type equivalent; default reads screen.orientation
+  /**
+   * Logging sink for structured ghost events. Defaults to `debugLogger` (no-op in production).
+   * Override in tests to capture or assert on emitted log entries.
+   */
+  logger?: { log(...args: unknown[]): void }
+  /**
+   * Returns the current screen orientation type (equivalent to `screen.orientation.type`).
+   * Defaults to reading `screen.orientation` directly.
+   * Override in tests to simulate portrait/landscape without a real screen object.
+   */
+  getOrientation?: () => string
 }
 
+/**
+ * Creates a `<canvas>` element, appends it to the given viewfinder element, and
+ * drives a ghost-overlay animation loop that shifts the canvas in response to
+ * device rotation and translation.
+ *
+ * The canvas starts **hidden** (`canvas.hidden = true`) and becomes visible only
+ * after the first successful call to `setSnapshot()`.
+ *
+ * Callers **must** call `destroy()` when the camera session ends or the view
+ * unmounts, to cancel the animation-frame loop and remove the canvas from the DOM.
+ */
 export class GhostOverlayCanvas {
   private readonly canvas: HTMLCanvasElement
   private readonly ctx: CanvasRenderingContext2D
@@ -50,6 +86,11 @@ export class GhostOverlayCanvas {
   private tiltWarningActive = false
   private readonly deps: Required<Omit<GhostOverlayCanvasDeps, 'motion' | 'getBeta' | 'distanceCm' | 'onFrame' | 'canvasClassName'>> & Pick<GhostOverlayCanvasDeps, 'onFrame'>
 
+  /**
+   * @throws {Error} `'Canvas 2D context unavailable'` — thrown when the browser
+   * cannot provide a 2D rendering context for the created canvas (e.g. hardware
+   * acceleration is disabled or the context limit has been exceeded).
+   */
   constructor(viewfinder: HTMLElement, deps: GhostOverlayCanvasDeps) {
     this.viewfinder = viewfinder
     this.deps = {

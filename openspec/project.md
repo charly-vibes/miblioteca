@@ -70,6 +70,17 @@ agreed-upon target.
 - **Ghost overlay:** CSS `transform: translate3d` on an absolutely-positioned
   `<canvas>` over `<video>`; shift driven by gyro integration in `requestAnimationFrame`
 
+- **Ghost overlay architecture:** Pure-function core in `ghostOverlay.ts` (state
+  transitions and frame math) → `GhostMotionPipeline` (RAF loop + gyro integration) →
+  `GhostOverlayCanvas` (imperative canvas shell that owns the DOM element). The
+  calibration page at `/ghost.html` is driven by `GhostCalibrationPage`, which owns
+  the full calibration UI and wires all components together.
+
+- **Debug event bus:** `src/debug/logger.ts` provides a ring-buffer event log that
+  is exportable as JSON. `DebugPanel` surfaces the log in the UI. All subsystems
+  (sensors, ghost overlay, capture) log structured events to this bus for post-hoc
+  debugging without needing DevTools attached.
+
 ### Testing Strategy
 
 - Unit tests for pure functions: `laplacianVariance`, `feedAccel`, `makeThumbnail`,
@@ -117,6 +128,10 @@ client's job is only to produce clean, well-timestamped data.
 - **Web NFC is Android Chrome only** — treat as nice-to-have, never the only join path
 
 ## Backend API Contracts (out of scope for capture client — must implement)
+
+**Note:** All endpoints in this section are post-MVP. The MVP capture client delivers
+data via portable bundle export. See `openspec/specs/api-contracts.md` for the definitive
+API specification and status notes.
 
 - `POST /api/scan` — create scan, returns `serverTimeMs` for clock anchoring
 - `POST /api/scan/join` — join with `shortCode + joinToken + clientTimeMs`, returns

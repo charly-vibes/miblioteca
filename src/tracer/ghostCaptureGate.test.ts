@@ -23,10 +23,19 @@ describe('ghostCaptureGate', () => {
   it('blocks later captures when horizontal error is too large', () => {
     const decision = evaluateGhostCapture({
       captureIndex: 1,
-      ghost: { shiftPx: 26, shiftPy: 1, visible: true, workingDistanceCm: 60 },
+      ghost: { shiftPx: 41, shiftPy: 1, visible: true, workingDistanceCm: 60 },
       recentShiftXs: [4],
     })
     expect(decision).toMatchObject({ allowed: false, reason: 'large-horizontal-error' })
+  })
+
+  it('blocks later captures when total magnitude exceeds threshold', () => {
+    const decision = evaluateGhostCapture({
+      captureIndex: 1,
+      ghost: { shiftPx: 30, shiftPy: 35, visible: true, workingDistanceCm: 60 },
+      recentShiftXs: [4],
+    })
+    expect(decision).toMatchObject({ allowed: false, reason: 'large-total-error' })
   })
 
   it('blocks later captures when recent shifts oscillate left-right-left-right', () => {

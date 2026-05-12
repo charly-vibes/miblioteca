@@ -27,3 +27,4 @@ vite.config.js
 vite.config.d.ts
 src/dev/*.js
 src/dev/*.d.ts
+.dont/

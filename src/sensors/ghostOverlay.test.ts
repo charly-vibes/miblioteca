@@ -837,6 +837,29 @@ describe('computeOrientationDelta', () => {
     expect(result.state.qRef.z).toBeCloseTo(state.qRef.z)
   })
 
+  it('magnetometer noise on a still device stays within capture gate threshold', () => {
+    let state = initialOrientationState(180, 90, 0, 0)
+    // ±1.5° per axis is realistic worst-case indoor magnetometer jitter
+    const rng = (seed: number) => Math.sin(seed * 12.9898 + 78.233) * 43758.5453 % 1
+    let maxAbsYaw = 0
+    for (let i = 1; i <= 200; i++) {
+      const jitterAlpha = (rng(i) - 0.5) * 3
+      const jitterBeta = (rng(i + 1000) - 0.5) * 3
+      const jitterGamma = (rng(i + 2000) - 0.5) * 3
+      const result = computeOrientationDelta(state, {
+        alphaDeg: 180 + jitterAlpha,
+        betaDeg: 90 + jitterBeta,
+        gammaDeg: 0 + jitterGamma,
+        gyroMag: 0.02,
+        nowMs: i * 16,
+      })
+      state = result.state
+      maxAbsYaw = Math.max(maxAbsYaw, Math.abs(result.yaw))
+    }
+    // At 414px viewport, focal ~569px. Gate is 40px → 40/569 ≈ 0.070 rad
+    expect(maxAbsYaw).toBeLessThan(0.07)
+  })
+
   it('handles q_delta.w < 0 via negation', () => {
     const state = initialOrientationState(180, 90, 0, 0)
     const normal = computeOrientationDelta(state, { alphaDeg: 181, betaDeg: 90, gammaDeg: 0, gyroMag: 1.0, nowMs: 1000 })

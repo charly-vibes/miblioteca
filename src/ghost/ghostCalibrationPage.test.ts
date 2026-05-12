@@ -660,6 +660,28 @@ describe('GhostCalibrationPage — JSON export', () => {
   })
 })
 
+describe('GhostCalibrationPage — devicemotion-only frame production', () => {
+  it('accumulates SensorFrames via devicemotion when Gyroscope API is not available', () => {
+    const page = new GhostCalibrationPage(container, { win, gyro: null })
+    page.getCenterDot().click()
+    expect(page.getCurrentCycle()?.frames).toHaveLength(0)
+
+    win.dispatch('devicemotion', {
+      rotationRate: { alpha: 10, beta: 20, gamma: 30 },
+      acceleration: { x: 0.5, y: -0.3, z: 0.1 },
+    })
+    win.dispatch('devicemotion', {
+      rotationRate: { alpha: 12, beta: 22, gamma: 28 },
+      acceleration: { x: 0.4, y: -0.2, z: 0.15 },
+    })
+
+    expect(page.getCurrentCycle()?.frames?.length).toBe(2)
+    const frame = page.getCurrentCycle()?.frames?.[0]!
+    expect(frame.gx).toBeCloseTo(10 * Math.PI / 180)
+    expect(frame.ax).toBeCloseTo(0.5)
+  })
+})
+
 describe('GhostCalibrationPage — double integration prevention', () => {
   it('devicemotion does not re-integrate gyro when Gyroscope API is active', () => {
     const gyro = makeGyro(0, 0.5, 0)  // gy = 0.5 rad/s

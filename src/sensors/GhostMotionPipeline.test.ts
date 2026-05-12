@@ -555,6 +555,34 @@ describe('GhostMotionPipeline — absolute orientation', () => {
     expect(orientation.onreading).toBeNull()
   })
 
+  it('orientation noise on a still device produces shifts within capture gate', () => {
+    const gyro = makeGyro()
+    const orientation = makeOrientation()
+    const onFrame = vi.fn()
+    let nowMs = 0
+    const deps = makeDeps({
+      gyro, orientation, onFrame, enableMotionGate: false,
+      displayWidth: () => 414, displayHeight: () => 896,
+      now: () => nowMs,
+    })
+    const pipeline = new GhostMotionPipeline(deps)
+
+    orientation.fire(180, 90, 0)
+    const rng = (seed: number) => Math.sin(seed * 12.9898 + 78.233) * 43758.5453 % 1
+    for (let i = 1; i <= 120; i++) {
+      nowMs = i * 16
+      const jitter = (rng(i) - 0.5) * 4
+      gyro.fire(0, 0, 0, nowMs)
+      orientation.fire(180 + jitter, 90 + (rng(i + 1000) - 0.5) * 4, (rng(i + 2000) - 0.5) * 4)
+      ;(deps.raf as unknown as { flush(): void }).flush()
+    }
+
+    const lastFrame = onFrame.mock.calls.at(-1)?.[0]
+    expect(lastFrame).toBeDefined()
+    expect(Math.abs(lastFrame!.shiftPx)).toBeLessThan(40)
+    pipeline.destroy()
+  })
+
   it('skips orientation reading when alpha/beta/gamma are null', () => {
     const gyro = makeGyro()
     const orientation = makeOrientation()

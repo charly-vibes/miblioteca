@@ -13,8 +13,8 @@ export type GhostCaptureDecision = {
   recentSignFlips: number
 }
 
-export const GHOST_CAPTURE_MAX_SHIFT_X_PX = 25
-export const GHOST_CAPTURE_MAX_MAG_PX = 28
+export const GHOST_CAPTURE_MAX_SHIFT_X_PX = 40
+export const GHOST_CAPTURE_MAX_MAG_PX = 45
 export const GHOST_CAPTURE_OSCILLATION_MIN_ABS_PX = 20
 export const GHOST_CAPTURE_OSCILLATION_WINDOW = 4
 export const GHOST_CAPTURE_OSCILLATION_MIN_FLIPS = 3

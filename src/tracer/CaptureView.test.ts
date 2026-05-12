@@ -437,7 +437,7 @@ describe('CaptureView — ghost capture gate', () => {
     const saveSpy = vi.spyOn(persistence, 'saveCapture')
     const { user, logger, view } = await bootstrapWithDebugLogger()
     ;(view as any).captureIndex = 1
-    setGhostState(view, { shiftPx: 31, shiftPy: 2, visible: true, workingDistanceCm: 60 })
+    setGhostState(view, { shiftPx: 41, shiftPy: 2, visible: true, workingDistanceCm: 60 })
 
     await user.click(screen.getByRole('button', { name: /take photo/i }))
 

@@ -6,11 +6,11 @@ import type { Quat } from './imuMath'
 
 export const STILL_THRESHOLD = 0.05
 export const STILL_EMA_ALPHA = 0.95
-export const YAW_DEADBAND_RAD = 0.0035
-export const PITCH_DEADBAND_RAD = 0.0035
-export const STILL_GAIN = 0.12
-export const MOVING_GAIN = 0.35
-export const MAX_SHIFT_RATE_RAD_S = 1.2
+export const YAW_DEADBAND_RAD = 0.008
+export const PITCH_DEADBAND_RAD = 0.008
+export const STILL_GAIN = 0.04
+export const MOVING_GAIN = 0.08
+export const MAX_SHIFT_RATE_RAD_S = 0.4
 
 export type OrientationTrackingState = {
   readonly qRef: Quat

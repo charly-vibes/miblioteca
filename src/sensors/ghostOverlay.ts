@@ -32,10 +32,18 @@ export const DEFAULT_HFOV_DEG = 40
 export const ZUPT_THRESHOLD_MS2 = 0.10
 export const ZUPT_TAU_S = 0.20
 
+/** Returns the zero-valued initial {@link GhostOverlayState} (all integrals and velocities at 0). */
 export function initialGhostState(): GhostOverlayState {
   return { yawIntegral: 0, pitchIntegral: 0, lastT: -Infinity, lastAccelT: -Infinity, omegaMag: 0, velX: 0, velY: 0, dx_m: 0, dy_m: 0 }
 }
 
+/**
+ * Integrates one gyroscope sample into the accumulated yaw and pitch.
+ * @param state   Current overlay state.
+ * @param sample  Gyro reading with gx/gy/gz in rad/s and t in ms (DOMHighResTimeStamp).
+ * @param scanAxis `'y'` for portrait (device-y / gamma rate); `'x'` for landscape (device-x / beta rate).
+ * @returns New state with updated yawIntegral, pitchIntegral, lastT, and omegaMag.
+ */
 // scanAxis 'y' = portrait (gamma/device-y); 'x' = landscape (beta/device-x). Caller should
 // derive from screen.orientation.type: portrait-* → 'y', landscape-* → 'x'.
 export function feedGhostGyro(
@@ -73,6 +81,16 @@ export type AccelFeedResult = {
   gate: 'pass' | 'zupt' | 'tilt'
 }
 
+/**
+ * Integrates one linear-acceleration sample into velocity and displacement.
+ * @param state   Current overlay state.
+ * @param sample  Accel reading with ax/ay in m/s² (gravity-subtracted), betaDeg in degrees,
+ *                interval_ms in ms, and t in ms (DOMHighResTimeStamp).
+ *                Set `gravitySubtracted: true` when the hardware removed gravity — widens the
+ *                beta guard from 30° to 45° around vertical.
+ * @returns `{ state, gate }` where gate is `'pass'` (integrated), `'zupt'` (below noise floor,
+ *          velocity decayed), or `'tilt'` (phone too flat, gravity would contaminate ax/ay).
+ */
 // Integrate gravity-subtracted linear acceleration into velocity and displacement.
 // Beta-angle guard: if the phone is too far from vertical, gravity leaks into ax/ay.
 // Threshold is 30° for raw accel (usingRawAccel=true) and 45° for hardware-subtracted
@@ -125,6 +143,12 @@ export function feedGhostAccel(
   }
 }
 
+/**
+ * Resets velX and velY to 0 (secondary ZUPT triggered on motion-gate close).
+ * Position accumulators (dx_m, dy_m) are intentionally preserved.
+ * @param state  Current overlay state.
+ * @returns State with velX and velY set to 0; all other fields unchanged.
+ */
 // Zero velocity accumulators (secondary ZUPT on motion-gate close).
 // Position accumulators (dx_m, dy_m) are retained — the scan is still in progress.
 // setSnapshot() resets everything including position via initialGhostState().
@@ -133,10 +157,25 @@ export function zeroVelocity(state: GhostOverlayState): GhostOverlayState {
   return { ...state, velX: 0, velY: 0 }
 }
 
+/**
+ * Computes focal length in pixels using the pinhole camera model.
+ * @param displayWidth  CSS pixel width of the rendered element (px).
+ * @param hFovDeg       Horizontal field of view in degrees (default {@link DEFAULT_HFOV_DEG}).
+ * @returns Focal length in pixels: `(displayWidth / 2) / tan(hFovDeg / 2)`.
+ */
 export function focalLengthPx(displayWidth: number, hFovDeg = DEFAULT_HFOV_DEG): number {
   return (displayWidth / 2) / Math.tan((hFovDeg * Math.PI) / 180 / 2)
 }
 
+/**
+ * Computes horizontal pixel shift from accumulated yaw.
+ * Sign convention: positive yawRad → negative shift (ghost moves left when looking right,
+ * appearing fixed in space).
+ * @param yawIntegral  Accumulated yaw in radians.
+ * @param displayWidth CSS pixel width of the rendered element (px).
+ * @param hFovDeg      Horizontal field of view in degrees (default {@link DEFAULT_HFOV_DEG}).
+ * @returns Horizontal shift in px, clamped to `±displayWidth/2`.
+ */
 // shiftX = -focal * yawIntegral, clamped to ±displayWidth/2.
 // displayWidth must be the CSS pixel width of the rendered element (not the bitmap width).
 // Camera sweeps right (gy < 0) → yawIntegral > 0 → negative shift (ghost moves left, appears fixed in space).
@@ -146,6 +185,14 @@ export function computeShiftPx(yawIntegral: number, displayWidth: number, hFovDe
   return Math.max(-half, Math.min(half, shift))
 }
 
+/**
+ * Clamps yawIntegral to the range where {@link computeShiftPx} would not further clamp.
+ * displayWidth cancels out, so only hFovDeg matters: maxYaw = tan(hFovDeg / 2).
+ * Apply in the RAF loop to prevent over-rotation and ghost jumping when panning back from an edge.
+ * @param yawIntegral  Accumulated yaw in radians.
+ * @param hFovDeg      Horizontal field of view in degrees (default {@link DEFAULT_HFOV_DEG}).
+ * @returns yawIntegral clamped to `±tan(hFovDeg / 2)` rad.
+ */
 // Clamps yawIntegral to the range that computeShiftPx would not further clamp.
 // displayWidth cancels out: maxYaw = tan(hFov/2).
 // Apply in the RAF loop after rendering so yaw never accumulates past the visible boundary,
@@ -155,6 +202,16 @@ export function clampYawToViewport(yawIntegral: number, hFovDeg = DEFAULT_HFOV_D
   return Math.max(-maxYaw, Math.min(maxYaw, yawIntegral))
 }
 
+/**
+ * Computes vertical pixel shift from accumulated pitch.
+ * Sign convention: positive pitchRad (top away / looking up) → positive shift (ghost moves down,
+ * appearing fixed in space).
+ * @param pitchIntegral  Accumulated pitch in radians.
+ * @param displayWidth   CSS pixel width of the rendered element (px); used to derive focal length.
+ * @param displayHeight  CSS pixel height of the rendered element (px).
+ * @param hFovDeg        Horizontal field of view in degrees (default {@link DEFAULT_HFOV_DEG}).
+ * @returns Vertical shift in px, clamped to `±displayHeight/2`.
+ */
 // shiftY = focal * pitchIntegral, clamped to ±displayHeight/2.
 // Camera tilts top away (looks up) → pitchIntegral > 0 → positive shiftY (ghost moves down, appears fixed in space).
 export function computeShiftPy(pitchIntegral: number, displayWidth: number, displayHeight: number, hFovDeg = DEFAULT_HFOV_DEG): number {
@@ -163,6 +220,15 @@ export function computeShiftPy(pitchIntegral: number, displayWidth: number, disp
   return Math.max(-half, Math.min(half, shift))
 }
 
+/**
+ * Computes horizontal pixel shift from lateral camera displacement (unclamped).
+ * Sign: phone moves right (+dx_m) → ghost shifts left (negative px) to appear fixed in space.
+ * @param dx_m             Lateral displacement in meters (device x-axis, rightward positive).
+ * @param workingDistanceM Distance from camera to subject in meters.
+ * @param displayWidth     CSS pixel width of the rendered element (px).
+ * @param hFovDeg          Horizontal field of view in degrees (default {@link DEFAULT_HFOV_DEG}).
+ * @returns Horizontal translation shift in px; returns 0 if workingDistanceM ≤ 0.
+ */
 // Lateral translation shift from DeviceMotion integration (unclamped; canvas applies final clamp on combined total).
 // Camera moves right (+dx_m) → shelf appears to shift left → negative shiftPx (ghost moves left = fixed in space).
 // The minus sign is the AR correctness requirement: phone right → ghost left.
@@ -176,6 +242,15 @@ export function computeTranslationShiftPx(
   return -(dx_m / workingDistanceM) * focalLengthPx(displayWidth, hFovDeg)
 }
 
+/**
+ * Computes vertical pixel shift from vertical camera displacement (unclamped).
+ * Sign: phone moves up (+dy_m) → ghost shifts down (positive px) to appear fixed in space.
+ * @param dy_m             Vertical displacement in meters (device y-axis, upward positive).
+ * @param workingDistanceM Distance from camera to subject in meters.
+ * @param displayWidth     CSS pixel width of the rendered element (px); used to derive focal length.
+ * @param hFovDeg          Horizontal field of view in degrees (default {@link DEFAULT_HFOV_DEG}).
+ * @returns Vertical translation shift in px; returns 0 if workingDistanceM ≤ 0.
+ */
 // Vertical translation shift (unclamped; canvas applies final clamp on combined total).
 // Camera moves up (+dy_m) → shelf appears to shift down → positive shiftPy (ghost moves down = fixed in space).
 // Positive (no negation): contrast with Px — phone up (+dy_m) → ghost down, not left/right.
@@ -192,6 +267,16 @@ export function computeTranslationShiftPy(
 export const MOTION_GATE_SHOW_RAD_S = 0.40
 export const MOTION_GATE_HIDE_RAD_S = 0.55
 
+/**
+ * Determines ghost overlay visibility using hysteresis on angular velocity magnitude.
+ * When currently hidden: visible if omegaMag ≤ showThreshold.
+ * When currently visible: visible if omegaMag ≤ hideThreshold.
+ * @param omegaMag       Current |ω| in rad/s.
+ * @param currentlyHidden Whether the overlay is currently hidden.
+ * @param showThreshold  |ω| below which to show (default {@link MOTION_GATE_SHOW_RAD_S}).
+ * @param hideThreshold  |ω| above which to hide (default {@link MOTION_GATE_HIDE_RAD_S}).
+ * @returns `true` if the overlay should be visible.
+ */
 export function motionGateVisible(
   omegaMag: number,
   currentlyHidden: boolean,
@@ -203,6 +288,12 @@ export function motionGateVisible(
     : omegaMag <= hideThreshold
 }
 
+/**
+ * Clamps a shift so the image does not scroll beyond the viewport edge.
+ * @param clientDim   Proposed shift in px (content dimension or offset).
+ * @param viewportDim Viewport dimension in px (width or height).
+ * @returns `Math.min(clientDim, viewportDim)`, or clientDim unchanged when viewportDim ≤ 0.
+ */
 export function capToViewport(clientDim: number, viewportDim: number): number {
   return viewportDim > 0 ? Math.min(clientDim, viewportDim) : clientDim
 }

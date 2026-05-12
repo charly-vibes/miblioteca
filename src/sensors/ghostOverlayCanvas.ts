@@ -11,12 +11,19 @@ import { debugLogger } from '../debug/logger'
 
 export type { GyroLike, MotionLike, GhostFrame }
 
+// Working distance bounds: 20 cm = minimum arm-reach / macro distance;
+// 150 cm = maximum practical shelf depth from phone.
+// Default 60 cm ≈ typical arm-length distance for shelf scanning.
+export const WORKING_DISTANCE_MIN_CM = 20
+export const WORKING_DISTANCE_MAX_CM = 150
+export const WORKING_DISTANCE_DEFAULT_CM = 60
+
 export type GhostOverlayCanvasDeps = {
   gyro: GyroLike | null
   motion?: MotionLike | null
   /** Returns current DeviceOrientationEvent.beta. Used by feedGhostAccel tilt guard. */
   getBeta?: () => number | null
-  distanceCm?: number      // working distance to subject in cm; clamped to [20, 150]; default 60
+  distanceCm?: number      // working distance to subject in cm; clamped to [WORKING_DISTANCE_MIN_CM, WORKING_DISTANCE_MAX_CM]; default WORKING_DISTANCE_DEFAULT_CM
   onFrame?: (frame: GhostFrame) => void  // fired each RAF tick after shift is computed
   requestAnimationFrame?: (cb: FrameRequestCallback) => number
   cancelAnimationFrame?: (id: number) => void
@@ -38,7 +45,7 @@ export class GhostOverlayCanvas {
   private hasSnapshot = false
   private firstFrameFired = false
   private lastShiftLogMs = 0
-  private workingDistanceCm = 60
+  private workingDistanceCm = WORKING_DISTANCE_DEFAULT_CM
   private readonly deps: Required<Omit<GhostOverlayCanvasDeps, 'motion' | 'getBeta' | 'distanceCm' | 'onFrame' | 'canvasClassName'>> & Pick<GhostOverlayCanvasDeps, 'onFrame'>
 
   constructor(viewfinder: HTMLElement, deps: GhostOverlayCanvasDeps) {
@@ -53,15 +60,15 @@ export class GhostOverlayCanvas {
       getOrientation: deps.getOrientation ?? (() => (typeof screen !== 'undefined' && screen.orientation?.type) || 'portrait-primary'),
     }
 
-    const d = deps.distanceCm ?? 60
+    const d = deps.distanceCm ?? WORKING_DISTANCE_DEFAULT_CM
     if (!Number.isFinite(d)) {
-      this.workingDistanceCm = 60
-    } else if (d < 20) {
-      console.warn(`GhostOverlayCanvas: distanceCm ${d} is below minimum 20, clamping to 20`)
-      this.workingDistanceCm = 20
-    } else if (d > 150) {
-      console.warn(`GhostOverlayCanvas: distanceCm ${d} exceeds maximum 150, clamping to 150`)
-      this.workingDistanceCm = 150
+      this.workingDistanceCm = WORKING_DISTANCE_DEFAULT_CM
+    } else if (d < WORKING_DISTANCE_MIN_CM) {
+      console.warn(`GhostOverlayCanvas: distanceCm ${d} is below minimum ${WORKING_DISTANCE_MIN_CM}, clamping to ${WORKING_DISTANCE_MIN_CM}`)
+      this.workingDistanceCm = WORKING_DISTANCE_MIN_CM
+    } else if (d > WORKING_DISTANCE_MAX_CM) {
+      console.warn(`GhostOverlayCanvas: distanceCm ${d} exceeds maximum ${WORKING_DISTANCE_MAX_CM}, clamping to ${WORKING_DISTANCE_MAX_CM}`)
+      this.workingDistanceCm = WORKING_DISTANCE_MAX_CM
     } else {
       this.workingDistanceCm = d
     }

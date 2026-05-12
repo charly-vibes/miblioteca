@@ -316,7 +316,7 @@ export class CaptureView {
       const raw = stored ?? distParam
       const parsed = raw ? Number(raw) : NaN
       const distanceCm = Number.isFinite(parsed) ? parsed : undefined
-      if (distanceCm !== undefined) {
+      if (stored !== null && distanceCm !== undefined) {
         localStorage.setItem(LS_KEY, String(distanceCm))
       }
       this.ghostOverlay = new GhostOverlayCanvas(this.viewfinder, {

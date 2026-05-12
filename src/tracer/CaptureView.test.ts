@@ -663,3 +663,53 @@ describe('CaptureView — captures gallery', () => {
     })
   })
 })
+
+describe('CaptureView — working distance persistence', () => {
+  const LS_KEY = 'miblioteca.workingDistanceCm'
+
+  async function bootstrapWithGyro(opts: { gyro?: object; searchParams?: string } = {}) {
+    mockGetUserMedia.mockResolvedValue(makeFakeStream())
+    if (opts.searchParams !== undefined) {
+      Object.defineProperty(window, 'location', {
+        value: { search: opts.searchParams },
+        configurable: true,
+      })
+    }
+    const user = userEvent.setup()
+    new CaptureView(container, {
+      captureSnapshot: mockCaptureSnapshot,
+      uploadFetch: mockUploadFetch(200),
+      gyro: (opts.gyro ?? {}) as never,
+    })
+    await vi.waitFor(() => screen.getByRole('button', { name: /open camera/i }))
+    await user.click(screen.getByRole('button', { name: /open camera/i }))
+    await vi.waitFor(() => screen.getByRole('button', { name: /take photo/i }))
+    return user
+  }
+
+  afterEach(() => {
+    Object.defineProperty(window, 'location', { value: { search: '' }, configurable: true })
+  })
+
+  it('persists localStorage value when camera opens', async () => {
+    storage.set(LS_KEY, '80')
+    await bootstrapWithGyro()
+    expect(storage.get(LS_KEY)).toBe('80')
+  })
+
+  it('URL param is session-only: does NOT write to localStorage', async () => {
+    await bootstrapWithGyro({ searchParams: '?distance=75' })
+    expect(storage.get(LS_KEY)).toBeUndefined()
+  })
+
+  it('localStorage value takes priority over URL param', async () => {
+    storage.set(LS_KEY, '90')
+    await bootstrapWithGyro({ searchParams: '?distance=75' })
+    expect(storage.get(LS_KEY)).toBe('90')
+  })
+
+  it('non-numeric URL param falls back to default and does not persist', async () => {
+    await bootstrapWithGyro({ searchParams: '?distance=abc' })
+    expect(storage.get(LS_KEY)).toBeUndefined()
+  })
+})

@@ -129,6 +129,19 @@ describe('DistanceCalibrationOverlay', () => {
   })
 })
 
+describe('distance formula edge cases', () => {
+  it('bracketWidthPx clamped to minimum: does not divide by zero', () => {
+    const onDone = vi.fn()
+    const overlay = makeOverlay({ viewfinderWidthPx: 640, hFovDeg: 60, onDone })
+    ;(overlay as unknown as { setBracketWidthPx(px: number): void }).setBracketWidthPx(0)
+    container.querySelector<HTMLElement>('[data-testid="distance-cal-done"]')!.click()
+    const distCm = onDone.mock.calls[0][0] as number
+    expect(Number.isFinite(distCm)).toBe(true)
+    expect(distCm).toBeGreaterThan(0)
+    expect(distCm).toBeLessThanOrEqual(150)
+  })
+})
+
 describe('GhostOverlayCanvas.setWorkingDistance', () => {
   it('setWorkingDistance method exists on GhostOverlayCanvas', async () => {
     const { GhostOverlayCanvas } = await import('../sensors/ghostOverlayCanvas')

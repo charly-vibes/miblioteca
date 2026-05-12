@@ -667,6 +667,17 @@ describe('CaptureView — captures gallery', () => {
 describe('CaptureView — working distance persistence', () => {
   const LS_KEY = 'miblioteca.workingDistanceCm'
 
+  const fakeCtx = {
+    clearRect: vi.fn(), drawImage: vi.fn(), save: vi.fn(), restore: vi.fn(),
+    translate: vi.fn(), rotate: vi.fn(), scale: vi.fn(), fillRect: vi.fn(),
+    canvas: { width: 320, height: 240 },
+  }
+  beforeEach(() => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(fakeCtx as unknown as CanvasRenderingContext2D)
+  })
+
+  const fakeGyro = { start: vi.fn(), stop: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn() }
+
   async function bootstrapWithGyro(opts: { gyro?: object; searchParams?: string } = {}) {
     mockGetUserMedia.mockResolvedValue(makeFakeStream())
     if (opts.searchParams !== undefined) {
@@ -679,7 +690,7 @@ describe('CaptureView — working distance persistence', () => {
     new CaptureView(container, {
       captureSnapshot: mockCaptureSnapshot,
       uploadFetch: mockUploadFetch(200),
-      gyro: (opts.gyro ?? {}) as never,
+      gyro: (opts.gyro ?? fakeGyro) as never,
     })
     await vi.waitFor(() => screen.getByRole('button', { name: /open camera/i }))
     await user.click(screen.getByRole('button', { name: /open camera/i }))

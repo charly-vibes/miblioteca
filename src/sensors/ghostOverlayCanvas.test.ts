@@ -98,6 +98,58 @@ describe('GhostOverlayCanvas.setSnapshot', () => {
     expect(ctx.drawImage.mock.calls.length).toBe(drawCallsBefore)
     viewfinder.remove()
   })
+
+  it('canvas is sized to bitmap when viewfinder has no CSS dimensions', () => {
+    makeCanvas()
+    const { canvas, viewfinder } = makeOverlay()
+    const el = viewfinder.querySelector('canvas')!
+    // clientWidth/clientHeight are 0 in JSDOM → fallback to bitmap dims
+    canvas.setSnapshot(makeBitmap(320, 240))
+    expect(el.width).toBe(320)
+    expect(el.height).toBe(240)
+    viewfinder.remove()
+  })
+
+  it('cover-crop: landscape bitmap onto portrait canvas crops left/right edges', () => {
+    const ctx = makeCanvas()
+    const { canvas, viewfinder } = makeOverlay()
+    // Mock viewfinder to have portrait CSS dims so readDisplayDims() returns them
+    Object.defineProperty(viewfinder, 'clientWidth', { value: 375, configurable: true })
+    Object.defineProperty(viewfinder, 'clientHeight', { value: 667, configurable: true })
+    canvas.setSnapshot(makeBitmap(640, 480))
+
+    // scale = max(375/640, 667/480) = 667/480 ≈ 1.3896
+    // sw = 375/scale ≈ 269.8  sh = 667/scale ≈ 479.9
+    // sx = (640-sw)/2 ≈ 185.1  sy = (480-sh)/2 ≈ 0.05
+    const [, sx, sy, sw, sh, dx, dy, dw, dh] = ctx.drawImage.mock.calls.at(-1)!
+    const scale = Math.max(375 / 640, 667 / 480)
+    expect(sw).toBeCloseTo(375 / scale, 0)
+    expect(sh).toBeCloseTo(667 / scale, 0)
+    expect(sx).toBeCloseTo((640 - sw) / 2, 0)
+    expect(sy).toBeCloseTo((480 - sh) / 2, 0)
+    expect(dx).toBe(0); expect(dy).toBe(0)
+    expect(dw).toBe(375); expect(dh).toBe(667)
+    viewfinder.remove()
+  })
+
+  it('cover-crop: portrait bitmap onto landscape canvas crops top/bottom edges', () => {
+    const ctx = makeCanvas()
+    const { canvas, viewfinder } = makeOverlay()
+    Object.defineProperty(viewfinder, 'clientWidth', { value: 640, configurable: true })
+    Object.defineProperty(viewfinder, 'clientHeight', { value: 360, configurable: true })
+    canvas.setSnapshot(makeBitmap(480, 480))
+
+    // scale = max(640/480, 360/480) = 640/480 ≈ 1.333
+    // sw = 480  sh = 360/scale = 270
+    // sx = 0    sy = (480-270)/2 = 105
+    const [, sx, sy, sw, sh] = ctx.drawImage.mock.calls.at(-1)!
+    const scale = Math.max(640 / 480, 360 / 480)
+    expect(sw).toBeCloseTo(640 / scale, 0)
+    expect(sh).toBeCloseTo(360 / scale, 0)
+    expect(sx).toBeCloseTo((480 - sw) / 2, 0)
+    expect(sy).toBeCloseTo((480 - sh) / 2, 0)
+    viewfinder.remove()
+  })
 })
 
 describe('GhostOverlayCanvas motion gating', () => {

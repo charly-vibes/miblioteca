@@ -321,6 +321,48 @@ describe('GhostMotionPipeline', () => {
       pipeline.destroy()
     })
   })
+
+  describe('openGate() makes gate emitable; subsequent high-omegaMag suppresses again', () => {
+    it('GIVEN gateVisible=false WHEN openGate() THEN low-omegaMag tick fires gateOpen=true', () => {
+      const gyro = makeGyro()
+      const onFrame = vi.fn()
+      const deps = makeDeps({ gyro, onFrame, enableMotionGate: true })
+      const pipeline = new GhostMotionPipeline(deps)
+      // After construction gateVisible=false; without openGate the gate would never open
+      // Call openGate() to simulate a new capture (e.g., setSnapshot in GhostOverlayCanvas)
+      pipeline.openGate()
+
+      // Low-omegaMag reading → should emit gateOpen=true frame
+      gyro.fire(0, 0.1, 0, 1000)
+      gyro.fire(0, 0.1, 0, 1100)
+      ;(deps.raf as unknown as { flush(): void }).flush()
+      const frame = onFrame.mock.calls.find(([f]) => f.gateOpen === true)
+      expect(frame).toBeTruthy()
+      pipeline.destroy()
+    })
+
+    it('GIVEN openGate() called WHEN high-omegaMag fires THEN gate closes (gateOpen=false)', () => {
+      const gyro = makeGyro()
+      const onFrame = vi.fn()
+      const deps = makeDeps({ gyro, onFrame, enableMotionGate: true })
+      const pipeline = new GhostMotionPipeline(deps)
+      pipeline.openGate()
+
+      // First open the gate with a low-omegaMag tick
+      gyro.fire(0, 0.1, 0, 1000)
+      gyro.fire(0, 0.1, 0, 1100)
+      ;(deps.raf as unknown as { flush(): void }).flush()
+      expect(onFrame.mock.calls.at(-1)?.[0].gateOpen).toBe(true)
+      onFrame.mockClear()
+
+      // Now spike omegaMag above hide threshold → gate must close
+      gyro.fire(0, 2.0, 0, 1200)
+      ;(deps.raf as unknown as { flush(): void }).flush()
+      const closeFrame = onFrame.mock.calls.find(([f]) => f.gateOpen === false)
+      expect(closeFrame).toBeTruthy()
+      pipeline.destroy()
+    })
+  })
 })
 
 describe('gyro onerror handler (robustness spec mibilioteca-cf0)', () => {

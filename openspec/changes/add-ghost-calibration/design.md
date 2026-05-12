@@ -159,7 +159,7 @@ The corner dots and center dot ride with the rectangle.
 focalLengthPx = (viewportWidth / 2) / tan(hFovDeg / 2 × π/180)
 ```
 
-`hFovDeg` defaults to 65 (same constant used in `ghostOverlay.ts`). This value is
+`hFovDeg` defaults to 40 (empirically matched to phone held at ~55° natural tilt; see `DEFAULT_HFOV_DEG` in `ghostOverlay.ts`). This value is
 included in the export so offline analysis can reproduce the formula.
 
 **Sensor stream schema (per frame):**
@@ -311,7 +311,7 @@ interface CalibrationExport {
     devicePixelRatio: number;
     userAgent: string;
   };
-  hFovDeg: number;          // ghost overlay hFOV used (default 65)
+  hFovDeg: number;          // ghost overlay hFOV used (default 40 = DEFAULT_HFOV_DEG)
   focalLengthPx: number;    // derived: (viewportWidth/2) / tan(hFovDeg/2 × π/180)
   cycles: CalibrationCycle[];
 }

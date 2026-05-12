@@ -62,7 +62,14 @@ export function mountMibliotecaApp(root: HTMLElement, deps: MibliotecaAppDeps = 
         : sensors.hasDeviceMotionEvent
           ? new DeviceMotionAccelAdapter(window)
           : null
-      captureView = new CaptureView(root, { bootstrapResult: bootstrap, onBack: navigateHome, gyro, accel })
+      const testQualityFrame = (window as unknown as { __miblioteca_test_quality_frame?: () => ImageData | null }).__miblioteca_test_quality_frame
+      captureView = new CaptureView(root, {
+        bootstrapResult: bootstrap,
+        onBack: navigateHome,
+        gyro,
+        accel,
+        getQualityFrame: testQualityFrame,
+      })
     } else if (route.kind === 'new-scan') {
       unmountScanManagement = mountScanManagementView(root, {
         openDb: getDb,

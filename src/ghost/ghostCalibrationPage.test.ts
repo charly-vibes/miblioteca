@@ -225,6 +225,31 @@ describe('GhostCalibrationPage — RECORDING phase', () => {
     expect(page.getCurrentCycle()).toBeNull()
   })
 
+  it('SensorFrame.betaDeg is set from deviceorientation event fired before gyro reading', () => {
+    const gyro = makeGyro(0.1, 0.2, 0.3)
+    const page = new GhostCalibrationPage(container, { win, gyro })
+    page.getCenterDot().click()
+
+    // Fire a deviceorientation event with beta=72
+    const ev = { beta: 72 }
+    win.dispatch('deviceorientation', ev)
+
+    // Now trigger a gyro reading — the frame should capture the last betaDeg
+    gyro.trigger()
+    const frame = page.getCurrentCycle()?.frames?.[0]!
+    expect(frame.betaDeg).toBe(72)
+  })
+
+  it('SensorFrame.betaDeg is null when no deviceorientation event has fired', () => {
+    const gyro = makeGyro(0.1, 0.2, 0.3)
+    const page = new GhostCalibrationPage(container, { win, gyro })
+    page.getCenterDot().click()
+    // No deviceorientation dispatched
+    gyro.trigger()
+    const frame = page.getCurrentCycle()?.frames?.[0]!
+    expect(frame.betaDeg).toBeNull()
+  })
+
   it('does NOT accumulate SensorFrames after RECORDING ends', () => {
     const gyro = makeGyro()
     const caf = vi.fn()

@@ -470,6 +470,7 @@ export class GhostCalibrationPage {
             t: this.nowFn() - this.recordingStartedAt,
             gx, gy, gz,
             ax: this.sensorVals.ax, ay: this.sensorVals.ay, az: this.sensorVals.az,
+            betaDeg: this.betaDeg,
           })
         }
         this.renderTelemetry()

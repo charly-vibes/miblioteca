@@ -41,6 +41,20 @@ describe('createMockScanFetch', () => {
     })
   })
 
+  it('returns 404 for unknown routes', async () => {
+    const fetch = createMockScanFetch(() => 1_000)
+    const response = await fetch('/api/unknown-route', { method: 'POST', body: '{}' })
+    expect(response.ok).toBe(false)
+    expect(response.status).toBe(404)
+  })
+
+  it('returns 404 for non-POST methods on known paths', async () => {
+    const fetch = createMockScanFetch(() => 1_000)
+    const response = await fetch('/api/scan', { method: 'GET' })
+    expect(response.ok).toBe(false)
+    expect(response.status).toBe(404)
+  })
+
   it('rejects malformed dev join requests with 400', async () => {
     const fetch = createMockScanFetch(() => 2_000)
 

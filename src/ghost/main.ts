@@ -5,10 +5,16 @@ import type { GyroLike } from '../sensors/ghostOverlay'
 
 const root = document.getElementById('root')!
 const sensors = detectSensorDeps()
-const gyro: GyroLike | null = sensors.hasGyroscope
-  ? (new (window as unknown as { Gyroscope: new (o: { frequency: number }) => GyroLike }).Gyroscope({ frequency: 60 }))
-  : sensors.hasDeviceMotionEvent
-    ? new DeviceMotionGyroAdapter(window)
-    : null
+let gyro: GyroLike | null = null
+if (sensors.hasGyroscope) {
+  try {
+    gyro = new (window as unknown as { Gyroscope: new (o: { frequency: number }) => GyroLike }).Gyroscope({ frequency: 60 })
+  } catch (e) {
+    console.warn('Gyroscope unavailable (permission denied or not supported):', e)
+    gyro = sensors.hasDeviceMotionEvent ? new DeviceMotionGyroAdapter(window) : null
+  }
+} else if (sensors.hasDeviceMotionEvent) {
+  gyro = new DeviceMotionGyroAdapter(window)
+}
 
 new GhostCalibrationPage(root, { gyro })

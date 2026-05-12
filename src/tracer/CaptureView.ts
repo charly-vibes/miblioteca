@@ -276,8 +276,14 @@ export class CaptureView {
     // see contains(video)=true and skip replaceChildren.
     this.render()
     if (s.kind === 'granted' && this.opts.gyro) {
+      const LS_KEY = 'miblioteca.workingDistanceCm'
+      const stored = localStorage.getItem(LS_KEY)
       const distParam = new URLSearchParams(location.search).get('distance')
-      const distanceCm = distParam ? Number(distParam) : undefined
+      const raw = stored ?? distParam
+      const distanceCm = raw ? Number(raw) : undefined
+      if (distanceCm !== undefined && Number.isFinite(distanceCm)) {
+        localStorage.setItem(LS_KEY, String(distanceCm))
+      }
       this.ghostOverlay = new GhostOverlayCanvas(this.viewfinder, {
         gyro: this.opts.gyro,
         distanceCm,

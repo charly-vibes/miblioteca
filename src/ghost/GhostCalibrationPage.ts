@@ -20,6 +20,7 @@ export type WindowLike = {
   innerHeight: number
   devicePixelRatio?: number
   navigator?: { userAgent: string }
+  visualViewport?: { width: number; height: number } | null
 }
 
 export type CalibrationPageDeps = {
@@ -109,6 +110,7 @@ export class GhostCalibrationPage {
 
   private readonly getScreenOrientation: () => string
   private betaDeg: number | null = null
+  private latestOrientation: { alpha: number; beta: number; gamma: number } | null = null
 
   private cycles: CalibrationCycle[] = []
   private currentCycle: Partial<CalibrationCycle> | null = null
@@ -170,8 +172,8 @@ export class GhostCalibrationPage {
     })
     injectPulseStyle(doc)
 
-    const vw = this.win.innerWidth || FALLBACK_VW
-    const vh = this.win.innerHeight || FALLBACK_VH
+    const vw = this.win.visualViewport?.width || this.win.innerWidth || FALLBACK_VW
+    const vh = this.win.visualViewport?.height || this.win.innerHeight || FALLBACK_VH
 
     this.buildBaseElements(doc)
     this.buildRectangle(doc, vw, vh)
@@ -426,6 +428,9 @@ export class GhostCalibrationPage {
     this.orientationHandler = (ev: Event) => {
       const e = ev as DeviceOrientationEvent
       this.betaDeg = e.beta
+      if (e.alpha != null && e.beta != null && e.gamma != null) {
+        this.latestOrientation = { alpha: e.alpha, beta: e.beta, gamma: e.gamma }
+      }
     }
     this.win.addEventListener('deviceorientation', this.orientationHandler)
 
@@ -464,11 +469,21 @@ export class GhostCalibrationPage {
     this.win.addEventListener('devicemotion', this.motionHandler)
   }
 
+  private readViewportWidth(): number {
+    return this.root.clientWidth || this.win.visualViewport?.width || this.win.innerWidth || FALLBACK_VW
+  }
+
+  private readViewportHeight(): number {
+    return this.root.clientHeight || this.win.visualViewport?.height || this.win.innerHeight || FALLBACK_VH
+  }
+
   private wirePipeline(): void {
     this.pipeline = new GhostMotionPipeline({
       gyro: this.gyro,
-      displayWidth: () => this.win.innerWidth || FALLBACK_VW,
-      displayHeight: () => this.win.innerHeight || FALLBACK_VH,
+      displayWidth: () => this.readViewportWidth(),
+      displayHeight: () => this.readViewportHeight(),
+      getBeta: () => this.betaDeg,
+      getOrientation: () => this.latestOrientation,
       getScreenOrientation: this.getScreenOrientation,
       onFrame: (frame) => this.onPipelineFrame(frame),
       onGyroSample: (pState) => {
@@ -671,7 +686,7 @@ export class GhostCalibrationPage {
     const cycle = this.cycles.at(-1)
     if (!cycle) return
 
-    const vw = this.win.innerWidth || FALLBACK_VW
+    const vw = this.readViewportWidth()
     const fl = focalLengthPx(vw)
     const durationMs = (cycle.endedAt ?? cycle.startedAt) - cycle.startedAt
     const lastGhostYawDeg = (cycle.ghostFrames.at(-1)?.yawRad ?? 0) * 180 / Math.PI
@@ -702,13 +717,13 @@ export class GhostCalibrationPage {
   }
 
   private exportJson(): void {
-    const vw = this.win.innerWidth || FALLBACK_VW
+    const vw = this.readViewportWidth()
     const now = new Date()
     const payload: CalibrationExport = {
       exportedAt: now.toISOString(),
       deviceInfo: {
         viewportWidth: vw,
-        viewportHeight: this.win.innerHeight || FALLBACK_VH,
+        viewportHeight: this.readViewportHeight(),
         devicePixelRatio: this.win.devicePixelRatio ?? 1,
         userAgent: this.win.navigator?.userAgent ?? '',
       },

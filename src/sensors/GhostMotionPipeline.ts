@@ -7,12 +7,11 @@ import {
   clampYawToViewport,
   motionGateVisible,
   zeroVelocity,
+  MOTION_GATE_SHOW_RAD_S,
+  MOTION_GATE_HIDE_RAD_S,
 } from './ghostOverlay'
 import type { GhostOverlayState, GyroSample, GyroLike, MotionLike, GhostFrame } from './ghostOverlay'
 import { debugLogger } from '../debug/logger'
-
-const MOTION_GATE_SHOW_RAD_S = 0.40
-const MOTION_GATE_HIDE_RAD_S = 0.55
 
 export type GhostMotionPipelineDeps = {
   gyro: GyroLike | null

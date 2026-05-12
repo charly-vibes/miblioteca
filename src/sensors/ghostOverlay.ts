@@ -189,11 +189,14 @@ export function computeTranslationShiftPy(
   return (dy_m / workingDistanceM) * focalLengthPx(displayWidth, hFovDeg)
 }
 
+export const MOTION_GATE_SHOW_RAD_S = 0.40
+export const MOTION_GATE_HIDE_RAD_S = 0.55
+
 export function motionGateVisible(
   omegaMag: number,
   currentlyHidden: boolean,
-  showThreshold = 0.40,
-  hideThreshold = 0.55,
+  showThreshold = MOTION_GATE_SHOW_RAD_S,
+  hideThreshold = MOTION_GATE_HIDE_RAD_S,
 ): boolean {
   return currentlyHidden
     ? omegaMag <= showThreshold

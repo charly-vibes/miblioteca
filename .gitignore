@@ -15,6 +15,13 @@ localhost-key.pem
 # Test output
 test-results/
 
+# Local agent / debugging artifacts
+.claude/settings.local.json
+.playwright-mcp/
+ghost-page.png
+ghost-repositioning.png
+miblioteca-debug-*.json
+
 # TypeScript build outputs for config/dev helper files
 vite.config.js
 vite.config.d.ts

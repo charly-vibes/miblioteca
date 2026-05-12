@@ -8,6 +8,8 @@ import type { StorageBudgetManager, StorageBudgetStatus } from '../pwa/storageBu
 import { requestUploadSync } from '../pwa/syncRegistration'
 import { GhostOverlayCanvas } from '../sensors/ghostOverlayCanvas'
 import type { GyroLike } from '../sensors/ghostOverlayCanvas'
+import { estimateDisplacement } from '../sensors/imuMath.js'
+import type { ImuSample } from '../sensors/imuTrace.js'
 import type { AccelerometerLike } from '../sensors/imuRecorder'
 import { feedAccel, initialSteadinessState } from '../sensors/steadiness'
 import type { SteadinessState } from '../sensors/steadiness'
@@ -39,6 +41,8 @@ export type CaptureViewOptions = {
   createImageBitmap?: (blob: Blob) => Promise<ImageBitmap>
   /** Returns a low-res frame for quality checks, or null when unavailable. */
   getQualityFrame?: () => ImageData | null
+  /** Returns IMU samples between two monotonic timestamps (ms). */
+  getImuSlice?: (from: number, to: number) => ImuSample[]
   /** Interval between quality frame polls in ms. Default: 100. */
   pollIntervalMs?: number
   /** Called when user taps the back button to return to sessions list. */
@@ -70,6 +74,7 @@ export class CaptureView {
   private captureState: CaptureState = { kind: 'idle' }
   private storageBudget: StorageBudgetStatus = { kind: 'ok' }
   private captureIndex = 0
+  private prevCapturedAtMonotonic: number | undefined = undefined
 
   private readonly store
   private readonly mockFetch
@@ -256,6 +261,9 @@ export class CaptureView {
     this.stopAccel()
 
     this.cameraState = s
+    if (s.kind !== 'granted') {
+      this.prevCapturedAtMonotonic = undefined
+    }
     if (s.kind === 'granted') {
       this.video.srcObject = s.stream
       this.startAccel()
@@ -444,6 +452,11 @@ export class CaptureView {
         },
         { now: () => Date.now(), monotonic: () => performance.now(), generateId: () => crypto.randomUUID() }
       )
+      if (this.opts.getImuSlice != null && this.prevCapturedAtMonotonic != null) {
+        const samples = this.opts.getImuSlice(this.prevCapturedAtMonotonic, record.capturedAtMonotonic)
+        record.qualityChecks.displacementMeters = estimateDisplacement(samples)
+      }
+      this.prevCapturedAtMonotonic = record.capturedAtMonotonic
       await saveCapture(db, { record, imageBlob: snapshot.imageBlob, thumbnailBlob: snapshot.thumbnailBlob })
       const { uploadState } = await uploadCapture(record, snapshot.imageBlob, snapshot.thumbnailBlob, {
         fetch: this.opts.uploadFetch ?? (async () => new Response(null, { status: 200 })),

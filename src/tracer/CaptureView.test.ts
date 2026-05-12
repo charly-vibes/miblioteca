@@ -462,6 +462,66 @@ describe('CaptureView — debug mode (enabled)', () => {
   })
 })
 
+// ── Displacement tracking ────────────────────────────────────────────────────
+
+describe('CaptureView — displacement tracking', () => {
+  it('displacementMeters is undefined for the first capture (no prior monotonic time)', async () => {
+    const saveSpy = vi.spyOn(persistence, 'saveCapture')
+    mockGetUserMedia.mockResolvedValue(makeFakeStream())
+    const user = userEvent.setup()
+
+    const fakeSlice = vi.fn().mockReturnValue([])
+    new CaptureView(container, {
+      captureSnapshot: mockCaptureSnapshot,
+      uploadFetch: mockUploadFetch(200),
+      getImuSlice: fakeSlice,
+    })
+    await vi.waitFor(() => screen.getByRole('button', { name: /open camera/i }))
+    await user.click(screen.getByRole('button', { name: /open camera/i }))
+    await vi.waitFor(() => screen.getByRole('button', { name: /take photo/i }))
+    await user.click(screen.getByRole('button', { name: /take photo/i }))
+
+    await vi.waitFor(() => expect(saveSpy).toHaveBeenCalled())
+    const { record } = saveSpy.mock.calls[0][1]
+    expect(record.qualityChecks?.displacementMeters).toBeUndefined()
+    expect(fakeSlice).not.toHaveBeenCalled()
+    saveSpy.mockRestore()
+  })
+
+  it('displacementMeters is set for the second capture when getImuSlice is provided', async () => {
+    const saveSpy = vi.spyOn(persistence, 'saveCapture')
+    mockGetUserMedia.mockResolvedValue(makeFakeStream())
+    const user = userEvent.setup()
+
+    const fakeSlice = vi.fn().mockReturnValue([
+      { t: 0, ax: 0, ay: 0, az: 9.81, gx: 0, gy: 0, gz: 0, qx: 0, qy: 0, qz: 0, qw: 1, grx: 0, gry: 0, grz: 9.81 },
+      { t: 100, ax: 0, ay: 0, az: 9.81, gx: 0, gy: 0, gz: 0, qx: 0, qy: 0, qz: 0, qw: 1, grx: 0, gry: 0, grz: 9.81 },
+    ])
+    new CaptureView(container, {
+      captureSnapshot: mockCaptureSnapshot,
+      uploadFetch: mockUploadFetch(200),
+      getImuSlice: fakeSlice,
+    })
+    await vi.waitFor(() => screen.getByRole('button', { name: /open camera/i }))
+    await user.click(screen.getByRole('button', { name: /open camera/i }))
+    await vi.waitFor(() => screen.getByRole('button', { name: /take photo/i }))
+
+    // First capture — establishes prevCapturedAtMonotonic
+    await user.click(screen.getByRole('button', { name: /take photo/i }))
+    await vi.waitFor(() => expect(saveSpy).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => screen.getByRole('button', { name: /take photo/i }))
+
+    // Second capture — should compute displacement
+    await user.click(screen.getByRole('button', { name: /take photo/i }))
+    await vi.waitFor(() => expect(saveSpy).toHaveBeenCalledTimes(2))
+
+    const { record } = saveSpy.mock.calls[1][1]
+    expect(record.qualityChecks?.displacementMeters).toBeDefined()
+    expect(fakeSlice).toHaveBeenCalled()
+    saveSpy.mockRestore()
+  })
+})
+
 // ── Captures gallery ─────────────────────────────────────────────────────────
 
 describe('CaptureView — captures gallery', () => {

@@ -1,13 +1,14 @@
 import {
   initialGhostState,
   feedGhostGyro,
+  feedGhostAccel,
   computeShiftPx,
   computeShiftPy,
   clampYawToViewport,
   motionGateVisible,
   zeroVelocity,
 } from './ghostOverlay'
-import type { GhostOverlayState, GyroSample, GyroLike, GhostFrame } from './ghostOverlay'
+import type { GhostOverlayState, GyroSample, GyroLike, MotionLike, GhostFrame } from './ghostOverlay'
 import { debugLogger } from '../debug/logger'
 
 const MOTION_GATE_SHOW_RAD_S = 0.40
@@ -15,6 +16,9 @@ const MOTION_GATE_HIDE_RAD_S = 0.55
 
 export type GhostMotionPipelineDeps = {
   gyro: GyroLike | null
+  motion?: MotionLike | null
+  /** Returns current DeviceOrientationEvent.beta (tilt angle 0=flat, 90=upright). Used by feedGhostAccel. */
+  getBeta?: () => number | null
   displayWidth: () => number
   displayHeight: () => number
   getOrientation?: () => string
@@ -39,6 +43,8 @@ export class GhostMotionPipeline {
   constructor(deps: GhostMotionPipelineDeps) {
     this.deps = {
       gyro: deps.gyro,
+      motion: deps.motion ?? null,
+      getBeta: deps.getBeta ?? (() => null),
       displayWidth: deps.displayWidth,
       displayHeight: deps.displayHeight,
       getOrientation: deps.getOrientation ?? (() =>
@@ -55,6 +61,11 @@ export class GhostMotionPipeline {
       this.deps.gyro.onreading = () => this.onGyroReading()
       this.deps.gyro.onerror = null
       this.deps.gyro.start()
+    }
+
+    if (this.deps.motion) {
+      this.deps.motion.onreading = () => this.onMotionReading()
+      this.deps.motion.start()
     }
 
     this.rafId = this.deps.requestAnimationFrame(this.rafLoop)
@@ -84,6 +95,21 @@ export class GhostMotionPipeline {
     }
   }
 
+  private onMotionReading() {
+    const motion = this.deps.motion!
+    const now = this.deps.now()
+    const betaDeg = this.deps.getBeta() ?? 90
+    const { state } = feedGhostAccel(this.state, {
+      ax: motion.x ?? 0,
+      ay: motion.y ?? 0,
+      betaDeg,
+      interval_ms: motion.interval,
+      t: now,
+      gravitySubtracted: motion.gravitySubtracted,
+    })
+    this.state = state
+  }
+
   private rafLoop: FrameRequestCallback = () => {
     if (this.destroyed) return
     this.rafId = this.deps.requestAnimationFrame(this.rafLoop)
@@ -105,7 +131,7 @@ export class GhostMotionPipeline {
           // position relative to the last capture, not relative to the gate-close moment.
           // But velX/velY SHALL be hard-zeroed (spec: ZUPT on gate close).
           this.state = zeroVelocity(this.state)
-          this.deps.onFrame({ t: now, yawRad: 0, pitchRad: 0, shiftPx: 0, pitchShiftPx: 0, gateOpen: false })
+          this.deps.onFrame({ t: now, yawRad: 0, pitchRad: 0, shiftPx: 0, pitchShiftPx: 0, dx_m: 0, dy_m: 0, gateOpen: false })
         }
         return
       }
@@ -126,12 +152,18 @@ export class GhostMotionPipeline {
       pitchRad: this.state.pitchIntegral,
       shiftPx,
       pitchShiftPx: shiftPy,
+      dx_m: this.state.dx_m,
+      dy_m: this.state.dy_m,
       gateOpen: true,
     })
   }
 
   getState(): { yawRad: number; pitchRad: number } {
     return { yawRad: this.state.yawIntegral, pitchRad: this.state.pitchIntegral }
+  }
+
+  getTranslationState(): { dx_m: number; dy_m: number; velX: number; velY: number } {
+    return { dx_m: this.state.dx_m, dy_m: this.state.dy_m, velX: this.state.velX, velY: this.state.velY }
   }
 
   reset() {
@@ -149,6 +181,10 @@ export class GhostMotionPipeline {
     if (this.deps.gyro) {
       this.deps.gyro.onreading = null
       this.deps.gyro.stop()
+    }
+    if (this.deps.motion) {
+      this.deps.motion.onreading = null
+      this.deps.motion.stop()
     }
   }
 }

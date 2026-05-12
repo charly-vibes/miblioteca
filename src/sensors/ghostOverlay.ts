@@ -228,5 +228,7 @@ export type GhostFrame = {
   pitchRad: number
   shiftPx: number
   pitchShiftPx: number
+  dx_m: number
+  dy_m: number
   gateOpen: boolean
 }

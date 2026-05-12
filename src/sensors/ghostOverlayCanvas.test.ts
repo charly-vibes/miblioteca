@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { GhostOverlayCanvas } from './ghostOverlayCanvas'
-import type { GyroLike } from './ghostOverlayCanvas'
+import type { GyroLike, MotionLike } from './ghostOverlayCanvas'
 
 function makeCanvas() {
   const mockCtx = {
@@ -452,6 +452,134 @@ describe('GhostOverlayCanvas onFrame callback', () => {
     // no setSnapshot → gate stays closed (hasSnapshot=false)
     raf.cb?.(0)
     expect(frames).toHaveLength(0)
+    overlay.destroy()
+    viewfinder.remove()
+  })
+})
+
+function makeMotion(x = 0, y = 0, interval = 16): MotionLike & { fire(): void } {
+  const m: MotionLike & { fire(): void } = {
+    onreading: null,
+    x, y,
+    interval,
+    gravitySubtracted: true,
+    start: vi.fn(),
+    stop: vi.fn(),
+    fire() { this.onreading?.() },
+  }
+  return m
+}
+
+describe('GhostOverlayCanvas translation shift (spec: add-translation-tracking)', () => {
+  beforeEach(() => vi.restoreAllMocks())
+
+  it('GIVEN motion laterally WHEN accel fires THEN translate3d includes translation component', () => {
+    // 60cm working distance, lateral accel 1 m/s² for 200ms → dx_m ≈ 0.02m
+    // translationShiftPx = -(0.02 / 0.60) * focalLengthPx(800, 40) ≈ some non-zero value
+    const gyro = makeGyro()
+    const motion = makeMotion(1.0, 0)  // ax=1.0 m/s²
+    let now = 0
+    const raf = { cb: null as FrameRequestCallback | null }
+    const viewfinder = document.createElement('div')
+    document.body.appendChild(viewfinder)
+    makeCanvas()
+    Object.defineProperty(viewfinder, 'clientWidth', { get: () => 800 })
+    Object.defineProperty(viewfinder, 'clientHeight', { get: () => 600 })
+    const overlay = new GhostOverlayCanvas(viewfinder, {
+      gyro,
+      motion,
+      distanceCm: 60,
+      requestAnimationFrame: (cb) => { raf.cb = cb; return 1 },
+      cancelAnimationFrame: vi.fn(),
+      now: () => now,
+    })
+    overlay.setSnapshot(makeBitmap(800, 600))
+
+    // Fire gyro at t=0 (baseline)
+    gyro.timestamp = 0; gyro.x = 0; gyro.y = 0; gyro.z = 0
+    gyro.fire()
+
+    // Fire motion at t=0 and t=200ms to build velocity
+    motion.x = 1.0; motion.y = 0
+    motion.fire()   // t=0 baseline
+    now = 200
+    motion.fire()   // dt=200ms, ax=1.0 → velX≈0.2, dx_m≈0.02
+
+    // RAF tick at t=200ms
+    raf.cb?.(200)
+
+    const el = viewfinder.querySelector('canvas')!
+    const match = el.style.transform.match(/translate3d\(([-\d.]+)px,\s*([-\d.]+)px/)
+    expect(match).not.toBeNull()
+    const totalShiftPx = Number(match![1])
+    // Without translation, pure gyro gives shiftPx ≈ 0 (gyro at 0 rad/s)
+    // With translation, shiftPx should be non-zero (negative: camera moved right)
+    expect(totalShiftPx).not.toBe(0)
+
+    overlay.destroy()
+    viewfinder.remove()
+  })
+
+  it('WHEN ghost:shift log fires THEN payload includes dx_cm, dy_cm, velX, velY', () => {
+    const gyro = makeGyro()
+    const motion = makeMotion(0.5, 0)
+    const logCalls: unknown[] = []
+    let now = 0
+    const raf = { cb: null as FrameRequestCallback | null }
+    const viewfinder = document.createElement('div')
+    document.body.appendChild(viewfinder)
+    makeCanvas()
+    const overlay = new GhostOverlayCanvas(viewfinder, {
+      gyro,
+      motion,
+      distanceCm: 60,
+      logger: { log: (_k: unknown, payload: unknown) => logCalls.push({ _k, payload }) },
+      requestAnimationFrame: (cb) => { raf.cb = cb; return 1 },
+      cancelAnimationFrame: vi.fn(),
+      now: () => now,
+    })
+    overlay.setSnapshot(makeBitmap(800, 600))
+
+    gyro.timestamp = 0; gyro.x = 0; gyro.y = 0; gyro.z = 0; gyro.fire()
+    motion.x = 0.5; motion.y = 0; motion.fire()
+    now = 600  // ≥500ms so shift log fires
+    motion.fire()
+    raf.cb?.(600)
+
+    const shiftLog = logCalls.find((c: unknown) => (c as { _k: string })._k === 'ghost:shift')
+    expect(shiftLog).not.toBeUndefined()
+    const payload = (shiftLog as { payload: Record<string, unknown> }).payload
+    expect(typeof payload['dx_cm']).toBe('number')
+    expect(typeof payload['dy_cm']).toBe('number')
+    expect(typeof payload['velX']).toBe('number')
+    expect(typeof payload['velY']).toBe('number')
+
+    overlay.destroy()
+    viewfinder.remove()
+  })
+
+  it('getDebugState includes workingDistanceCm, dx_cm, dy_cm, velX, velY', () => {
+    const gyro = makeGyro()
+    const motion = makeMotion(0.5, 0)
+    const viewfinder = document.createElement('div')
+    document.body.appendChild(viewfinder)
+    makeCanvas()
+    const overlay = new GhostOverlayCanvas(viewfinder, {
+      gyro,
+      motion,
+      distanceCm: 80,
+      requestAnimationFrame: () => 1,
+      cancelAnimationFrame: vi.fn(),
+      now: () => 0,
+    })
+
+    const state = overlay.getDebugState()
+    expect(state.workingDistanceCm).toBe(80)
+    expect(typeof state.dx_cm).toBe('number')
+    expect(typeof state.dy_cm).toBe('number')
+    expect(typeof state.velX).toBe('number')
+    expect(typeof state.velY).toBe('number')
+
     overlay.destroy()
     viewfinder.remove()
   })

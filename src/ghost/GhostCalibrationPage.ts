@@ -462,7 +462,7 @@ export class GhostCalibrationPage {
         this.lastPitchRad = pState.pitchRad
         this.latestFrame = {
           t: this.nowFn(), yawRad: pState.yawRad, pitchRad: pState.pitchRad,
-          shiftPx, pitchShiftPx: shiftPy, gateOpen: true,
+          shiftPx, pitchShiftPx: shiftPy, dx_m: 0, dy_m: 0, gateOpen: true,
         }
         if (this.phase === 'recording' && this.currentCycle?.frames) {
           this.currentCycle.frames.push({
@@ -487,7 +487,7 @@ export class GhostCalibrationPage {
     const shiftPy = computeShiftPy(frame.pitchRad, vw, vh)
     this.latestFrame = {
       t: frame.t, yawRad: frame.yawRad, pitchRad: frame.pitchRad,
-      shiftPx, pitchShiftPx: shiftPy, gateOpen: true,
+      shiftPx, pitchShiftPx: shiftPy, dx_m: frame.dx_m, dy_m: frame.dy_m, gateOpen: true,
     }
 
     if (this.phase === 'recording') {
@@ -499,7 +499,7 @@ export class GhostCalibrationPage {
       if (this.currentCycle?.ghostFrames) {
         this.currentCycle.ghostFrames.push({
           t: elapsed, yawRad: frame.yawRad, pitchRad: frame.pitchRad,
-          shiftPx, pitchShiftPx: shiftPy, gateOpen: true,
+          shiftPx, pitchShiftPx: shiftPy, dx_m: frame.dx_m, dy_m: frame.dy_m, gateOpen: true,
         })
       }
     }

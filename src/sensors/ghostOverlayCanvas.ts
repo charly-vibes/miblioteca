@@ -1,6 +1,8 @@
 import {
   computeShiftPx,
   computeShiftPy,
+  computeTranslationShiftPx,
+  computeTranslationShiftPy,
   capToViewport,
 } from './ghostOverlay'
 import type { GyroLike, MotionLike, GhostFrame } from './ghostOverlay'
@@ -11,6 +13,9 @@ export type { GyroLike, MotionLike, GhostFrame }
 
 export type GhostOverlayCanvasDeps = {
   gyro: GyroLike | null
+  motion?: MotionLike | null
+  /** Returns current DeviceOrientationEvent.beta. Used by feedGhostAccel tilt guard. */
+  getBeta?: () => number | null
   distanceCm?: number      // working distance to subject in cm; clamped to [20, 150]; default 60
   onFrame?: (frame: GhostFrame) => void  // fired each RAF tick after shift is computed
   requestAnimationFrame?: (cb: FrameRequestCallback) => number
@@ -63,6 +68,8 @@ export class GhostOverlayCanvas {
 
     this.pipeline = new GhostMotionPipeline({
       gyro: deps.gyro,
+      motion: deps.motion ?? null,
+      getBeta: deps.getBeta,
       displayWidth: () => this.readDisplayDims().w || this.canvas.width,
       displayHeight: () => this.readDisplayDims().h || this.canvas.height,
       getOrientation: this.deps.getOrientation,
@@ -85,7 +92,7 @@ export class GhostOverlayCanvas {
       }
       // Keep lastYawRad/lastPitchRad — pipeline continues integrating while gate is closed,
       // so getDebugState() reflects actual accumulated state rather than a stale 0.
-      this.deps.onFrame?.({ t: this.deps.now(), yawRad: 0, pitchRad: 0, shiftPx: 0, pitchShiftPx: 0, gateOpen: false })
+      this.deps.onFrame?.({ t: this.deps.now(), yawRad: 0, pitchRad: 0, shiftPx: 0, pitchShiftPx: 0, dx_m: 0, dy_m: 0, gateOpen: false })
       return
     }
 
@@ -107,9 +114,14 @@ export class GhostOverlayCanvas {
     const { w: rw, h: rh } = this.readDisplayDims()
     const dw = rw || this.canvas.width
     const dh = rh || this.canvas.height
+    const workingDistanceM = this.workingDistanceCm / 100
 
-    const shiftPx = computeShiftPx(frame.yawRad, dw)
-    const shiftPy = computeShiftPy(frame.pitchRad, dw, dh)
+    const rotShiftPx = computeShiftPx(frame.yawRad, dw)
+    const rotShiftPy = computeShiftPy(frame.pitchRad, dw, dh)
+    const transShiftPx = computeTranslationShiftPx(frame.dx_m, workingDistanceM, dw)
+    const transShiftPy = computeTranslationShiftPy(frame.dy_m, workingDistanceM, dw)
+    const shiftPx = rotShiftPx + transShiftPx
+    const shiftPy = rotShiftPy + transShiftPy
 
     if (shiftPx !== this.currentShiftPx || shiftPy !== this.currentShiftPy) {
       this.canvas.style.transform = `translate3d(${shiftPx}px, ${shiftPy}px, 0)`
@@ -118,11 +130,19 @@ export class GhostOverlayCanvas {
     }
 
     const now = this.deps.now()
+    const { dx_m, dy_m } = frame
+    const trans = this.pipeline.getTranslationState()
     if (now - this.lastShiftLogMs >= 500) {
       this.deps.logger.log('ghost:shift', {
         shiftPx, shiftPy,
+        rotShiftPx, rotShiftPy,
+        transShiftPx, transShiftPy,
         yawIntegral: frame.yawRad,
         pitchIntegral: frame.pitchRad,
+        dx_cm: dx_m * 100,
+        dy_cm: dy_m * 100,
+        velX: trans.velX,
+        velY: trans.velY,
         displayWidth: dw, displayHeight: dh,
       })
       this.lastShiftLogMs = now
@@ -134,6 +154,8 @@ export class GhostOverlayCanvas {
       pitchRad: frame.pitchRad,
       shiftPx,
       pitchShiftPx: shiftPy,
+      dx_m,
+      dy_m,
       gateOpen: true,
     })
   }
@@ -192,22 +214,37 @@ export class GhostOverlayCanvas {
   getDebugState(): {
     shiftPx: number; shiftPy: number
     rotShiftPx: number; rotShiftPy: number
+    transShiftPx: number; transShiftPy: number
     yawIntegral: number; pitchIntegral: number
+    dx_cm: number; dy_cm: number
+    velX: number; velY: number
+    workingDistanceCm: number
     visible: boolean
     displayWidth: number; displayHeight: number
   } {
     const { w: dw, h: dh } = this.readDisplayDims()
     const displayWidth = dw || this.canvas.width
     const displayHeight = dh || this.canvas.height
+    const workingDistanceM = this.workingDistanceCm / 100
     const rotShiftPx = computeShiftPx(this.lastYawRad, displayWidth)
     const rotShiftPy = computeShiftPy(this.lastPitchRad, displayWidth, displayHeight)
+    const trans = this.pipeline.getTranslationState()
+    const transShiftPx = computeTranslationShiftPx(trans.dx_m, workingDistanceM, displayWidth)
+    const transShiftPy = computeTranslationShiftPy(trans.dy_m, workingDistanceM, displayWidth)
     return {
-      shiftPx: rotShiftPx,
-      shiftPy: rotShiftPy,
+      shiftPx: rotShiftPx + transShiftPx,
+      shiftPy: rotShiftPy + transShiftPy,
       rotShiftPx,
       rotShiftPy,
+      transShiftPx,
+      transShiftPy,
       yawIntegral: this.lastYawRad,
       pitchIntegral: this.lastPitchRad,
+      dx_cm: trans.dx_m * 100,
+      dy_cm: trans.dy_m * 100,
+      velX: trans.velX,
+      velY: trans.velY,
+      workingDistanceCm: this.workingDistanceCm,
       visible: !this.canvas.hidden,
       displayWidth,
       displayHeight,

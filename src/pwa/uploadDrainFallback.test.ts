@@ -73,6 +73,28 @@ describe('mountUploadDrainFallback', () => {
     unmount()
   })
 
+  it('does not crash and leaves record pending when fetch throws', async () => {
+    const record = makeRecord('rec-throw')
+    await saveCapture(db, {
+      record,
+      imageBlob: new Blob(['img']),
+      thumbnailBlob: new Blob(['thumb']),
+    })
+    const fetch = vi.fn().mockRejectedValue(new TypeError('Network error'))
+    const unmount = mountUploadDrainFallback({ openDb: async () => db, fetch })
+
+    window.dispatchEvent(new Event('online'))
+    // Wait for inFlight to settle (drain should catch and not re-throw)
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalled())
+    // Give the catch/.finally chain a tick to complete
+    await new Promise((r) => setTimeout(r, 0))
+
+    // Record remains pending (not uploaded)
+    const loaded = await loadCaptureRecord(db, 'rec-throw')
+    expect(loaded?.uploadState).not.toBe('uploaded')
+    unmount()
+  })
+
   it('removes the online listener on cleanup', async () => {
     const fetch = vi.fn(async () => new Response(null, { status: 200 }))
     const unmount = mountUploadDrainFallback({ openDb: async () => db, fetch })

@@ -40,6 +40,14 @@ export async function mockGyro(page: Page): Promise<void> {
       active.timestamp = performance.now()
       active.onreading()
     }
+    ;(window as Record<string, unknown>)['__triggerGyroReadingAxes'] = (axes: { x?: number; y?: number; z?: number }) => {
+      if (!active?.onreading) return
+      if (axes.x !== undefined) active.x = axes.x
+      if (axes.y !== undefined) active.y = axes.y
+      if (axes.z !== undefined) active.z = axes.z
+      active.timestamp = performance.now()
+      active.onreading()
+    }
   })
 }
 
@@ -49,5 +57,13 @@ export async function triggerGyroReading(page: Page, gz: number): Promise<void> 
     ;(window as Record<string, unknown>)['__triggerGyroReading'](g)
   }, gz)
   // Wait one RAF tick so the ghost overlay loop can process the reading
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())))
+}
+
+/** Fire a gyro reading with explicit per-axis values and wait one RAF tick. */
+export async function triggerGyroReadingAxes(page: Page, axes: { x?: number; y?: number; z?: number }): Promise<void> {
+  await page.evaluate((a) => {
+    ;(window as Record<string, unknown>)['__triggerGyroReadingAxes'](a)
+  }, axes)
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())))
 }

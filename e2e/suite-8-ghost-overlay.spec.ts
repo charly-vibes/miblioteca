@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { mockCamera } from './helpers/mock-camera'
-import { mockGyro, triggerGyroReading } from './helpers/mock-gyro'
+import { mockGyro, triggerGyroReading, triggerGyroReadingAxes } from './helpers/mock-gyro'
 
 // Important: mockGyro must be called before page.goto() so addInitScript runs at page load.
 // The app checks typeof window.Gyroscope === 'function' at boot to decide whether to
@@ -92,6 +92,26 @@ test.describe('Suite 8: Ghost overlay', () => {
     expect(translateX).toBeLessThanOrEqual(canvasWidth / 2 + 1)
   })
 
+  test('8.6 pitch accumulation pans overlay vertically — non-zero translateY', async ({ page }) => {
+    await mockCamera(page)
+    await mockGyro(page)
+    await navigateToCaptureWithCamera(page)
+    await page.locator('.shutter-btn').click()
+    await expect(page.locator('.camera-gallery-thumb')).toHaveCount(1, { timeout: 5000 })
+    // Portrait pitch axis is gx (x-axis). Inject multiple readings with gx > 0.
+    for (let i = 0; i < 10; i++) {
+      await triggerGyroReadingAxes(page, { x: 0.3, y: 0.05, z: 0.05 })
+    }
+    const transform = await page.locator('.ghost-overlay').evaluate(
+      (el) => (el as HTMLElement).style.transform
+    )
+    const match = /translate3d\((-?\d+(?:\.\d+)?)px,\s*(-?\d+(?:\.\d+)?)px/.exec(transform)
+    expect(match).not.toBeNull()
+    const translateY = parseFloat(match![2])
+    // pitch accumulation should produce a non-zero vertical shift
+    expect(Math.abs(translateY)).toBeGreaterThan(0)
+  })
+
   test('8.7 yaw resets to zero after a second capture', async ({ page }) => {
     await mockCamera(page)
     await mockGyro(page)
@@ -145,5 +165,23 @@ test.describe('Suite 8: Ghost overlay', () => {
     await navigateToCaptureWithCamera(page)
     // Without a gyro, GhostOverlayCanvas is never constructed, so no canvas in DOM
     await expect(page.locator('.ghost-overlay')).not.toBeAttached()
+  })
+
+  test('8.10 sensor permission denied: ghost overlay absent but shutter and gallery still work', async ({ page }) => {
+    // Simulate motion sensor permission denied by making Gyroscope constructor throw
+    await page.addInitScript(() => {
+      ;(window as Record<string, unknown>)['Gyroscope'] = class {
+        constructor() { throw new DOMException('Permission denied', 'NotAllowedError') }
+      }
+    })
+    await mockCamera(page)
+    await navigateToCaptureWithCamera(page)
+
+    // Ghost overlay canvas must be absent (no sensor = no canvas constructed)
+    await expect(page.locator('.ghost-overlay')).not.toBeAttached()
+
+    // Core capture flow must still function
+    await page.locator('.shutter-btn').click()
+    await expect(page.locator('.camera-gallery-thumb')).toHaveCount(1, { timeout: 5000 })
   })
 })

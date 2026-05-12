@@ -29,4 +29,26 @@ test.describe('Suite 1: Sessions list', () => {
     await expect(page.locator('.session-row')).toHaveCount(1)
     await expect(page.locator('.session-row')).toBeVisible()
   })
+
+  test('1.5 clicking a session row opens the capture view for that session', async ({ page }) => {
+    await page.goto('/#/new')
+    await page.getByLabel('Scan name').fill('Click target')
+    await page.getByRole('button', { name: 'Create scan' }).click()
+    await expect(page.getByRole('button', { name: 'Continue to camera' })).toBeVisible()
+
+    // Capture the session id from the URL before navigating away
+    const sessionUrl = page.url()
+    const sessionId = sessionUrl.split('/session/')[1]
+
+    await page.goto('/')
+    await expect(page.locator('.session-row')).toHaveCount(1)
+
+    await page.locator('.session-row').click()
+    await expect(page).toHaveURL(new RegExp(`#/session/${sessionId}`))
+
+    // Capture view must render — either Open camera button (onboarding) or camera-onboarding element
+    const openCameraBtn = page.getByRole('button', { name: 'Open camera' })
+    const onboarding = page.locator('.camera-onboarding')
+    await expect(openCameraBtn.or(onboarding)).toBeVisible({ timeout: 5000 })
+  })
 })

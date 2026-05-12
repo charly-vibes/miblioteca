@@ -22,8 +22,11 @@ test.describe('Suite 1: Sessions list', () => {
     await page.goto('/#/new')
     await page.getByLabel('Scan name').fill('Main library')
     await page.getByRole('button', { name: 'Create scan' }).click()
+    // Wait for create flow to complete before navigating away
     await expect(page.getByRole('button', { name: 'Continue to camera' })).toBeVisible()
     await page.goto('/')
+    // Exactly one row should exist — guards against pre-existing rows from parallel tests
+    await expect(page.locator('.session-row')).toHaveCount(1)
     await expect(page.locator('.session-row')).toBeVisible()
   })
 })

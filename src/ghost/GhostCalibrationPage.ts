@@ -105,7 +105,7 @@ export class GhostCalibrationPage {
   private readonly win: WindowLike
 
   private readonly doc: Document
-  private readonly gyro: GyroLike | null
+  private readonly gyro: GyroLike | null | undefined
   private readonly raf: (cb: FrameRequestCallback) => number
   private readonly caf: (id: number) => void
   private readonly nowFn: () => number
@@ -147,7 +147,7 @@ export class GhostCalibrationPage {
       ? window
       : { addEventListener: () => {}, removeEventListener: () => {}, innerWidth: 375, innerHeight: 667 })
 
-    this.gyro = deps.gyro ?? null
+    this.gyro = deps.gyro
     this.raf = deps.requestAnimationFrame ?? (cb => (typeof window !== 'undefined' ? window.requestAnimationFrame(cb) : 0))
     this.caf = deps.cancelAnimationFrame ?? (id => { if (typeof window !== 'undefined') window.cancelAnimationFrame(id) })
     this.nowFn = deps.now ?? (() => (typeof performance !== 'undefined' ? performance.now() : 0))
@@ -454,7 +454,7 @@ export class GhostCalibrationPage {
       }
 
       // Gyro API path records its own SensorFrames in the wrapped onreading — skip here to avoid duplicates.
-      if (!this.gyro && this.phase === 'recording' && this.currentCycle?.frames) {
+      if (!this.pipelineDeps?.gyro && this.phase === 'recording' && this.currentCycle?.frames) {
         const frame: SensorFrame = {
           t: this.nowFn() - this.recordingStartedAt,
           gx: this.sensorVals.gx,
@@ -491,7 +491,7 @@ export class GhostCalibrationPage {
       tuning: this.tuning,
       onFrame: (frame) => this.onPipelineFrame(frame),
       onGyroSample: (pState) => {
-        const g = this.gyro!
+        const g = this.pipelineDeps.gyro!
         const gx = g.x ?? 0, gy = g.y ?? 0, gz = g.z ?? 0
         this.lastYawRad = pState.yawRad
         this.lastPitchRad = pState.pitchRad

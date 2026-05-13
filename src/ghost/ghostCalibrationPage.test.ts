@@ -3,6 +3,7 @@ import { GhostCalibrationPage } from './GhostCalibrationPage'
 import { focalLengthPx } from '../sensors/ghostOverlay'
 import type { WindowLike } from './GhostCalibrationPage'
 import type { GyroLike } from '../sensors/ghostOverlayCanvas'
+import { DebugLogger } from '../debug/logger'
 
 function makeWin(innerWidth = 800, innerHeight = 600): WindowLike & {
   dispatch(type: string, event: unknown): void
@@ -1087,5 +1088,46 @@ describe('GhostCalibrationPage — renderTelemetry throttle', () => {
     const frame = { t: 200, yawRad: 0, pitchRad: 0, shiftPx: 0, pitchShiftPx: 0, dx_m: 0, dy_m: 0, gateOpen: true }
     ;(p as unknown as { onPipelineFrame(f: typeof frame): void }).onPipelineFrame(frame)
     expect(spy).toHaveBeenCalledOnce()
+  })
+})
+
+describe('GhostCalibrationPage — debug logger integration', () => {
+  it('emits tuning:loaded with the resolved config when constructed', () => {
+    const logger = new DebugLogger(new URLSearchParams('debug'))
+    new GhostCalibrationPage(container, { win, logger })
+
+    const events = (JSON.parse(logger.export()) as { events: Array<{ type: string; payload: unknown }> }).events
+    const loaded = events.filter(e => e.type === 'tuning:loaded')
+    expect(loaded).toHaveLength(1)
+    const payload = loaded[0].payload as Record<string, unknown>
+    expect(payload).toHaveProperty('orientationModel')
+    expect(payload).toHaveProperty('hFovDeg')
+    expect(payload).toHaveProperty('gyroSensitivity')
+  })
+
+  it('mounts the DebugPanel "Export logs" button when logger is enabled', () => {
+    const logger = new DebugLogger(new URLSearchParams('debug'))
+    new GhostCalibrationPage(container, { win, logger })
+    expect(container.querySelector('button[aria-label="Export logs"]')).not.toBeNull()
+  })
+
+  it('does NOT mount the DebugPanel when logger is disabled', () => {
+    const logger = new DebugLogger(new URLSearchParams(''))
+    new GhostCalibrationPage(container, { win, logger })
+    expect(container.querySelector('button[aria-label="Export logs"]')).toBeNull()
+  })
+
+  it('propagates the logger to TuningPanel — slider commit emits tuning:change', () => {
+    const logger = new DebugLogger(new URLSearchParams('debug'))
+    new GhostCalibrationPage(container, { win, logger })
+    const slider = container.querySelector('input[data-param="hFovDeg"]') as HTMLInputElement
+    slider.value = '55'
+    slider.dispatchEvent(new Event('input'))
+    slider.dispatchEvent(new Event('change'))
+
+    const events = (JSON.parse(logger.export()) as { events: Array<{ type: string; payload: unknown }> }).events
+    const change = events.find(e => e.type === 'tuning:change')
+    expect(change).toBeDefined()
+    expect((change!.payload as { key: string }).key).toBe('hFovDeg')
   })
 })

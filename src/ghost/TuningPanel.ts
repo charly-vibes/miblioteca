@@ -1,5 +1,6 @@
 import type { TuningConfig, OrientationModel } from './tuningConfig'
 import { defaultTuningConfig, saveTuningConfig } from './tuningConfig'
+import type { DebugLogger } from '../debug/logger'
 
 type ParamDef = {
   key: keyof TuningConfig & string
@@ -48,11 +49,13 @@ export class TuningPanel {
   private open = false
   private readonly valueDisplays = new Map<string, HTMLElement>()
   private readonly sectionBodies = new Map<string, HTMLElement>()
+  private readonly committed = new Map<string, number>()
 
   constructor(
     private readonly doc: Document,
     private readonly config: TuningConfig,
     private readonly onChange: () => void,
+    private readonly logger?: DebugLogger,
   ) {
     this.el = doc.createElement('div')
     this.toggleBtn = this.buildToggle()
@@ -123,10 +126,13 @@ export class TuningPanel {
         color: '#fff', cursor: 'pointer', fontSize: '12px',
       })
       btn.addEventListener('click', () => {
+        const prev = this.config.orientationModel
+        if (prev === model) return
         this.config.orientationModel = model
         row.querySelectorAll('button[data-model]').forEach(b => {
           ;(b as HTMLElement).style.background = (b as HTMLElement).dataset.model === model ? '#06f' : '#333'
         })
+        this.logger?.log('tuning:change', { key: 'orientationModel', prev, next: model })
         this.save()
       })
       row.appendChild(btn)
@@ -162,10 +168,16 @@ export class TuningPanel {
     })
     reset.addEventListener('click', () => {
       const defaults = defaultTuningConfig()
+      const changes: Array<{ key: string; prev: number; next: number }> = []
       for (const p of params) {
-        ;(this.config as Record<string, unknown>)[p.key] = defaults[p.key]
+        const prev = this.config[p.key] as number
+        const next = defaults[p.key] as number
+        if (prev !== next) changes.push({ key: p.key, prev, next })
+        ;(this.config as Record<string, unknown>)[p.key] = next
+        this.committed.set(p.key, next)
       }
       this.refreshAllSliders()
+      if (changes.length) this.logger?.log('tuning:section-reset', { section: title, changes })
       this.save()
     })
 
@@ -221,11 +233,20 @@ export class TuningPanel {
     valSpan.style.textAlign = 'right'
     this.updateValueDisplay(valSpan, p)
     this.valueDisplays.set(p.key, valSpan)
+    this.committed.set(p.key, this.config[p.key] as number)
 
     input.addEventListener('input', () => {
       ;(this.config as Record<string, unknown>)[p.key] = parseFloat(input.value)
       this.updateValueDisplay(valSpan, p)
       this.save()
+    })
+    input.addEventListener('change', () => {
+      const prev = this.committed.get(p.key) ?? this.config[p.key] as number
+      const next = this.config[p.key] as number
+      if (prev !== next) {
+        this.logger?.log('tuning:change', { key: p.key, prev, next })
+        this.committed.set(p.key, next)
+      }
     })
 
     row.appendChild(label)
@@ -251,8 +272,18 @@ export class TuningPanel {
     })
     btn.addEventListener('click', () => {
       const defaults = defaultTuningConfig()
+      const changes: Array<{ key: string; prev: unknown; next: unknown }> = []
+      for (const k of Object.keys(defaults) as Array<keyof TuningConfig>) {
+        const prev = (this.config as Record<string, unknown>)[k]
+        const next = (defaults as Record<string, unknown>)[k]
+        if (prev !== next) changes.push({ key: k, prev, next })
+      }
       Object.assign(this.config, defaults)
+      for (const [k, v] of Object.entries(defaults)) {
+        if (typeof v === 'number') this.committed.set(k, v)
+      }
       this.refreshAllSliders()
+      if (changes.length) this.logger?.log('tuning:reset', { changes })
       this.save()
     })
     return btn

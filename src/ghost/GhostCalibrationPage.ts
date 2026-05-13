@@ -11,6 +11,9 @@ import type { Phase, SensorFrame, CalibrationCycle, CalibrationExport } from './
 import type { TuningConfig } from './tuningConfig'
 import { loadTuningConfig } from './tuningConfig'
 import { TuningPanel } from './TuningPanel'
+import { debugLogger } from '../debug/logger'
+import type { DebugLogger } from '../debug/logger'
+import { DebugPanel } from '../debug/DebugPanel'
 
 declare const __GIT_COMMIT__: string
 
@@ -42,6 +45,7 @@ export type CalibrationPageDeps = {
   distanceCm?: number
   getScreenOrientation?: () => string
   captureSnapshot?: (video: HTMLVideoElement) => string | null
+  logger?: DebugLogger
 }
 
 function injectPulseStyle(doc: Document): void {
@@ -142,6 +146,8 @@ export class GhostCalibrationPage {
   private readonly captureSnapshotFn: (video: HTMLVideoElement) => string | null
   private readonly tuning: TuningConfig
   private tuningPanel: TuningPanel | null = null
+  private readonly logger: DebugLogger
+  private debugPanel: DebugPanel | null = null
 
   constructor(
     private readonly root: HTMLElement,
@@ -180,6 +186,8 @@ export class GhostCalibrationPage {
     })
     injectPulseStyle(doc)
     this.tuning = loadTuningConfig()
+    this.logger = deps.logger ?? debugLogger
+    this.logger.log('tuning:loaded', { ...this.tuning })
 
     const vw = this.win.visualViewport?.width || this.win.innerWidth || FALLBACK_VW
     const vh = this.win.visualViewport?.height || this.win.innerHeight || FALLBACK_VH
@@ -190,6 +198,7 @@ export class GhostCalibrationPage {
     this.buildSummaryUI(doc)
     this.buildOverlayLayer(doc)
     this.buildTuningPanel(doc)
+    this.mountDebugPanel()
     this.wireDragEvents(doc)
     this.wireSensors()
     this.wirePipeline()
@@ -421,8 +430,13 @@ export class GhostCalibrationPage {
   private buildTuningPanel(doc: Document): void {
     this.tuningPanel = new TuningPanel(doc, this.tuning, () => {
       this.renderTelemetry()
-    })
+    }, this.logger)
     this.root.appendChild(this.tuningPanel.el)
+  }
+
+  private mountDebugPanel(): void {
+    if (!this.logger.enabled) return
+    this.debugPanel = new DebugPanel(this.root, this.logger)
   }
 
   private wireDragEvents(doc: Document): void {
@@ -798,6 +812,7 @@ export class GhostCalibrationPage {
 
   destroy(): void {
     this.destroyed = true
+    this.debugPanel?.destroy()
     this.pipeline?.destroy()
     if (this.motionHandler) this.win.removeEventListener('devicemotion', this.motionHandler)
     this.pipelineDeps?.dispose()

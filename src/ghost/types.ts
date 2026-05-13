@@ -1,4 +1,5 @@
 import type { GhostFrame } from '../sensors/ghostOverlayCanvas'
+import type { TuningConfig } from './tuningConfig'
 
 export type Phase = 'idle' | 'recording' | 'repositioning' | 'captured'
 
@@ -43,5 +44,6 @@ export interface CalibrationExport {
   orientation?: string
   hFovDeg: number
   focalLengthPx: number
+  tuning?: TuningConfig
   cycles: CalibrationCycle[]
 }

@@ -10,9 +10,16 @@ type ParamDef = {
   unit?: string
 }
 
+const SENSITIVITY_PARAMS: ParamDef[] = [
+  { key: 'gyroSensitivity', label: 'Gyro sens', min: 0.25, max: 4.0, step: 0.05, unit: '×' },
+  { key: 'translationSensitivity', label: 'Trans sens', min: 0.25, max: 8.0, step: 0.05, unit: '×' },
+  { key: 'workingDistanceCm', label: 'Distance', min: 20, max: 150, step: 5, unit: 'cm' },
+]
+
 const ORIENTATION_PARAMS: ParamDef[] = [
   { key: 'stillThreshold', label: 'Still thresh', min: 0.01, max: 0.3, step: 0.005, unit: 'rad/s' },
   { key: 'stillEmaAlpha', label: 'Still EMA α', min: 0.5, max: 0.99, step: 0.01 },
+  { key: 'stillnessGateThreshold', label: 'Stillness gate', min: 0.5, max: 0.99, step: 0.01 },
   { key: 'yawDeadbandRad', label: 'Yaw deadband', min: 0, max: 0.05, step: 0.001, unit: 'rad' },
   { key: 'pitchDeadbandRad', label: 'Pitch deadband', min: 0, max: 0.05, step: 0.001, unit: 'rad' },
   { key: 'stillGain', label: 'Still gain', min: 0.005, max: 0.3, step: 0.005 },
@@ -31,6 +38,7 @@ const PHYSICS_PARAMS: ParamDef[] = [
   { key: 'zuptTauS', label: 'ZUPT τ', min: 0.02, max: 2.0, step: 0.02, unit: 's' },
   { key: 'motionGateShowRadS', label: 'Gate show ω', min: 0.05, max: 2.0, step: 0.05, unit: 'rad/s' },
   { key: 'motionGateHideRadS', label: 'Gate hide ω', min: 0.05, max: 2.0, step: 0.05, unit: 'rad/s' },
+  { key: 'tiltMaxDeg', label: 'Tilt max', min: 10, max: 90, step: 1, unit: '°' },
 ]
 
 export class TuningPanel {
@@ -86,6 +94,7 @@ export class TuningPanel {
     })
 
     panel.appendChild(this.buildModelToggle())
+    panel.appendChild(this.buildSection('Sensitivity', SENSITIVITY_PARAMS))
     panel.appendChild(this.buildSection('Orientation', ORIENTATION_PARAMS))
     panel.appendChild(this.buildSection('Capture Gate', GATE_PARAMS))
     panel.appendChild(this.buildSection('Physics', PHYSICS_PARAMS))
@@ -250,7 +259,7 @@ export class TuningPanel {
   }
 
   private refreshAllSliders(): void {
-    const allParams = [...ORIENTATION_PARAMS, ...GATE_PARAMS, ...PHYSICS_PARAMS]
+    const allParams = [...SENSITIVITY_PARAMS, ...ORIENTATION_PARAMS, ...GATE_PARAMS, ...PHYSICS_PARAMS]
     for (const input of this.panelBody.querySelectorAll('input[type="range"]')) {
       const el = input as HTMLInputElement
       const key = el.dataset.param as keyof TuningConfig | undefined

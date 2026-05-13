@@ -107,7 +107,8 @@ export class GhostMotionPipeline {
     if (model === 'gyro') {
       const orientationType = this.deps.getScreenOrientation()
       const scanAxis: 'x' | 'y' = orientationType.startsWith('landscape') ? 'x' : 'y'
-      this.state = feedGhostGyro(this.state, sample, scanAxis)
+      const gyroCfg = this.tuning ? { gyroSensitivity: this.tuning.gyroSensitivity } : undefined
+      this.state = feedGhostGyro(this.state, sample, scanAxis, gyroCfg)
       const hFov = this.tuning?.hFovDeg
       const clamped = clampYawToViewport(this.state.yawIntegral, hFov)
       if (clamped !== this.state.yawIntegral) {
@@ -133,7 +134,12 @@ export class GhostMotionPipeline {
     const now = this.deps.now()
     const betaDeg = this.deps.getBeta() ?? 90
     const accelCfg = this.tuning
-      ? { zuptThresholdMs2: this.tuning.zuptThresholdMs2, zuptTauS: this.tuning.zuptTauS }
+      ? {
+          zuptThresholdMs2: this.tuning.zuptThresholdMs2,
+          zuptTauS: this.tuning.zuptTauS,
+          tiltMaxDeg: this.tuning.tiltMaxDeg,
+          translationSensitivity: this.tuning.translationSensitivity,
+        }
       : undefined
     const { state } = feedGhostAccel(this.state, {
       ax: motion.x ?? 0,

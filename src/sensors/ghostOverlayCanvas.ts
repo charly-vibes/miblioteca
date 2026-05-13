@@ -4,6 +4,9 @@ import {
   computeTranslationShiftPx,
   computeTranslationShiftPy,
   capToViewport,
+  WORKING_DISTANCE_MIN_CM,
+  WORKING_DISTANCE_MAX_CM,
+  WORKING_DISTANCE_DEFAULT_CM,
 } from './ghostOverlay'
 import type { GyroLike, MotionLike, GhostFrame } from './ghostOverlay'
 import { createGhostPipelineDeps } from './createGhostPipelineDeps'
@@ -12,13 +15,7 @@ import { GhostMotionPipeline } from './GhostMotionPipeline'
 import { debugLogger } from '../debug/logger'
 
 export type { GyroLike, MotionLike, GhostFrame }
-
-// Working distance bounds: 20 cm = minimum arm-reach / macro distance;
-// 150 cm = maximum practical shelf depth from phone.
-// Default 60 cm ≈ typical arm-length distance for shelf scanning.
-export const WORKING_DISTANCE_MIN_CM = 20
-export const WORKING_DISTANCE_MAX_CM = 150
-export const WORKING_DISTANCE_DEFAULT_CM = 60
+export { WORKING_DISTANCE_MIN_CM, WORKING_DISTANCE_MAX_CM, WORKING_DISTANCE_DEFAULT_CM }
 
 export type GhostOverlayCanvasDeps = {
   /**

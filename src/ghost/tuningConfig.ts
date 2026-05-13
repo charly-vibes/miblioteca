@@ -2,8 +2,11 @@ import {
   STILL_THRESHOLD, STILL_EMA_ALPHA,
   YAW_DEADBAND_RAD, PITCH_DEADBAND_RAD,
   STILL_GAIN, MOVING_GAIN, MAX_SHIFT_RATE_RAD_S,
+  STILLNESS_GATE_THRESHOLD,
   DEFAULT_HFOV_DEG, ZUPT_THRESHOLD_MS2, ZUPT_TAU_S,
   MOTION_GATE_SHOW_RAD_S, MOTION_GATE_HIDE_RAD_S,
+  GYRO_SENSITIVITY, TRANSLATION_SENSITIVITY,
+  TILT_MAX_DEG_SUBTRACTED, WORKING_DISTANCE_DEFAULT_CM,
 } from '../sensors/ghostOverlay'
 import {
   GHOST_CAPTURE_MAX_SHIFT_X_PX, GHOST_CAPTURE_MAX_MAG_PX,
@@ -20,6 +23,7 @@ export type TuningConfig = {
   stillGain: number
   movingGain: number
   maxShiftRateRadS: number
+  stillnessGateThreshold: number
   maxShiftXPx: number
   maxMagPx: number
   hFovDeg: number
@@ -27,6 +31,10 @@ export type TuningConfig = {
   zuptTauS: number
   motionGateShowRadS: number
   motionGateHideRadS: number
+  gyroSensitivity: number
+  translationSensitivity: number
+  tiltMaxDeg: number
+  workingDistanceCm: number
 }
 
 export function defaultTuningConfig(): TuningConfig {
@@ -39,6 +47,7 @@ export function defaultTuningConfig(): TuningConfig {
     stillGain: STILL_GAIN,
     movingGain: MOVING_GAIN,
     maxShiftRateRadS: MAX_SHIFT_RATE_RAD_S,
+    stillnessGateThreshold: STILLNESS_GATE_THRESHOLD,
     maxShiftXPx: GHOST_CAPTURE_MAX_SHIFT_X_PX,
     maxMagPx: GHOST_CAPTURE_MAX_MAG_PX,
     hFovDeg: DEFAULT_HFOV_DEG,
@@ -46,6 +55,10 @@ export function defaultTuningConfig(): TuningConfig {
     zuptTauS: ZUPT_TAU_S,
     motionGateShowRadS: MOTION_GATE_SHOW_RAD_S,
     motionGateHideRadS: MOTION_GATE_HIDE_RAD_S,
+    gyroSensitivity: GYRO_SENSITIVITY,
+    translationSensitivity: TRANSLATION_SENSITIVITY,
+    tiltMaxDeg: TILT_MAX_DEG_SUBTRACTED,
+    workingDistanceCm: WORKING_DISTANCE_DEFAULT_CM,
   }
 }
 

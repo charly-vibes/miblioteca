@@ -46,17 +46,32 @@ describe('TuningPanel Pixel 7a layout and controls', () => {
 
   it('uses accordion sections with only one section open at a time', () => {
     const { panel } = makePanel()
-    const orientationBody = panel.el.querySelector('[data-testid="tuning-section-body-Orientation"]') as HTMLElement
+    const sensitivityBody = panel.el.querySelector('[data-testid="tuning-section-body-Sensitivity"]') as HTMLElement
     const gateBody = panel.el.querySelector('[data-testid="tuning-section-body-Capture Gate"]') as HTMLElement
     const gateHeader = panel.el.querySelector('[data-testid="tuning-section-toggle-Capture Gate"]') as HTMLElement
 
-    expect(orientationBody.style.display).toBe('')
+    expect(sensitivityBody.style.display).toBe('')
     expect(gateBody.style.display).toBe('none')
 
     gateHeader.click()
 
-    expect(orientationBody.style.display).toBe('none')
+    expect(sensitivityBody.style.display).toBe('none')
     expect(gateBody.style.display).toBe('')
+  })
+
+  it('renders sensitivity sliders for gyro and translation gain', () => {
+    const { panel } = makePanel()
+
+    expect(panel.el.querySelector('input[data-param="gyroSensitivity"]')).toBeInstanceOf(HTMLInputElement)
+    expect(panel.el.querySelector('input[data-param="translationSensitivity"]')).toBeInstanceOf(HTMLInputElement)
+    expect(panel.el.querySelector('input[data-param="workingDistanceCm"]')).toBeInstanceOf(HTMLInputElement)
+  })
+
+  it('renders tilt max guard and stillness gate threshold sliders', () => {
+    const { panel } = makePanel()
+
+    expect(panel.el.querySelector('input[data-param="tiltMaxDeg"]')).toBeInstanceOf(HTMLInputElement)
+    expect(panel.el.querySelector('input[data-param="stillnessGateThreshold"]')).toBeInstanceOf(HTMLInputElement)
   })
 
   it('reset all refreshes each slider by data-param and updates values', () => {

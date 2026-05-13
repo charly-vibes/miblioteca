@@ -11,6 +11,20 @@ export const PITCH_DEADBAND_RAD = 0.008
 export const STILL_GAIN = 0.04
 export const MOVING_GAIN = 0.08
 export const MAX_SHIFT_RATE_RAD_S = 0.4
+export const STILLNESS_GATE_THRESHOLD = 0.8
+export const GYRO_SENSITIVITY = 1
+export const TRANSLATION_SENSITIVITY = 1
+// Per-axis beta-tilt guards (deg of deviation from 90° = upright).
+// Raw-accel sessions need a stricter window because gravity bleeds into ax/ay;
+// hardware-subtracted accel sessions tolerate a wider posture range.
+export const TILT_MAX_DEG_RAW = 30
+export const TILT_MAX_DEG_SUBTRACTED = 45
+// Working distance bounds: 20 cm = minimum arm-reach / macro distance;
+// 150 cm = maximum practical shelf depth from phone.
+// Default 60 cm ≈ typical arm-length distance for shelf scanning.
+export const WORKING_DISTANCE_MIN_CM = 20
+export const WORKING_DISTANCE_MAX_CM = 150
+export const WORKING_DISTANCE_DEFAULT_CM = 60
 
 export type OrientationTrackingState = {
   readonly qRef: Quat
@@ -68,6 +82,7 @@ export type OrientationDeltaConfig = {
   stillGain?: number
   movingGain?: number
   maxShiftRateRadS?: number
+  stillnessGateThreshold?: number
 }
 
 export function computeOrientationDelta(
@@ -82,6 +97,7 @@ export function computeOrientationDelta(
   const sg = config?.stillGain ?? STILL_GAIN
   const mg = config?.movingGain ?? MOVING_GAIN
   const msr = config?.maxShiftRateRadS ?? MAX_SHIFT_RATE_RAD_S
+  const sgt = config?.stillnessGateThreshold ?? STILLNESS_GATE_THRESHOLD
 
   const qNow = eulerToQuat(sample.alphaDeg, sample.betaDeg, sample.gammaDeg)
   let qDelta = quatMultiply(quatConjugate(state.qRef), qNow)
@@ -103,7 +119,7 @@ export function computeOrientationDelta(
 
   const yawTarget = Math.abs(yawRaw) < ydb ? 0 : yawRaw
   const pitchTarget = Math.abs(pitchRaw) < pdb ? 0 : pitchRaw
-  const gain = stillness > 0.8 ? sg : mg
+  const gain = stillness > sgt ? sg : mg
   const yawSmoothed = state.prevYaw + gain * (yawTarget - state.prevYaw)
   const pitchSmoothed = state.prevPitch + gain * (pitchTarget - state.prevPitch)
 
@@ -173,10 +189,15 @@ export function initialGhostState(): GhostOverlayState {
  */
 // scanAxis 'y' = portrait (gamma/device-y); 'x' = landscape (beta/device-x). Caller should
 // derive from screen.orientation.type: portrait-* → 'y', landscape-* → 'x'.
+export type GyroConfig = {
+  gyroSensitivity?: number
+}
+
 export function feedGhostGyro(
   state: GhostOverlayState,
   sample: GyroSample,
   scanAxis: 'x' | 'y' = 'y',
+  config?: GyroConfig,
 ): GhostOverlayState {
   if (!isFinite(sample.gz) || !isFinite(sample.gx) || !isFinite(sample.gy) || !isFinite(sample.t)) return state
   if (sample.t < state.lastT) return state
@@ -187,6 +208,7 @@ export function feedGhostGyro(
     return { ...state, lastT: sample.t, omegaMag }
   }
 
+  const sens = config?.gyroSensitivity ?? GYRO_SENSITIVITY
   const dt = Math.min((sample.t - state.lastT) / 1000, 0.5) // ms → s, clamped to 500ms to guard against stale lastT after long pauses
   // Portrait (scanAxis='y'): horizontal sweep uses gy (beta/Y-axis); pitch uses gx (alpha/X-axis on Firefox).
   // Landscape (scanAxis='x'): horizontal sweep uses gx; pitch uses gy.
@@ -196,8 +218,8 @@ export function feedGhostGyro(
   // Pitch: phone tilts top away (looks up) → pitchOmega > 0 → positive pitchIntegral → positive shiftY (ghost moves down = fixed in space)
   return {
     ...state,
-    yawIntegral:   state.yawIntegral   - yawOmega   * dt,
-    pitchIntegral: state.pitchIntegral + pitchOmega * dt,
+    yawIntegral:   state.yawIntegral   - yawOmega   * dt * sens,
+    pitchIntegral: state.pitchIntegral + pitchOmega * dt * sens,
     lastT: sample.t,
     omegaMag,
   }
@@ -227,6 +249,8 @@ export type AccelFeedResult = {
 export type AccelConfig = {
   zuptThresholdMs2?: number
   zuptTauS?: number
+  tiltMaxDeg?: number
+  translationSensitivity?: number
 }
 
 export function feedGhostAccel(
@@ -237,11 +261,12 @@ export function feedGhostAccel(
   if (!isFinite(sample.ax) || !isFinite(sample.ay) || !isFinite(sample.betaDeg) || !isFinite(sample.interval_ms) || !isFinite(sample.t)) return { state, gate: 'tilt' }
   const zuptThresh = config?.zuptThresholdMs2 ?? ZUPT_THRESHOLD_MS2
   const zuptTau = config?.zuptTauS ?? ZUPT_TAU_S
+  const sens = config?.translationSensitivity ?? TRANSLATION_SENSITIVITY
   const intervalMs = sample.interval_ms < 1 ? sample.interval_ms * 1000 : sample.interval_ms
   const dt = state.lastAccelT === -Infinity
     ? Math.min(intervalMs / 1000, 0.1)
     : Math.min((sample.t - state.lastAccelT) / 1000, 0.5)
-  const maxTiltDeg = sample.gravitySubtracted ? 45 : 30
+  const maxTiltDeg = config?.tiltMaxDeg ?? (sample.gravitySubtracted ? TILT_MAX_DEG_SUBTRACTED : TILT_MAX_DEG_RAW)
   if (Math.abs(sample.betaDeg - 90) > maxTiltDeg) {
     if (state.velX === 0 && state.velY === 0) return { state, gate: 'tilt' }
     return { state: { ...state, velX: 0, velY: 0, lastAccelT: sample.t }, gate: 'tilt' }
@@ -251,8 +276,10 @@ export function feedGhostAccel(
     const decay = Math.exp(-dt / zuptTau)
     return { state: { ...state, velX: state.velX * decay, velY: state.velY * decay, lastAccelT: sample.t }, gate: 'zupt' }
   }
-  const newVelX = state.velX + sample.ax * dt
-  const newVelY = state.velY + sample.ay * dt
+  const ax = sample.ax * sens
+  const ay = sample.ay * sens
+  const newVelX = state.velX + ax * dt
+  const newVelY = state.velY + ay * dt
   return {
     state: {
       ...state,

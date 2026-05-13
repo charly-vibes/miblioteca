@@ -187,6 +187,23 @@ describe('GhostMotionPipeline', () => {
     })
   })
 
+  describe('gyroSensitivity tuning amplifies the yaw integration step', () => {
+    it('doubles yawRad when gyroSensitivity is 2.0', () => {
+      const gyro = makeGyro()
+      const onFrame = vi.fn()
+      const tuning: TuningConfig = { ...defaultTuningConfig(), gyroSensitivity: 2.0 }
+      const deps = makeDeps({ gyro, onFrame, enableMotionGate: false, tuning })
+      const pipeline = new GhostMotionPipeline(deps)
+
+      gyro.fire(0, 0.5, 0, 1000)
+      gyro.fire(0, 0.5, 0, 1100)  // dt=0.1, sens=2 → Δyaw = -(0.5*0.1*2) = -0.10
+      ;(deps.raf as unknown as { flush(): void }).flush()
+
+      expect(onFrame.mock.calls[0][0].yawRad).toBeCloseTo(-0.10, 5)
+      pipeline.destroy()
+    })
+  })
+
   describe('scanAxis follows getScreenOrientation() result', () => {
     it('uses gx for yaw in landscape orientation', () => {
       const gyro = makeGyro()

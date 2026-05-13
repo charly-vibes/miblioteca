@@ -1,5 +1,9 @@
 import type { GhostFrame, GyroLike } from '../sensors/ghostOverlay'
-import { focalLengthPx } from '../sensors/ghostOverlay'
+import {
+  focalLengthPx,
+  computeTranslationShiftPx,
+  computeTranslationShiftPy,
+} from '../sensors/ghostOverlay'
 import { GhostMotionPipeline } from '../sensors/GhostMotionPipeline'
 import { createGhostPipelineDeps } from '../sensors/createGhostPipelineDeps'
 import type { CreatedGhostPipelineDeps } from '../sensors/createGhostPipelineDeps'
@@ -522,8 +526,12 @@ export class GhostCalibrationPage {
   private onPipelineFrame(frame: GhostFrame): void {
     this.lastYawRad = frame.yawRad
     this.lastPitchRad = frame.pitchRad
-    const shiftPx = frame.shiftPx
-    const shiftPy = frame.pitchShiftPx
+    const dw = this.readViewportWidth()
+    const workingDistanceM = this.tuning.workingDistanceCm / 100
+    const transShiftPx = computeTranslationShiftPx(frame.dx_m, workingDistanceM, dw, this.tuning.hFovDeg)
+    const transShiftPy = computeTranslationShiftPy(frame.dy_m, workingDistanceM, dw, this.tuning.hFovDeg)
+    const shiftPx = frame.shiftPx + transShiftPx
+    const shiftPy = frame.pitchShiftPx + transShiftPy
     this.latestFrame = {
       t: frame.t, yawRad: frame.yawRad, pitchRad: frame.pitchRad,
       shiftPx, pitchShiftPx: shiftPy, dx_m: frame.dx_m, dy_m: frame.dy_m, gateOpen: true,

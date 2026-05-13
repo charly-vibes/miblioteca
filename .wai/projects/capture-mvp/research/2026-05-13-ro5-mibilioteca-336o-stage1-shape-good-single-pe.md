@@ -1,0 +1,1 @@
+RO5 mibilioteca-336o: Stage1 shape good (single persistence key change with regression test). Stage2 correctness good after adding load assertion and global cleanup. Stage3 clarity good: explicit versioned key literal in test. Stage4 edge cases acceptable for key migration scope. Stage5 verdict ready; no remaining issues.

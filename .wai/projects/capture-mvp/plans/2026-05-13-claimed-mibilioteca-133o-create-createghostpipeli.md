@@ -1,0 +1,1 @@
+claimed mibilioteca-133o: create createGhostPipelineDeps.ts with GhostPipelineOptions; tests will assert option mapping, default enableMotionGate=true, and provided gyro/display callbacks are preserved

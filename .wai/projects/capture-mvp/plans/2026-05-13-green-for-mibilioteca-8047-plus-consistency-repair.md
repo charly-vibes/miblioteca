@@ -1,0 +1,1 @@
+green for mibilioteca-8047 plus consistency repair: GhostCalibrationPage uses shared factory; committed pending tuning pipeline code so HEAD typechecks cleanly without relying on uncommitted files; 806 tests and typecheck pass

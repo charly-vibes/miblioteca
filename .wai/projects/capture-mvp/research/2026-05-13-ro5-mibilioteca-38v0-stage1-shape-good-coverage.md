@@ -1,0 +1,1 @@
+RO5 mibilioteca-38v0: Stage1 shape good (coverage added to existing factory tests). Stage2 correctness good: verifies 60Hz Gyroscope construction, beta/orientation callbacks, null-angle handling, and dispose removes exact listener. Stage3 clarity good via fireDeviceOrientation helper. Stage4 edge cases covered for partial orientation events. Stage5 verdict ready; no issues found.

@@ -1,7 +1,12 @@
 import type { GhostFrame, GyroLike } from '../sensors/ghostOverlay'
-import { focalLengthPx, DEFAULT_HFOV_DEG } from '../sensors/ghostOverlay'
+import { focalLengthPx } from '../sensors/ghostOverlay'
 import { GhostMotionPipeline } from '../sensors/GhostMotionPipeline'
+import { createGhostPipelineDeps } from '../sensors/createGhostPipelineDeps'
+import type { CreatedGhostPipelineDeps } from '../sensors/createGhostPipelineDeps'
 import type { Phase, SensorFrame, CalibrationCycle, CalibrationExport } from './types'
+import type { TuningConfig } from './tuningConfig'
+import { loadTuningConfig } from './tuningConfig'
+import { TuningPanel } from './TuningPanel'
 
 declare const __GIT_COMMIT__: string
 
@@ -9,7 +14,6 @@ const DOT_PX = 24
 const DOT_COLOR = '#FF3B30'
 const RECT_W_RATIO = 0.6
 const RECT_H_RATIO = 0.4
-const H_FOV_DEG = DEFAULT_HFOV_DEG
 const FALLBACK_VW = 375
 const FALLBACK_VH = 667
 
@@ -98,7 +102,6 @@ export class GhostCalibrationPage {
 
   private sensorVals = { gx: 0, gy: 0, gz: 0, ax: 0, ay: 0, az: 0 }
   private motionHandler!: EventListenerOrEventListenerObject
-  private orientationHandler!: EventListenerOrEventListenerObject
   private readonly win: WindowLike
 
   private readonly doc: Document
@@ -109,12 +112,11 @@ export class GhostCalibrationPage {
   private readonly triggerDownload: (filename: string, json: string) => void
 
   private readonly getScreenOrientation: () => string
-  private betaDeg: number | null = null
-  private latestOrientation: { alpha: number; beta: number; gamma: number } | null = null
 
   private cycles: CalibrationCycle[] = []
   private currentCycle: Partial<CalibrationCycle> | null = null
   private pipeline!: GhostMotionPipeline
+  private pipelineDeps!: CreatedGhostPipelineDeps
   private lastYawRad = 0
   private lastPitchRad = 0
   private recordingStartedAt = 0
@@ -134,6 +136,8 @@ export class GhostCalibrationPage {
 
   private ghostOverlayEl!: HTMLImageElement
   private readonly captureSnapshotFn: (video: HTMLVideoElement) => string | null
+  private readonly tuning: TuningConfig
+  private tuningPanel: TuningPanel | null = null
 
   constructor(
     private readonly root: HTMLElement,
@@ -171,6 +175,7 @@ export class GhostCalibrationPage {
       return c.toDataURL('image/jpeg', 0.8)
     })
     injectPulseStyle(doc)
+    this.tuning = loadTuningConfig()
 
     const vw = this.win.visualViewport?.width || this.win.innerWidth || FALLBACK_VW
     const vh = this.win.visualViewport?.height || this.win.innerHeight || FALLBACK_VH
@@ -180,6 +185,7 @@ export class GhostCalibrationPage {
     this.buildRecordingUI(doc, vh)
     this.buildSummaryUI(doc)
     this.buildOverlayLayer(doc)
+    this.buildTuningPanel(doc)
     this.wireDragEvents(doc)
     this.wireSensors()
     this.wirePipeline()
@@ -408,6 +414,13 @@ export class GhostCalibrationPage {
 
   }
 
+  private buildTuningPanel(doc: Document): void {
+    this.tuningPanel = new TuningPanel(doc, this.tuning, () => {
+      this.renderTelemetry()
+    })
+    this.root.appendChild(this.tuningPanel.el)
+  }
+
   private wireDragEvents(doc: Document): void {
     this.onDocMouseMove = (e: MouseEvent) => this.moveDrag(e.clientX, e.clientY)
     this.onDocMouseUp = () => this.stopDrag()
@@ -425,15 +438,6 @@ export class GhostCalibrationPage {
   }
 
   private wireSensors(): void {
-    this.orientationHandler = (ev: Event) => {
-      const e = ev as DeviceOrientationEvent
-      this.betaDeg = e.beta
-      if (e.alpha != null && e.beta != null && e.gamma != null) {
-        this.latestOrientation = { alpha: e.alpha, beta: e.beta, gamma: e.gamma }
-      }
-    }
-    this.win.addEventListener('deviceorientation', this.orientationHandler)
-
     this.motionHandler = (ev: Event) => {
       const e = ev as DeviceMotionEvent
       const rr = e.rotationRate
@@ -459,7 +463,7 @@ export class GhostCalibrationPage {
           ax: this.sensorVals.ax,
           ay: this.sensorVals.ay,
           az: this.sensorVals.az,
-          betaDeg: this.betaDeg,
+          betaDeg: this.pipelineDeps?.getBeta?.() ?? null,
         }
         this.currentCycle.frames.push(frame)
       }
@@ -478,13 +482,13 @@ export class GhostCalibrationPage {
   }
 
   private wirePipeline(): void {
-    this.pipeline = new GhostMotionPipeline({
+    this.pipelineDeps = createGhostPipelineDeps({
+      win: this.win,
       gyro: this.gyro,
-      displayWidth: () => this.readViewportWidth(),
-      displayHeight: () => this.readViewportHeight(),
-      getBeta: () => this.betaDeg,
-      getOrientation: () => this.latestOrientation,
+      getDisplayWidth: () => this.readViewportWidth(),
+      getDisplayHeight: () => this.readViewportHeight(),
       getScreenOrientation: this.getScreenOrientation,
+      tuning: this.tuning,
       onFrame: (frame) => this.onPipelineFrame(frame),
       onGyroSample: (pState) => {
         const g = this.gyro!
@@ -502,7 +506,7 @@ export class GhostCalibrationPage {
             t: this.nowFn() - this.recordingStartedAt,
             gx, gy, gz,
             ax: this.sensorVals.ax, ay: this.sensorVals.ay, az: this.sensorVals.az,
-            betaDeg: this.betaDeg,
+            betaDeg: this.pipelineDeps.getBeta?.() ?? null,
           })
         }
         this.renderTelemetry()
@@ -512,6 +516,7 @@ export class GhostCalibrationPage {
       cancelAnimationFrame: this.caf,
       now: this.nowFn,
     })
+    this.pipeline = new GhostMotionPipeline(this.pipelineDeps)
   }
 
   private onPipelineFrame(frame: GhostFrame): void {
@@ -565,13 +570,17 @@ export class GhostCalibrationPage {
     const paused = this.phase === 'repositioning' || this.phase === 'captured'
     const yawDeg = paused ? 'PAUSED' : (f ? (f.yawRad * 180 / Math.PI).toFixed(1) : '0.0')
     const pitchDeg = paused ? 'PAUSED' : (f ? (f.pitchRad * 180 / Math.PI).toFixed(1) : '0.0')
-    const shiftPx = paused ? 'PAUSED' : (f ? f.shiftPx.toFixed(0) : '0')
+    const shiftVal = f ? f.shiftPx : 0
+    const shiftStr = paused ? 'PAUSED' : shiftVal.toFixed(0)
     const gateStr = paused ? 'PAUSED' : (f?.gateOpen ? 'OPEN' : 'CLOSED')
+    const withinGate = !paused && Math.abs(shiftVal) <= this.tuning.maxShiftXPx
+    const gateIndicator = paused ? '' : (withinGate ? ' ✓' : ' ✗')
+    const model = this.tuning.orientationModel
     this.telemetryEl.textContent = [
       `gx ${fmt(gx)}  gy ${fmt(gy)}  gz ${fmt(gz)} rad/s`,
       `ax ${fmt(ax)}  ay ${fmt(ay)}  az ${fmt(az)} m/s²`,
-      `Motion gate: ${gateStr}  |ω|: ${omegaMag.toFixed(3)} rad/s`,
-      `Yaw: ${yawDeg}°  Pitch: ${pitchDeg}°  Shift: ${shiftPx} px`,
+      `Model: ${model}  |ω|: ${omegaMag.toFixed(3)} rad/s  Gate: ${gateStr}`,
+      `Yaw: ${yawDeg}°  Pitch: ${pitchDeg}°  Shift: ${shiftStr}${gateIndicator} (±${this.tuning.maxShiftXPx}px)`,
     ].join('\n')
   }
 
@@ -687,7 +696,7 @@ export class GhostCalibrationPage {
     if (!cycle) return
 
     const vw = this.readViewportWidth()
-    const fl = focalLengthPx(vw)
+    const fl = focalLengthPx(vw, this.tuning.hFovDeg)
     const durationMs = (cycle.endedAt ?? cycle.startedAt) - cycle.startedAt
     const lastGhostYawDeg = (cycle.ghostFrames.at(-1)?.yawRad ?? 0) * 180 / Math.PI
     const effectiveYawErrDeg = Math.atan(cycle.deltaPixels.x / fl) * 180 / Math.PI
@@ -728,8 +737,9 @@ export class GhostCalibrationPage {
         userAgent: this.win.navigator?.userAgent ?? '',
       },
       orientation: this.getScreenOrientation(),
-      hFovDeg: H_FOV_DEG,
-      focalLengthPx: focalLengthPx(vw),
+      hFovDeg: this.tuning.hFovDeg,
+      focalLengthPx: focalLengthPx(vw, this.tuning.hFovDeg),
+      tuning: { ...this.tuning },
       cycles: this.cycles,
     }
     const ts = now.toISOString().replace(/[:.]/g, '-').slice(0, 19)
@@ -782,7 +792,7 @@ export class GhostCalibrationPage {
     this.destroyed = true
     this.pipeline?.destroy()
     if (this.motionHandler) this.win.removeEventListener('devicemotion', this.motionHandler)
-    if (this.orientationHandler) this.win.removeEventListener('deviceorientation', this.orientationHandler)
+    this.pipelineDeps?.dispose()
     if (this.onDocMouseMove) this.doc.removeEventListener('mousemove', this.onDocMouseMove)
     if (this.onDocMouseUp) this.doc.removeEventListener('mouseup', this.onDocMouseUp)
     if (this.onDocTouchMove) this.doc.removeEventListener('touchmove', this.onDocTouchMove)

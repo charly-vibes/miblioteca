@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from 'vitest'
 import { GhostMotionPipeline } from './GhostMotionPipeline'
 import type { GhostMotionPipelineDeps } from './GhostMotionPipeline'
-import type { GyroLike, OrientationLike } from './ghostOverlay'
+import type { GyroLike } from './ghostOverlay'
+import type { TuningConfig } from '../ghost/tuningConfig'
+import { defaultTuningConfig } from '../ghost/tuningConfig'
 
 function makeGyro(): GyroLike & { fire(gx: number, gy: number, gz: number, t: number): void } {
   const g: GyroLike & { fire(gx: number, gy: number, gz: number, t: number): void } = {
@@ -421,57 +423,43 @@ describe('GhostMotionPipeline — onGyroSample hook', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Absolute orientation path (DeviceOrientationEvent-based tracking)
+// Absolute orientation path (tuning.orientationModel = 'absolute')
+// Pipeline reads orientation from getOrientation() callback, not sensor dep.
 // ---------------------------------------------------------------------------
 
-function makeOrientation(): OrientationLike & { fire(alpha: number, beta: number, gamma: number): void } {
-  const o: OrientationLike & { fire(alpha: number, beta: number, gamma: number): void } = {
-    onreading: null,
-    alpha: null, beta: null, gamma: null,
-    start: vi.fn(),
-    stop: vi.fn(),
-    fire(a, b, g) {
-      this.alpha = a; this.beta = b; this.gamma = g
-      this.onreading?.()
-    },
-  }
-  return o
+function absoluteTuning(): TuningConfig {
+  return { ...defaultTuningConfig(), orientationModel: 'absolute' }
 }
 
 describe('GhostMotionPipeline — absolute orientation', () => {
   it('uses orientation delta for yaw/pitch instead of gyro integration', () => {
     const gyro = makeGyro()
-    const orientation = makeOrientation()
+    const tuning = absoluteTuning()
+    let sample: { alpha: number; beta: number; gamma: number } | null = { alpha: 180, beta: 90, gamma: 0 }
     const onFrame = vi.fn()
-    const deps = makeDeps({ gyro, orientation, onFrame, enableMotionGate: false })
+    const deps = makeDeps({ gyro, onFrame, enableMotionGate: false, getOrientation: () => sample, tuning })
     const pipeline = new GhostMotionPipeline(deps)
 
-    // First orientation reading sets reference
-    orientation.fire(180, 90, 0)
-    // Gyro fires but should only update omegaMag, not yaw/pitch
     gyro.fire(0, 0.5, 0, 1000)
-    gyro.fire(0, 0.5, 0, 1100)
-    // Second orientation reading: 2° alpha change → ~2° yaw
-    orientation.fire(182, 90, 0)
-
     ;(deps.raf as unknown as { flush(): void }).flush()
-    const frame = onFrame.mock.calls[0][0]
-    // Should reflect orientation delta (~0.02 rad for first frame due to rate limiter),
-    // NOT gyro integration (which would give -0.05 rad)
+    sample = { alpha: 182, beta: 90, gamma: 0 }
+    gyro.fire(0, 0.5, 0, 1100)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+
+    const frame = onFrame.mock.calls.at(-1)![0]
     expect(frame.yawRad).toBeGreaterThan(0)
     expect(frame.yawRad).toBeLessThan(0.04)
     pipeline.destroy()
   })
 
-  it('uses getOrientation callback when no orientation sensor is provided', () => {
+  it('uses getOrientation callback for orientation data', () => {
     const gyro = makeGyro()
+    const tuning = absoluteTuning()
     let sample: { alpha: number; beta: number; gamma: number } | null = { alpha: 180, beta: 90, gamma: 0 }
     const onFrame = vi.fn()
     const deps = makeDeps({
-      gyro,
-      onFrame,
-      enableMotionGate: false,
-      getOrientation: () => sample,
+      gyro, onFrame, enableMotionGate: false,
+      getOrientation: () => sample, tuning,
     })
     const pipeline = new GhostMotionPipeline(deps)
 
@@ -489,23 +477,25 @@ describe('GhostMotionPipeline — absolute orientation', () => {
 
   it('gyro still provides omegaMag for motion gate when orientation is active', () => {
     const gyro = makeGyro()
-    const orientation = makeOrientation()
+    const tuning = absoluteTuning()
+    let sample: { alpha: number; beta: number; gamma: number } | null = { alpha: 180, beta: 90, gamma: 0 }
     const onFrame = vi.fn()
-    const deps = makeDeps({ gyro, orientation, onFrame, enableMotionGate: true })
+    const deps = makeDeps({
+      gyro, onFrame, enableMotionGate: true,
+      getOrientation: () => sample, tuning,
+    })
     const pipeline = new GhostMotionPipeline(deps)
 
-    orientation.fire(180, 90, 0)
-    // High gyro → omegaMag above threshold → gate should close
     gyro.fire(0, 2.0, 0, 1000)
     gyro.fire(0, 2.0, 0, 1100)
-    orientation.fire(182, 90, 0)
+    sample = { alpha: 182, beta: 90, gamma: 0 }
     ;(deps.raf as unknown as { flush(): void }).flush()
     const openFrames = onFrame.mock.calls.filter(([f]) => f.gateOpen)
     expect(openFrames).toHaveLength(0)
     pipeline.destroy()
   })
 
-  it('falls back to gyro integration when orientation is not provided', () => {
+  it('falls back to gyro integration when tuning model is gyro', () => {
     const gyro = makeGyro()
     const onFrame = vi.fn()
     const deps = makeDeps({ gyro, onFrame, enableMotionGate: false })
@@ -515,65 +505,84 @@ describe('GhostMotionPipeline — absolute orientation', () => {
     gyro.fire(0, 0.5, 0, 1100)
     ;(deps.raf as unknown as { flush(): void }).flush()
     const frame = onFrame.mock.calls[0][0]
-    // Gyro integration: yaw = -(0.5 * 0.1) = -0.05
     expect(frame.yawRad).toBeCloseTo(-0.05, 5)
     pipeline.destroy()
   })
 
   it('reset() makes next orientation reading the new reference', () => {
     const gyro = makeGyro()
-    const orientation = makeOrientation()
+    const tuning = absoluteTuning()
+    let sample: { alpha: number; beta: number; gamma: number } | null = { alpha: 180, beta: 90, gamma: 0 }
     const onFrame = vi.fn()
-    const deps = makeDeps({ gyro, orientation, onFrame, enableMotionGate: false })
+    const deps = makeDeps({
+      gyro, onFrame, enableMotionGate: false,
+      getOrientation: () => sample, tuning,
+    })
     const pipeline = new GhostMotionPipeline(deps)
 
-    orientation.fire(180, 90, 0)
-    orientation.fire(185, 90, 0)
     gyro.fire(0, 0, 0, 1000)
     ;(deps.raf as unknown as { flush(): void }).flush()
-    expect(onFrame.mock.calls[0][0].yawRad).toBeGreaterThan(0)
+    sample = { alpha: 185, beta: 90, gamma: 0 }
+    gyro.fire(0, 0, 0, 1100)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    expect(onFrame.mock.calls.at(-1)![0].yawRad).toBeGreaterThan(0)
 
     pipeline.reset()
     onFrame.mockClear()
-    // New reference at 185°
-    orientation.fire(185, 90, 0)
-    // Same angle as new reference → yaw should be 0
-    orientation.fire(185, 90, 0)
+    sample = { alpha: 185, beta: 90, gamma: 0 }
     gyro.fire(0, 0, 0, 1200)
     ;(deps.raf as unknown as { flush(): void }).flush()
     expect(onFrame.mock.calls[0][0].yawRad).toBeCloseTo(0, 4)
     pipeline.destroy()
   })
 
-  it('destroy() stops orientation sensor', () => {
+  it('switching model at runtime resets state', () => {
     const gyro = makeGyro()
-    const orientation = makeOrientation()
-    const deps = makeDeps({ gyro, orientation, enableMotionGate: false })
+    const tuning = absoluteTuning()
+    let sample: { alpha: number; beta: number; gamma: number } | null = { alpha: 180, beta: 90, gamma: 0 }
+    const onFrame = vi.fn()
+    const deps = makeDeps({
+      gyro, onFrame, enableMotionGate: false,
+      getOrientation: () => sample, tuning,
+    })
     const pipeline = new GhostMotionPipeline(deps)
+
+    // First frame: establishes reference at alpha=180
+    gyro.fire(0, 0, 0, 1000)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    // Second frame: delta from reference
+    sample = { alpha: 185, beta: 90, gamma: 0 }
+    gyro.fire(0, 0, 0, 1100)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    expect(onFrame.mock.calls.at(-1)![0].yawRad).toBeGreaterThan(0)
+
+    tuning.orientationModel = 'gyro'
+    onFrame.mockClear()
+    gyro.fire(0, 0, 0, 1200)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    expect(onFrame.mock.calls[0][0].yawRad).toBeCloseTo(0, 4)
     pipeline.destroy()
-    expect(orientation.stop).toHaveBeenCalled()
-    expect(orientation.onreading).toBeNull()
   })
 
   it('orientation noise on a still device produces shifts within capture gate', () => {
     const gyro = makeGyro()
-    const orientation = makeOrientation()
+    const tuning = absoluteTuning()
     const onFrame = vi.fn()
     let nowMs = 0
+    let sample: { alpha: number; beta: number; gamma: number } = { alpha: 180, beta: 90, gamma: 0 }
     const deps = makeDeps({
-      gyro, orientation, onFrame, enableMotionGate: false,
+      gyro, onFrame, enableMotionGate: false,
       displayWidth: () => 414, displayHeight: () => 896,
-      now: () => nowMs,
+      now: () => nowMs, getOrientation: () => sample, tuning,
     })
     const pipeline = new GhostMotionPipeline(deps)
 
-    orientation.fire(180, 90, 0)
     const rng = (seed: number) => Math.abs(Math.sin(seed * 12.9898 + 78.233) * 43758.5453 % 1)
     for (let i = 1; i <= 120; i++) {
       nowMs = i * 16
       const jitter = (rng(i) - 0.5) * 4
+      sample = { alpha: 180 + jitter, beta: 90 + (rng(i + 1000) - 0.5) * 4, gamma: (rng(i + 2000) - 0.5) * 4 }
       gyro.fire(0, 0, 0, nowMs)
-      orientation.fire(180 + jitter, 90 + (rng(i + 1000) - 0.5) * 4, (rng(i + 2000) - 0.5) * 4)
       ;(deps.raf as unknown as { flush(): void }).flush()
     }
 
@@ -583,23 +592,21 @@ describe('GhostMotionPipeline — absolute orientation', () => {
     pipeline.destroy()
   })
 
-  it('skips orientation reading when alpha/beta/gamma are null', () => {
+  it('ignores absolute orientation when getOrientation returns null', () => {
     const gyro = makeGyro()
-    const orientation = makeOrientation()
+    const tuning = absoluteTuning()
     const onFrame = vi.fn()
-    const deps = makeDeps({ gyro, orientation, onFrame, enableMotionGate: false })
+    const deps = makeDeps({
+      gyro, onFrame, enableMotionGate: false,
+      getOrientation: () => null, tuning,
+    })
     const pipeline = new GhostMotionPipeline(deps)
 
-    // Fire with null values — should not initialize orientation state
-    orientation.alpha = null; orientation.beta = null; orientation.gamma = null
-    orientation.onreading?.()
-
-    // Gyro should still integrate (fallback path since orientation not initialized)
-    gyro.fire(0, 0.5, 0, 1000)
-    gyro.fire(0, 0.5, 0, 1100)
+    gyro.fire(0, 0, 0, 1000)
+    gyro.fire(0, 0, 0, 1100)
     ;(deps.raf as unknown as { flush(): void }).flush()
     const frame = onFrame.mock.calls[0][0]
-    expect(frame.yawRad).toBeCloseTo(-0.05, 5)
+    expect(frame.yawRad).toBeCloseTo(0, 4)
     pipeline.destroy()
   })
 })

@@ -60,13 +60,29 @@ export function initialOrientationState(alphaDeg: number, betaDeg: number, gamma
   }
 }
 
-/** Computes drift-free yaw/pitch delta using absolute orientation from DeviceOrientationEvent.
- *  Uses body-frame delta quaternion: q_body = conjugate(q_ref) * q_now.
- *  Applies near-zero deadband, smoothing toward the absolute target, and dt-based rate limiting. */
+export type OrientationDeltaConfig = {
+  stillThreshold?: number
+  stillEmaAlpha?: number
+  yawDeadbandRad?: number
+  pitchDeadbandRad?: number
+  stillGain?: number
+  movingGain?: number
+  maxShiftRateRadS?: number
+}
+
 export function computeOrientationDelta(
   state: OrientationTrackingState,
   sample: { alphaDeg: number; betaDeg: number; gammaDeg: number; gyroMag: number; nowMs: number },
+  config?: OrientationDeltaConfig,
 ): { yaw: number; pitch: number; state: OrientationTrackingState } {
+  const st = config?.stillThreshold ?? STILL_THRESHOLD
+  const ema = config?.stillEmaAlpha ?? STILL_EMA_ALPHA
+  const ydb = config?.yawDeadbandRad ?? YAW_DEADBAND_RAD
+  const pdb = config?.pitchDeadbandRad ?? PITCH_DEADBAND_RAD
+  const sg = config?.stillGain ?? STILL_GAIN
+  const mg = config?.movingGain ?? MOVING_GAIN
+  const msr = config?.maxShiftRateRadS ?? MAX_SHIFT_RATE_RAD_S
+
   const qNow = eulerToQuat(sample.alphaDeg, sample.betaDeg, sample.gammaDeg)
   let qDelta = quatMultiply(quatConjugate(state.qRef), qNow)
 
@@ -82,17 +98,17 @@ export function computeOrientationDelta(
     Math.max(-1, Math.min(1, 2 * (qDelta.w * qDelta.x - qDelta.y * qDelta.z))),
   )
 
-  const isStill = sample.gyroMag < STILL_THRESHOLD ? 1.0 : 0.0
-  const stillness = STILL_EMA_ALPHA * state.stillness + (1 - STILL_EMA_ALPHA) * isStill
+  const isStill = sample.gyroMag < st ? 1.0 : 0.0
+  const stillness = ema * state.stillness + (1 - ema) * isStill
 
-  const yawTarget = Math.abs(yawRaw) < YAW_DEADBAND_RAD ? 0 : yawRaw
-  const pitchTarget = Math.abs(pitchRaw) < PITCH_DEADBAND_RAD ? 0 : pitchRaw
-  const gain = stillness > 0.8 ? STILL_GAIN : MOVING_GAIN
+  const yawTarget = Math.abs(yawRaw) < ydb ? 0 : yawRaw
+  const pitchTarget = Math.abs(pitchRaw) < pdb ? 0 : pitchRaw
+  const gain = stillness > 0.8 ? sg : mg
   const yawSmoothed = state.prevYaw + gain * (yawTarget - state.prevYaw)
   const pitchSmoothed = state.prevPitch + gain * (pitchTarget - state.prevPitch)
 
   const dt = Math.min(Math.max((sample.nowMs - state.lastT) / 1000, 0), 0.1)
-  const maxStep = MAX_SHIFT_RATE_RAD_S * dt
+  const maxStep = msr * dt
   const dyaw = Math.max(-maxStep, Math.min(maxStep, yawSmoothed - state.prevYaw))
   const dpitch = Math.max(-maxStep, Math.min(maxStep, pitchSmoothed - state.prevPitch))
   const yaw = state.prevYaw + dyaw
@@ -208,35 +224,31 @@ export type AccelFeedResult = {
 // accel (gravitySubtracted=true). Camera postures typically land at betaDeg ~55-70°,
 // so raw-accel sessions need a strict guard while hardware-subtracted sessions get the
 // wider window without risking gravity contamination.
+export type AccelConfig = {
+  zuptThresholdMs2?: number
+  zuptTauS?: number
+}
+
 export function feedGhostAccel(
   state: GhostOverlayState,
   sample: AccelSample,
+  config?: AccelConfig,
 ): AccelFeedResult {
   if (!isFinite(sample.ax) || !isFinite(sample.ay) || !isFinite(sample.betaDeg) || !isFinite(sample.interval_ms) || !isFinite(sample.t)) return { state, gate: 'tilt' }
-  // Compute dt up front so both the ZUPT and integration branches share the same value.
-  // First sample falls back to interval_ms (capped at 100ms). Subsequent samples cap at 500ms
-  // to guard against phantom drift after the app is backgrounded — matching feedGhostGyro's lastT guard.
-  // Some browsers (Chromium desktop) report DeviceMotionEvent.interval in seconds instead of ms.
-  // Guard: if interval_ms < 1, assume it's in seconds and convert.
+  const zuptThresh = config?.zuptThresholdMs2 ?? ZUPT_THRESHOLD_MS2
+  const zuptTau = config?.zuptTauS ?? ZUPT_TAU_S
   const intervalMs = sample.interval_ms < 1 ? sample.interval_ms * 1000 : sample.interval_ms
   const dt = state.lastAccelT === -Infinity
     ? Math.min(intervalMs / 1000, 0.1)
     : Math.min((sample.t - state.lastAccelT) / 1000, 0.5)
   const maxTiltDeg = sample.gravitySubtracted ? 45 : 30
   if (Math.abs(sample.betaDeg - 90) > maxTiltDeg) {
-    // Phone near-horizontal: gravity leaks into ax/ay. Zero velocity but don't update position.
-    // Early return when already zeroed (avoids allocation).
     if (state.velX === 0 && state.velY === 0) return { state, gate: 'tilt' }
     return { state: { ...state, velX: 0, velY: 0, lastAccelT: sample.t }, gate: 'tilt' }
   }
-  // ZUPT (Zero-Velocity Update): hardware gravity subtraction leaves ~0.03–0.05 m/s² of
-  // persistent sensor bias. Double-integrating this over seconds creates spurious displacement.
-  // L2 norm threshold (ZUPT_THRESHOLD_MS2 ≈ 2σ above measured noise floor of σ≈0.065) gates ~95% of
-  // zero-motion samples. Exponential decay (τ=ZUPT_TAU_S) bleeds residual velocity smoothly rather
-  // than hard-zeroing, avoiding the velocity discontinuity of the old binary gate.
   const accelMag = Math.sqrt(sample.ax ** 2 + sample.ay ** 2)
-  if (accelMag < ZUPT_THRESHOLD_MS2) {
-    const decay = Math.exp(-dt / ZUPT_TAU_S)
+  if (accelMag < zuptThresh) {
+    const decay = Math.exp(-dt / zuptTau)
     return { state: { ...state, velX: state.velX * decay, velY: state.velY * decay, lastAccelT: sample.t }, gate: 'zupt' }
   }
   const newVelX = state.velX + sample.ax * dt

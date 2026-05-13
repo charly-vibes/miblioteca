@@ -29,6 +29,8 @@ const PHYSICS_PARAMS: ParamDef[] = [
   { key: 'hFovDeg', label: 'H FOV', min: 15, max: 90, step: 1, unit: '°' },
   { key: 'zuptThresholdMs2', label: 'ZUPT thresh', min: 0.01, max: 1.0, step: 0.01, unit: 'm/s²' },
   { key: 'zuptTauS', label: 'ZUPT τ', min: 0.02, max: 2.0, step: 0.02, unit: 's' },
+  { key: 'motionGateShowRadS', label: 'Gate show ω', min: 0.05, max: 2.0, step: 0.05, unit: 'rad/s' },
+  { key: 'motionGateHideRadS', label: 'Gate hide ω', min: 0.05, max: 2.0, step: 0.05, unit: 'rad/s' },
 ]
 
 export class TuningPanel {
@@ -37,6 +39,7 @@ export class TuningPanel {
   private toggleBtn: HTMLElement
   private open = false
   private readonly valueDisplays = new Map<string, HTMLElement>()
+  private readonly sectionBodies = new Map<string, HTMLElement>()
 
   constructor(
     private readonly doc: Document,
@@ -56,7 +59,7 @@ export class TuningPanel {
     btn.setAttribute('data-testid', 'tuning-toggle')
     Object.assign(btn.style, {
       position: 'fixed', bottom: '12px', left: '12px',
-      width: '40px', height: '40px', borderRadius: '50%',
+      width: '48px', height: '48px', borderRadius: '50%',
       border: 'none', background: 'rgba(0,0,0,0.6)', color: '#fff',
       fontSize: '20px', cursor: 'pointer', zIndex: '20',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -73,9 +76,9 @@ export class TuningPanel {
     const panel = this.doc.createElement('div')
     panel.setAttribute('data-testid', 'tuning-panel')
     Object.assign(panel.style, {
-      position: 'fixed', bottom: '60px', left: '0', right: '0',
-      maxHeight: '55vh', overflowY: 'auto', overflowX: 'hidden',
-      background: 'rgba(0,0,0,0.85)', color: '#eee',
+      position: 'fixed', bottom: '68px', left: '0', right: '0',
+      maxHeight: '40vh', overflowY: 'auto', overflowX: 'hidden',
+      background: 'rgba(0,0,0,0.88)', color: '#eee',
       fontFamily: 'monospace', fontSize: '12px',
       padding: '8px 10px', zIndex: '19',
       display: 'none',
@@ -127,21 +130,65 @@ export class TuningPanel {
     const section = this.doc.createElement('div')
     section.style.marginBottom = '8px'
 
-    const heading = this.doc.createElement('div')
-    heading.textContent = title
-    Object.assign(heading.style, { fontWeight: 'bold', fontSize: '11px', color: '#aaa', marginBottom: '4px' })
-    section.appendChild(heading)
+    const header = this.doc.createElement('div')
+    Object.assign(header.style, { display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' })
 
+    const heading = this.doc.createElement('button')
+    heading.type = 'button'
+    heading.textContent = title
+    heading.setAttribute('data-testid', `tuning-section-toggle-${title}`)
+    Object.assign(heading.style, {
+      flex: '1', textAlign: 'left', fontWeight: 'bold', fontSize: '11px',
+      color: '#aaa', background: 'transparent', border: '0', padding: '4px 0', cursor: 'pointer',
+    })
+    heading.addEventListener('click', () => this.openSection(title))
+
+    const reset = this.doc.createElement('button')
+    reset.type = 'button'
+    reset.textContent = 'Reset'
+    reset.setAttribute('data-testid', `tuning-section-reset-${title}`)
+    Object.assign(reset.style, {
+      padding: '3px 8px', border: '1px solid #666', borderRadius: '4px',
+      background: '#333', color: '#fff', cursor: 'pointer', fontSize: '10px',
+    })
+    reset.addEventListener('click', () => {
+      const defaults = defaultTuningConfig()
+      for (const p of params) {
+        ;(this.config as Record<string, unknown>)[p.key] = defaults[p.key]
+      }
+      this.refreshAllSliders()
+      this.save()
+    })
+
+    header.appendChild(heading)
+    header.appendChild(reset)
+    section.appendChild(header)
+
+    const body = this.doc.createElement('div')
+    body.setAttribute('data-testid', `tuning-section-body-${title}`)
+    body.style.display = this.sectionBodies.size === 0 ? '' : 'none'
     for (const p of params) {
-      section.appendChild(this.buildSlider(p))
+      body.appendChild(this.buildSlider(p))
     }
+    this.sectionBodies.set(title, body)
+    section.appendChild(body)
     return section
+  }
+
+  private openSection(title: string): void {
+    for (const [name, body] of this.sectionBodies) {
+      body.style.display = name === title ? '' : 'none'
+    }
+    const opened = this.sectionBodies.get(title)
+    if (typeof opened?.scrollIntoView === 'function') {
+      opened.scrollIntoView({ block: 'nearest' })
+    }
   }
 
   private buildSlider(p: ParamDef): HTMLElement {
     const row = this.doc.createElement('div')
     Object.assign(row.style, {
-      display: 'grid', gridTemplateColumns: '90px 1fr 55px',
+      display: 'grid', gridTemplateColumns: '80px 1fr 60px',
       alignItems: 'center', gap: '4px', marginBottom: '2px',
     })
 
@@ -149,8 +196,11 @@ export class TuningPanel {
     label.textContent = p.label
     label.style.fontSize = '11px'
 
+    row.setAttribute('data-testid', `tuning-slider-${p.key}`)
+
     const input = this.doc.createElement('input')
     input.type = 'range'
+    input.dataset.param = p.key
     input.min = String(p.min)
     input.max = String(p.max)
     input.step = String(p.step)
@@ -203,7 +253,8 @@ export class TuningPanel {
     const allParams = [...ORIENTATION_PARAMS, ...GATE_PARAMS, ...PHYSICS_PARAMS]
     for (const input of this.panelBody.querySelectorAll('input[type="range"]')) {
       const el = input as HTMLInputElement
-      const param = allParams.find(p => String(this.config[p.key]) !== el.value)
+      const key = el.dataset.param as keyof TuningConfig | undefined
+      const param = allParams.find(p => p.key === key)
       if (param) {
         el.value = String(this.config[param.key])
       }

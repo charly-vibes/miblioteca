@@ -84,6 +84,29 @@ describe('GhostCalibrationPage — IDLE phase', () => {
     expect(rect.style.left).toBe('160px')    // (800 - 480) / 2
     expect(rect.style.top).toBe('180px')     // (600 - 240) / 2
   })
+
+  it('rectangle position follows pipeline shift in IDLE for live tuning preview', () => {
+    const gyro = makeGyro(0, 0.5, 0)
+    let rafCb: FrameRequestCallback | null = null
+    const raf = vi.fn((cb: FrameRequestCallback) => { rafCb = cb; return 1 })
+    const page = new GhostCalibrationPage(container, {
+      win: makeWin(800, 600), gyro,
+      requestAnimationFrame: raf, cancelAnimationFrame: vi.fn(),
+    })
+    expect(page.getPhase()).toBe('idle')
+    const rect = container.querySelector<HTMLElement>('[data-testid="calibration-rectangle"]')!
+    const initialLeft = parseInt(rect.style.left, 10)
+
+    gyro.timestamp = 0
+    gyro.trigger()          // sets lastT
+    gyro.timestamp = 100    // dt = 0.1 s → yaw integrates
+    gyro.trigger()
+    rafCb!(0)               // RAF tick → onPipelineFrame should now move rectangle in IDLE too
+
+    const newLeft = parseInt(rect.style.left, 10)
+    expect(newLeft).not.toBe(initialLeft)
+    expect(page.getPhase()).toBe('idle')
+  })
 })
 
 describe('GhostCalibrationPage — camera', () => {

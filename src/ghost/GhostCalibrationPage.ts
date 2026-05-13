@@ -551,9 +551,13 @@ export class GhostCalibrationPage {
       shiftPx, pitchShiftPx: shiftPy, dx_m: frame.dx_m, dy_m: frame.dy_m, gateOpen: true,
     }
 
-    if (this.phase === 'recording') {
+    // Live preview: rectangle tracks shift during IDLE so tuning-panel tweaks are immediately visible.
+    if (this.phase === 'idle' || this.phase === 'recording') {
       this.rectangleEl.style.left = `${this.rectInitLeft + Math.round(shiftPx)}px`
       this.rectangleEl.style.top = `${this.rectInitTop + Math.round(shiftPy)}px`
+    }
+
+    if (this.phase === 'recording') {
       this.ghostOverlayEl.style.transform = `translate3d(${shiftPx.toFixed(2)}px, ${shiftPy.toFixed(2)}px, 0)`
       const elapsed = frame.t - this.recordingStartedAt
       this.timerSpanEl.textContent = msToMMSS(elapsed)
@@ -565,7 +569,7 @@ export class GhostCalibrationPage {
       }
     }
 
-    if (this.phase === 'recording') this.renderTelemetry()
+    if (this.phase === 'idle' || this.phase === 'recording') this.renderTelemetry()
   }
 
   private async startCamera(getUserMedia?: CalibrationPageDeps['getUserMedia']): Promise<void> {

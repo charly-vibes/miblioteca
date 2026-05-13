@@ -11,6 +11,12 @@ function makeWindow(): GhostPipelineOptions['win'] {
   }
 }
 
+function fireDeviceOrientation(win: GhostPipelineOptions['win'], init: { alpha: number | null; beta: number | null; gamma: number | null }): void {
+  const handler = vi.mocked(win.addEventListener).mock.calls.find(([type]) => type === 'deviceorientation')?.[1]
+  expect(handler).toBeDefined()
+  ;(handler as EventListener)(init as unknown as Event)
+}
+
 function makeGyro(): GyroLike {
   return {
     x: 0,
@@ -78,5 +84,69 @@ describe('createGhostPipelineDeps', () => {
     })
 
     expect(deps.enableMotionGate).toBe(true)
+  })
+
+  it('constructs a Gyroscope at 60Hz when no gyro is provided', () => {
+    const gyro = makeGyro()
+    const Gyroscope = vi.fn(() => gyro)
+    const win = { ...makeWindow(), Gyroscope }
+
+    const deps = createGhostPipelineDeps({
+      win,
+      getDisplayWidth: () => 412,
+      getDisplayHeight: () => 915,
+    })
+
+    expect(Gyroscope).toHaveBeenCalledWith({ frequency: 60 })
+    expect(deps.gyro).toBe(gyro)
+  })
+
+  it('wires deviceorientation into getBeta and getOrientation callbacks', () => {
+    const win = makeWindow()
+    const deps = createGhostPipelineDeps({
+      win,
+      gyro: makeGyro(),
+      getDisplayWidth: () => 412,
+      getDisplayHeight: () => 915,
+    })
+
+    expect(deps.getBeta?.()).toBeNull()
+    expect(deps.getOrientation?.()).toBeNull()
+
+    fireDeviceOrientation(win, { alpha: 10, beta: 20, gamma: 30 })
+
+    expect(deps.getBeta?.()).toBe(20)
+    expect(deps.getOrientation?.()).toEqual({ alpha: 10, beta: 20, gamma: 30 })
+  })
+
+  it('keeps the previous complete orientation sample when an event has null angles', () => {
+    const win = makeWindow()
+    const deps = createGhostPipelineDeps({
+      win,
+      gyro: makeGyro(),
+      getDisplayWidth: () => 412,
+      getDisplayHeight: () => 915,
+    })
+
+    fireDeviceOrientation(win, { alpha: 10, beta: 20, gamma: 30 })
+    fireDeviceOrientation(win, { alpha: null, beta: 21, gamma: 31 })
+
+    expect(deps.getBeta?.()).toBe(21)
+    expect(deps.getOrientation?.()).toEqual({ alpha: 10, beta: 20, gamma: 30 })
+  })
+
+  it('removes the deviceorientation listener on dispose', () => {
+    const win = makeWindow()
+    const deps = createGhostPipelineDeps({
+      win,
+      gyro: makeGyro(),
+      getDisplayWidth: () => 412,
+      getDisplayHeight: () => 915,
+    })
+    const handler = vi.mocked(win.addEventListener).mock.calls.find(([type]) => type === 'deviceorientation')?.[1]
+
+    deps.dispose()
+
+    expect(win.removeEventListener).toHaveBeenCalledWith('deviceorientation', handler)
   })
 })

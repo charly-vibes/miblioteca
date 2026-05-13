@@ -135,6 +135,36 @@ describe('createGhostPipelineDeps', () => {
     expect(deps.getOrientation?.()).toEqual({ alpha: 10, beta: 20, gamma: 30 })
   })
 
+  it('returns identical orientation callbacks for factory instances with different site options', () => {
+    const winA = makeWindow()
+    const winB = makeWindow()
+    const depsA = createGhostPipelineDeps({
+      win: winA,
+      gyro: makeGyro(),
+      getDisplayWidth: () => 412,
+      getDisplayHeight: () => 915,
+      enableMotionGate: true,
+    })
+    const depsB = createGhostPipelineDeps({
+      win: winB,
+      gyro: makeGyro(),
+      getDisplayWidth: () => 300,
+      getDisplayHeight: () => 600,
+      enableMotionGate: false,
+    })
+
+    for (const sample of [
+      { alpha: 10, beta: 20, gamma: 30 },
+      { alpha: 11, beta: 21, gamma: 31 },
+      { alpha: 12, beta: 22, gamma: 32 },
+    ]) {
+      fireDeviceOrientation(winA, sample)
+      fireDeviceOrientation(winB, sample)
+      expect(depsA.getBeta?.()).toBe(depsB.getBeta?.())
+      expect(depsA.getOrientation?.()).toEqual(depsB.getOrientation?.())
+    }
+  })
+
   it('removes the deviceorientation listener on dispose', () => {
     const win = makeWindow()
     const deps = createGhostPipelineDeps({

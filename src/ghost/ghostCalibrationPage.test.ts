@@ -51,6 +51,8 @@ describe('GhostCalibrationPage — IDLE phase', () => {
     expect(container.querySelector('[data-testid="calibration-rectangle"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="center-dot"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="telemetry"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="tuning-toggle"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="tuning-panel"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="hint-text"]')?.textContent).toBe('TAP CENTER TO START')
   })
 
@@ -634,10 +636,38 @@ describe('GhostCalibrationPage — JSON export', () => {
       deviceInfo: { viewportWidth: 800, viewportHeight: 600, devicePixelRatio: 2, userAgent: 'test-ua' },
       hFovDeg: 40,
       focalLengthPx: expect.any(Number),
+      tuning: expect.objectContaining({ orientationModel: 'gyro', hFovDeg: 40 }),
       cycles: expect.arrayContaining([
         expect.objectContaining({ id: expect.any(String), frames: expect.any(Array) }),
       ]),
     })
+  })
+
+  it('uses loaded tuning config for export hFov and telemetry gate threshold', () => {
+    const stored = { orientationModel: 'gyro', maxShiftXPx: 123, hFovDeg: 55 }
+    vi.stubGlobal('localStorage', {
+      getItem: vi.fn(() => JSON.stringify(stored)),
+      setItem: vi.fn(),
+    })
+    const downloads: { filename: string; json: string }[] = []
+    const page = new GhostCalibrationPage(container, {
+      win: { ...makeWin(800, 600), devicePixelRatio: 2, navigator: { userAgent: 'test-ua' } },
+      now: () => 1000,
+      triggerDownload: (filename, json) => downloads.push({ filename, json }),
+    })
+
+    expect(page.getTelemetryEl().textContent).toContain('±123px')
+
+    page.getCenterDot().click()
+    ;(container.querySelector<HTMLElement>('[data-testid="stop-btn"]'))!.click()
+    page.getConfirmBtn().click()
+    ;(container.querySelector<HTMLButtonElement>('[data-testid="export-btn"]'))!.click()
+
+    const parsed = JSON.parse(downloads[0].json)
+    expect(parsed.hFovDeg).toBe(55)
+    expect(parsed.focalLengthPx).toBe(focalLengthPx(800, 55))
+    expect(parsed.tuning).toEqual(expect.objectContaining(stored))
+    vi.unstubAllGlobals()
   })
 
   it('filename matches ghost-calibration-YYYY-MM-DD-HH-mm-ss.json format', () => {

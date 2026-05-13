@@ -66,6 +66,21 @@ describe('GhostOverlayCanvas.setSnapshot', () => {
     vi.restoreAllMocks()
   })
 
+  it('uses shared pipeline factory orientation listener wiring', () => {
+    makeCanvas()
+    const addSpy = vi.spyOn(window, 'addEventListener')
+    const removeSpy = vi.spyOn(window, 'removeEventListener')
+    const { canvas, viewfinder } = makeOverlay()
+    const handler = addSpy.mock.calls.find(([type]) => type === 'deviceorientation')?.[1]
+
+    expect(handler).toBeDefined()
+
+    canvas.destroy()
+
+    expect(removeSpy).toHaveBeenCalledWith('deviceorientation', handler)
+    viewfinder.remove()
+  })
+
   it('WHEN setSnapshot called with a valid bitmap THEN canvas becomes visible', () => {
     makeCanvas()
     const { canvas, viewfinder } = makeOverlay()

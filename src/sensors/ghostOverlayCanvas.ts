@@ -6,8 +6,8 @@ import {
   capToViewport,
 } from './ghostOverlay'
 import type { GyroLike, MotionLike, GhostFrame } from './ghostOverlay'
-
-type DeviceOrientationSample = { alpha: number; beta: number; gamma: number }
+import { createGhostPipelineDeps } from './createGhostPipelineDeps'
+import type { CreatedGhostPipelineDeps, GhostPipelineWindow } from './createGhostPipelineDeps'
 import { GhostMotionPipeline } from './GhostMotionPipeline'
 import { debugLogger } from '../debug/logger'
 
@@ -27,10 +27,16 @@ export type GhostOverlayCanvasDeps = {
    */
   gyro: GyroLike | null
   motion?: MotionLike | null
-  /** Returns current DeviceOrientationEvent.beta. Used by feedGhostAccel tilt guard. */
+  /**
+   * @deprecated Orientation is now wired by createGhostPipelineDeps(). Kept for
+   * compatibility while callers migrate to the shared factory path.
+   */
   getBeta?: () => number | null
-  /** Returns the latest DeviceOrientationEvent absolute orientation sample. */
-  getOrientation?: () => DeviceOrientationSample | null
+  /**
+   * @deprecated Orientation is now wired by createGhostPipelineDeps(). Kept for
+   * compatibility while callers migrate to the shared factory path.
+   */
+  getOrientation?: () => { alpha: number; beta: number; gamma: number } | null
   distanceCm?: number      // working distance to subject in cm; clamped to [WORKING_DISTANCE_MIN_CM, WORKING_DISTANCE_MAX_CM]; default WORKING_DISTANCE_DEFAULT_CM
   onFrame?: (frame: GhostFrame) => void  // fired each RAF tick after shift is computed
   /**
@@ -60,6 +66,8 @@ export type GhostOverlayCanvasDeps = {
    * Override in tests to simulate portrait/landscape without a real screen object.
    */
   getScreenOrientation?: () => string
+  /** Window-like object used by the shared sensor factory; defaults to global window. */
+  win?: GhostPipelineWindow
 }
 
 /**
@@ -78,6 +86,7 @@ export class GhostOverlayCanvas {
   private readonly ctx: CanvasRenderingContext2D
   private readonly viewfinder: HTMLElement
   private readonly pipeline: GhostMotionPipeline
+  private readonly pipelineDeps: CreatedGhostPipelineDeps
   private lastYawRad = 0
   private lastPitchRad = 0
   private currentShiftPx = 0
@@ -88,7 +97,7 @@ export class GhostOverlayCanvas {
   private workingDistanceCm = WORKING_DISTANCE_DEFAULT_CM
   private tiltDeviationStartMs: number | null = null
   private tiltWarningActive = false
-  private readonly deps: Required<Omit<GhostOverlayCanvasDeps, 'motion' | 'getBeta' | 'getOrientation' | 'distanceCm' | 'onFrame' | 'canvasClassName'>> & Pick<GhostOverlayCanvasDeps, 'onFrame'>
+  private readonly deps: Required<Omit<GhostOverlayCanvasDeps, 'motion' | 'getBeta' | 'getOrientation' | 'distanceCm' | 'onFrame' | 'canvasClassName' | 'win'>> & Pick<GhostOverlayCanvasDeps, 'onFrame'>
 
   /**
    * @throws {Error} `'Canvas 2D context unavailable'` — thrown when the browser
@@ -130,13 +139,12 @@ export class GhostOverlayCanvas {
     if (!ctx) throw new Error('Canvas 2D context unavailable')
     this.ctx = ctx
 
-    this.pipeline = new GhostMotionPipeline({
+    this.pipelineDeps = createGhostPipelineDeps({
+      win: deps.win ?? window,
       gyro: deps.gyro,
       motion: deps.motion ?? null,
-      getBeta: deps.getBeta,
-      displayWidth: () => this.readDisplayDims().w || this.canvas.width,
-      displayHeight: () => this.readDisplayDims().h || this.canvas.height,
-      getOrientation: deps.getOrientation,
+      getDisplayWidth: () => this.readDisplayDims().w || this.canvas.width,
+      getDisplayHeight: () => this.readDisplayDims().h || this.canvas.height,
       getScreenOrientation: this.deps.getScreenOrientation,
       onFrame: (frame) => this.onPipelineFrame(frame),
       enableMotionGate: true,
@@ -145,6 +153,7 @@ export class GhostOverlayCanvas {
       now: this.deps.now,
       logger: this.deps.logger,
     })
+    this.pipeline = new GhostMotionPipeline(this.pipelineDeps)
 
     this.deps.logger.log('ghost:created', { workingDistanceCm: this.workingDistanceCm })
   }
@@ -344,6 +353,7 @@ export class GhostOverlayCanvas {
   // Call when the camera session ends or the view unmounts.
   destroy() {
     this.pipeline.destroy()
+    this.pipelineDeps.dispose()
     this.canvas.remove()
     this.deps.logger.log('ghost:destroyed', {})
   }

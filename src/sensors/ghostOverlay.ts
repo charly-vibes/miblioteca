@@ -12,6 +12,8 @@ export const STILL_GAIN = 0.04
 export const MOVING_GAIN = 0.08
 export const MAX_SHIFT_RATE_RAD_S = 0.4
 export const STILLNESS_GATE_THRESHOLD = 0.8
+/** Max wallclock gap (ms) between fresh absolute-orientation samples before hybrid mode re-seeds qRef. */
+export const ABSOLUTE_FRESHNESS_MS = 300
 export const GYRO_SENSITIVITY = 1
 export const TRANSLATION_SENSITIVITY = 1
 // Per-axis beta-tilt guards (deg of deviation from 90° = upright).

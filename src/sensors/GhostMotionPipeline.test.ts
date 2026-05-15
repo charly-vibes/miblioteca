@@ -664,6 +664,109 @@ describe('GhostMotionPipeline — hybrid orientation', () => {
     pipeline.destroy()
   })
 
+  it('re-seeds the absolute reference and skips correction when an absolute sample returns after a >300 ms gap', () => {
+    const gyro = makeGyro()
+    const tuning = hybridTuning()
+    let sample: { alpha: number; beta: number; gamma: number } | null = { alpha: 180, beta: 90, gamma: 0 }
+    const onFrame = vi.fn()
+    let nowMs = 1000
+    const deps = makeDeps({
+      gyro, onFrame, enableMotionGate: false,
+      getOrientation: () => sample,
+      now: () => nowMs,
+      tuning,
+    })
+    const pipeline = new GhostMotionPipeline(deps)
+
+    // Frame 1: seed qRef at alpha=180; lastFreshMs := 1000.
+    gyro.fire(0, 0, 0, 1000)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    // Frame 2: 500 ms gap with no fresh absolute (sample=null). lastFreshMs unchanged.
+    sample = null
+    nowMs = 1500
+    gyro.fire(0, 0, 0, 1500)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    // Frame 3: absolute returns but the device has physically rotated to alpha=200 during the gap.
+    // Without the gate: the filter would correct against the STALE qRef (alpha=180) → large
+    // spurious yaw correction toward ~0.17 rad. With the gate: qRef gets re-seeded to alpha=200
+    // and no correction is applied this frame.
+    sample = { alpha: 200, beta: 90, gamma: 0 }
+    nowMs = 1600
+    gyro.fire(0, 0, 0, 1600)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+
+    const frame = onFrame.mock.calls.at(-1)![0]
+    // Gyro integrated nothing (gx=gy=gz=0); yaw must remain 0 after re-seed.
+    expect(frame.yawRad).toBeCloseTo(0, 4)
+    pipeline.destroy()
+  })
+
+  it('resumes the complementary filter on the frame after a re-seed', () => {
+    const gyro = makeGyro()
+    const tuning = hybridTuning()
+    let sample: { alpha: number; beta: number; gamma: number } | null = { alpha: 180, beta: 90, gamma: 0 }
+    const onFrame = vi.fn()
+    let nowMs = 1000
+    const deps = makeDeps({
+      gyro, onFrame, enableMotionGate: false,
+      getOrientation: () => sample,
+      now: () => nowMs,
+      tuning,
+    })
+    const pipeline = new GhostMotionPipeline(deps)
+
+    // Establish first qRef.
+    gyro.fire(0, 0, 0, 1000)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    // 500 ms gap with no fresh absolute.
+    sample = null
+    nowMs = 1500
+    gyro.fire(0, 0, 0, 1500)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    // Re-seed frame: alpha shifted; filter skipped this tick.
+    sample = { alpha: 200, beta: 90, gamma: 0 }
+    nowMs = 1600
+    gyro.fire(0, 0.5, 0, 1600)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    onFrame.mockClear()
+    // Next frame: absolute is fresh again; filter must apply (yaw pulled away from pure-gyro).
+    nowMs = 1700
+    gyro.fire(0, 0.5, 0, 1700)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    const frame = onFrame.mock.calls.at(-1)![0]
+    // Pure gyro yaw from t=1600 to t=1700 with prior integral ≈ -0.05 would advance to ≈ -0.10.
+    // Filter pulls it back toward the new qRef target (0 against the just-seeded alpha=200), so |yaw| < |-0.10|.
+    expect(frame.yawRad).toBeLessThan(0)
+    expect(frame.yawRad).toBeGreaterThan(-0.10)
+    pipeline.destroy()
+  })
+
+  it('keeps applying the complementary filter when absolute samples stay fresh (<300 ms apart)', () => {
+    const gyro = makeGyro()
+    const tuning = hybridTuning()
+    const sample = { alpha: 180, beta: 90, gamma: 0 }
+    const onFrame = vi.fn()
+    let nowMs = 1000
+    const deps = makeDeps({
+      gyro, onFrame, enableMotionGate: false,
+      getOrientation: () => sample,
+      now: () => nowMs,
+      tuning,
+    })
+    const pipeline = new GhostMotionPipeline(deps)
+
+    gyro.fire(0, 0.5, 0, 1000)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    nowMs = 1100
+    gyro.fire(0, 0.5, 0, 1100)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+
+    const frame = onFrame.mock.calls.at(-1)![0]
+    expect(frame.yawRad).toBeLessThan(0)
+    expect(frame.yawRad).toBeGreaterThan(-0.05)
+    pipeline.destroy()
+  })
+
   it('blends gyro pitch toward absolute orientation target', () => {
     const gyro = makeGyro()
     const tuning = hybridTuning()

@@ -16,6 +16,7 @@ import {
   STILL_GAIN,
   MOVING_GAIN,
   STILLNESS_GATE_THRESHOLD,
+  ABSOLUTE_FRESHNESS_MS,
 } from './ghostOverlay'
 import type {
   GhostOverlayState, GyroSample, GyroLike, MotionLike, OrientationLike,
@@ -52,6 +53,7 @@ export class GhostMotionPipeline {
   private gateVisible = false
   private orientationState: OrientationTrackingState | null = null
   private activeModel: OrientationModel = 'gyro'
+  private lastAbsoluteFreshMs = -Infinity
 
   private readonly deps: Required<GhostMotionPipelineDeps>
   private lastOrientationLogMs = 0
@@ -210,24 +212,30 @@ export class GhostMotionPipeline {
       // See openspec/changes/add-hybrid-ghost-orientation/design.md (Fusion formula).
       const ori = this.deps.getOrientation()
       if (ori) {
-        if (!this.orientationState) {
+        const isStaleReturn = now - this.lastAbsoluteFreshMs > ABSOLUTE_FRESHNESS_MS
+        if (!this.orientationState || isStaleReturn) {
+          // First fresh sample or absolute resumed after a >300 ms gap: re-seed
+          // the reference quaternion so we never correct against stale geometry.
           this.orientationState = initialOrientationState(ori.alpha, ori.beta, ori.gamma, now)
+          this.lastAbsoluteFreshMs = now
+        } else {
+          const { yaw: yawAbs, pitch: pitchAbs } = rawOrientationYawPitch(
+            this.orientationState.qRef, ori.alpha, ori.beta, ori.gamma,
+          )
+          const st = this.tuning?.stillThreshold ?? STILL_THRESHOLD
+          const ema = this.tuning?.stillEmaAlpha ?? STILL_EMA_ALPHA
+          const sg = this.tuning?.stillGain ?? STILL_GAIN
+          const mg = this.tuning?.movingGain ?? MOVING_GAIN
+          const sgt = this.tuning?.stillnessGateThreshold ?? STILLNESS_GATE_THRESHOLD
+          const isStill = this.state.omegaMag < st ? 1 : 0
+          const stillness = ema * this.orientationState.stillness + (1 - ema) * isStill
+          const alpha = stillness > sgt ? sg : mg
+          const yaw = this.state.yawIntegral + alpha * shortestAngle(yawAbs - this.state.yawIntegral)
+          const pitch = this.state.pitchIntegral + alpha * shortestAngle(pitchAbs - this.state.pitchIntegral)
+          this.orientationState = { ...this.orientationState, stillness, prevYaw: yaw, prevPitch: pitch, lastT: now }
+          this.state = { ...this.state, yawIntegral: yaw, pitchIntegral: pitch }
+          this.lastAbsoluteFreshMs = now
         }
-        const { yaw: yawAbs, pitch: pitchAbs } = rawOrientationYawPitch(
-          this.orientationState.qRef, ori.alpha, ori.beta, ori.gamma,
-        )
-        const st = this.tuning?.stillThreshold ?? STILL_THRESHOLD
-        const ema = this.tuning?.stillEmaAlpha ?? STILL_EMA_ALPHA
-        const sg = this.tuning?.stillGain ?? STILL_GAIN
-        const mg = this.tuning?.movingGain ?? MOVING_GAIN
-        const sgt = this.tuning?.stillnessGateThreshold ?? STILLNESS_GATE_THRESHOLD
-        const isStill = this.state.omegaMag < st ? 1 : 0
-        const stillness = ema * this.orientationState.stillness + (1 - ema) * isStill
-        const alpha = stillness > sgt ? sg : mg
-        const yaw = this.state.yawIntegral + alpha * shortestAngle(yawAbs - this.state.yawIntegral)
-        const pitch = this.state.pitchIntegral + alpha * shortestAngle(pitchAbs - this.state.pitchIntegral)
-        this.orientationState = { ...this.orientationState, stillness, prevYaw: yaw, prevPitch: pitch, lastT: now }
-        this.state = { ...this.state, yawIntegral: yaw, pitchIntegral: pitch }
       }
     }
 

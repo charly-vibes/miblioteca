@@ -1,5 +1,5 @@
 ## 1. Specification and model surface
-- [ ] 1.1 Extend the ghost orientation model vocabulary to include `hybrid` in specs, config typing, and UI expectations
+- [x] 1.1 Extend the ghost orientation model vocabulary to include `hybrid` in specs, config typing, and UI expectations
 - [ ] 1.2 Document hybrid fallback rules for missing gyro or missing absolute-orientation samples
 
 ## 2. Red → Green tests
@@ -13,7 +13,7 @@
 - [ ] 2.8 Add tests proving `orientationSource` is emitted on every frame with the correct label per mode/fallback
 
 ## 3. Implementation
-- [ ] 3.1 Update `OrientationModel` and tuning config persistence to include `hybrid`
+- [x] 3.1 Update `OrientationModel` and tuning config persistence to include `hybrid`
 - [ ] 3.2 Implement the hybrid complementary filter in `GhostMotionPipeline` using `stillGain` / `movingGain` as `α` and `shortestAngle` for the delta
 - [ ] 3.3 Time-gate absolute-orientation freshness at `300 ms` and route stale readings through the gyro fallback path
 - [ ] 3.4 Clamp the per-frame fusion correction to `±maxShiftRateRadS * dt` per axis

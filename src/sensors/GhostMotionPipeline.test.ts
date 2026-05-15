@@ -741,6 +741,47 @@ describe('GhostMotionPipeline — hybrid orientation', () => {
     pipeline.destroy()
   })
 
+  it('preserves translation (dx_m) across a runtime mode switch to hybrid', () => {
+    const gyro = makeGyro()
+    const motion: import('./ghostOverlay').MotionLike & { fire(x: number): void } = {
+      onreading: null, x: 0, y: 0, interval: 16, gravitySubtracted: true,
+      start: vi.fn(), stop: vi.fn(),
+      fire(x: number) { this.x = x; this.onreading?.() },
+    }
+    const tuning: TuningConfig = { ...defaultTuningConfig(), orientationModel: 'gyro' }
+    const sample = { alpha: 180, beta: 90, gamma: 0 }
+    const onFrame = vi.fn()
+    let nowMs = 1000
+    const deps = makeDeps({
+      gyro, motion, onFrame, enableMotionGate: false,
+      getBeta: () => 90,
+      getOrientation: () => sample,
+      now: () => nowMs,
+      tuning,
+    })
+    const pipeline = new GhostMotionPipeline(deps)
+
+    // Build up some translation via successive accel samples.
+    nowMs = 1016; motion.fire(1.0) // first accel sample (no dt yet) — sets lastAccelT
+    nowMs = 1032; motion.fire(1.0) // second sample: dt=16ms → velX += 0.016, dx_m += ~tiny
+    nowMs = 1048; motion.fire(1.0) // accumulates further
+    nowMs = 1064; motion.fire(1.0)
+    nowMs = 1080; motion.fire(1.0)
+    const dxBefore = pipeline.getTranslationState().dx_m
+    expect(dxBefore).not.toBe(0) // sanity: translation was built up
+
+    // Runtime switch from gyro to hybrid; rafLoop's mode-change branch must
+    // preserve translation while resetting orientation.
+    tuning.orientationModel = 'hybrid'
+    nowMs = 1100
+    gyro.fire(0, 0, 0, 1100)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+
+    const dxAfter = pipeline.getTranslationState().dx_m
+    expect(dxAfter).toBeCloseTo(dxBefore, 6)
+    pipeline.destroy()
+  })
+
   it('clamps the per-frame pitch correction to ±maxShiftRateRadS * dt', () => {
     const gyro = makeGyro()
     const tuning = hybridTuning()

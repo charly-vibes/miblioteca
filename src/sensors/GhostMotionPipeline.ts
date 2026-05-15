@@ -172,7 +172,16 @@ export class GhostMotionPipeline {
     if (model !== this.activeModel) {
       this.activeModel = model
       this.orientationState = null
-      this.state = initialGhostState()
+      this.lastAbsoluteFreshMs = -Infinity
+      // Reset orientation integrals but preserve translation state.
+      this.state = {
+        ...initialGhostState(),
+        velX: this.state.velX,
+        velY: this.state.velY,
+        dx_m: this.state.dx_m,
+        dy_m: this.state.dy_m,
+        lastAccelT: this.state.lastAccelT,
+      }
     }
 
     const dw = this.deps.displayWidth()

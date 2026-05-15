@@ -14,7 +14,7 @@ import type {
   GhostOverlayState, GyroSample, GyroLike, MotionLike, OrientationLike,
   GhostFrame, OrientationTrackingState,
 } from './ghostOverlay'
-import type { TuningConfig } from '../ghost/tuningConfig'
+import type { OrientationModel, TuningConfig } from '../ghost/tuningConfig'
 
 type DeviceOrientationSample = { alpha: number; beta: number; gamma: number }
 import { debugLogger } from '../debug/logger'
@@ -44,7 +44,7 @@ export class GhostMotionPipeline {
   private destroyed = false
   private gateVisible = false
   private orientationState: OrientationTrackingState | null = null
-  private activeModel: 'gyro' | 'absolute' = 'gyro'
+  private activeModel: OrientationModel = 'gyro'
 
   private readonly deps: Required<GhostMotionPipelineDeps>
   private lastOrientationLogMs = 0

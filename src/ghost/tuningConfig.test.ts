@@ -20,7 +20,7 @@ import {
 } from '../sensors/ghostOverlay'
 import { GHOST_CAPTURE_MAX_MAG_PX, GHOST_CAPTURE_MAX_SHIFT_X_PX } from '../tracer/ghostCaptureGate'
 import type { CalibrationExport } from './types'
-import type { TuningConfig } from './tuningConfig'
+import type { OrientationModel, TuningConfig } from './tuningConfig'
 import { defaultTuningConfig, loadTuningConfig, saveTuningConfig } from './tuningConfig'
 
 const STORAGE_KEY = 'miblioteca:ghost-tuning-v1'
@@ -108,5 +108,17 @@ describe('tuningConfig persistence', () => {
 
   it('types calibration exports with a tuning config snapshot', () => {
     expectTypeOf<CalibrationExport['tuning']>().toEqualTypeOf<TuningConfig | undefined>()
+  })
+
+  it('admits hybrid as an OrientationModel value', () => {
+    expectTypeOf<OrientationModel>().toEqualTypeOf<'gyro' | 'absolute' | 'hybrid'>()
+  })
+
+  it('round-trips orientationModel="hybrid" through storage', () => {
+    const config: TuningConfig = { ...defaultTuningConfig(), orientationModel: 'hybrid' }
+
+    saveTuningConfig(config)
+
+    expect(loadTuningConfig().orientationModel).toBe('hybrid')
   })
 })

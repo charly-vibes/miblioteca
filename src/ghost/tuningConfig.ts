@@ -12,7 +12,7 @@ import {
   GHOST_CAPTURE_MAX_SHIFT_X_PX, GHOST_CAPTURE_MAX_MAG_PX,
 } from '../tracer/ghostCaptureGate'
 
-export type OrientationModel = 'gyro' | 'absolute'
+export type OrientationModel = 'gyro' | 'absolute' | 'hybrid'
 
 export type TuningConfig = {
   orientationModel: OrientationModel

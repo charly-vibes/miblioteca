@@ -741,6 +741,38 @@ describe('GhostMotionPipeline — hybrid orientation', () => {
     pipeline.destroy()
   })
 
+  it('derives omegaMag from gyro identically in hybrid and gyro modes', () => {
+    const omegaFor = (model: 'gyro' | 'hybrid') => {
+      const gyro = makeGyro()
+      const tuning: TuningConfig = { ...defaultTuningConfig(), orientationModel: model }
+      const sample = { alpha: 180, beta: 90, gamma: 0 }
+      const deps = makeDeps({
+        gyro, enableMotionGate: false,
+        getOrientation: () => sample, tuning,
+      })
+      const p = new GhostMotionPipeline(deps)
+      gyro.fire(0.3, 0.4, 0.0, 1000)
+      const omega = p.getOmegaMag()
+      p.destroy()
+      return omega
+    }
+    const expectedOmega = Math.sqrt(0.3 ** 2 + 0.4 ** 2) // 0.5
+    expect(omegaFor('gyro')).toBeCloseTo(expectedOmega, 6)
+    expect(omegaFor('hybrid')).toBeCloseTo(expectedOmega, 6)
+  })
+
+  it('falls back to omegaMag = 0 when gyro is missing in hybrid mode', () => {
+    const tuning: TuningConfig = { ...defaultTuningConfig(), orientationModel: 'hybrid' }
+    const sample = { alpha: 180, beta: 90, gamma: 0 }
+    const deps = makeDeps({
+      gyro: null, enableMotionGate: false,
+      getOrientation: () => sample, tuning,
+    })
+    const pipeline = new GhostMotionPipeline(deps)
+    expect(pipeline.getOmegaMag()).toBe(0)
+    pipeline.destroy()
+  })
+
   it('preserves translation (dx_m) across a runtime mode switch to hybrid', () => {
     const gyro = makeGyro()
     const motion: import('./ghostOverlay').MotionLike & { fire(x: number): void } = {

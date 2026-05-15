@@ -278,6 +278,11 @@ export class GhostMotionPipeline {
     return { yawRad: this.state.yawIntegral, pitchRad: this.state.pitchIntegral }
   }
 
+  /** Current gyro angular-rate magnitude (rad/s); 0 when no gyro source is wired. */
+  getOmegaMag(): number {
+    return this.state.omegaMag
+  }
+
   getTranslationState(): { dx_m: number; dy_m: number; velX: number; velY: number } {
     return { dx_m: this.state.dx_m, dy_m: this.state.dy_m, velX: this.state.velX, velY: this.state.velY }
   }

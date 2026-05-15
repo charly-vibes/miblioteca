@@ -741,6 +741,65 @@ describe('GhostMotionPipeline — hybrid orientation', () => {
     pipeline.destroy()
   })
 
+  it('cold-start with gyro only (no absolute reading yet) emits a finite frame from gyro alone', () => {
+    const gyro = makeGyro()
+    const tuning = hybridTuning()
+    const onFrame = vi.fn()
+    const deps = makeDeps({
+      gyro, onFrame, enableMotionGate: false,
+      getOrientation: () => null, // no absolute available yet
+      tuning,
+    })
+    const pipeline = new GhostMotionPipeline(deps)
+
+    gyro.fire(0, 0, 0, 1000)
+    gyro.fire(0, 0.5, 0, 1100)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    const frame = onFrame.mock.calls[0][0]
+    expect(Number.isFinite(frame.yawRad)).toBe(true)
+    expect(Number.isFinite(frame.pitchRad)).toBe(true)
+    // Pure gyro integration over the first 100ms tick.
+    expect(frame.yawRad).toBeCloseTo(-0.05, 4)
+    pipeline.destroy()
+  })
+
+  it('cold-start with absolute only (no gyro samples yet) emits a finite frame at the new reference', () => {
+    const tuning = hybridTuning()
+    const onFrame = vi.fn()
+    const deps = makeDeps({
+      gyro: null,
+      onFrame,
+      enableMotionGate: false,
+      getOrientation: () => ({ alpha: 180, beta: 90, gamma: 0 }),
+      tuning,
+    })
+    const pipeline = new GhostMotionPipeline(deps)
+
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    expect(onFrame).toHaveBeenCalled()
+    const frame = onFrame.mock.calls[0][0]
+    expect(Number.isFinite(frame.yawRad)).toBe(true)
+    expect(Number.isFinite(frame.pitchRad)).toBe(true)
+    // No prior gyro integration; absolute defines the new origin → yaw 0.
+    expect(frame.yawRad).toBeCloseTo(0, 6)
+    expect(frame.pitchRad).toBeCloseTo(0, 6)
+    pipeline.destroy()
+  })
+
+  it('cold-start with neither gyro nor absolute does not crash and emits no frame', () => {
+    const tuning = hybridTuning()
+    const onFrame = vi.fn()
+    const deps = makeDeps({
+      gyro: null, onFrame, enableMotionGate: true,
+      getOrientation: () => null,
+      tuning,
+    })
+    const pipeline = new GhostMotionPipeline(deps)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    expect(onFrame).not.toHaveBeenCalled()
+    pipeline.destroy()
+  })
+
   it('derives omegaMag from gyro identically in hybrid and gyro modes', () => {
     const omegaFor = (model: 'gyro' | 'hybrid') => {
       const gyro = makeGyro()

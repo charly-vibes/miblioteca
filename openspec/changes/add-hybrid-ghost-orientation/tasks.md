@@ -9,7 +9,7 @@
 - [x] 2.4 Add tests proving stale (`>300 ms`) absolute readings trigger the gyro fallback and emit `hybrid-fallback-gyro`
 - [x] 2.5 Add tests proving a large absolute jump is rate-limited by `maxShiftRateRadS * dt` over multiple frames instead of snapping in one
 - [x] 2.6 Add tests proving `omegaMag` continues to derive from the gyro path in hybrid mode and falls back to `0` only when gyro is missing
-- [ ] 2.7 Add tests for first-frame behavior in hybrid mode (absolute-only, gyro-only, neither)
+- [x] 2.7 Add tests for first-frame behavior in hybrid mode (absolute-only, gyro-only, neither)
 - [ ] 2.8 Add tests proving `orientationSource` is emitted on every frame with the correct label per mode/fallback
 
 ## 3. Implementation

@@ -185,6 +185,17 @@ describe('TuningPanel debug-log emission', () => {
     expect(keys).toEqual(expect.arrayContaining(['movingGain', 'hFovDeg']))
   })
 
+  it('exposes hybrid in the orientationModel selector and persists the choice', () => {
+    const { panel, config } = makePanel()
+    const buttons = Array.from(panel.el.querySelectorAll('button[data-model]')) as HTMLButtonElement[]
+    const labels = buttons.map(b => b.dataset.model)
+    expect(labels).toEqual(['gyro', 'absolute', 'hybrid'])
+
+    const hybridBtn = buttons.find(b => b.dataset.model === 'hybrid')!
+    hybridBtn.click()
+    expect(config.orientationModel).toBe('hybrid')
+  })
+
   it('logs nothing when no logger is provided', () => {
     const { panel } = makePanel()
     const slider = panel.el.querySelector('input[data-param="gyroSensitivity"]') as HTMLInputElement

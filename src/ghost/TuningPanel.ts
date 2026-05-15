@@ -115,7 +115,7 @@ export class TuningPanel {
     label.style.marginRight = '4px'
     row.appendChild(label)
 
-    const models: OrientationModel[] = ['gyro', 'absolute']
+    const models: OrientationModel[] = ['gyro', 'absolute', 'hybrid']
     for (const model of models) {
       const btn = this.doc.createElement('button')
       btn.textContent = model

@@ -3,7 +3,7 @@
 - [ ] 1.2 Document hybrid fallback rules for missing gyro or missing absolute-orientation samples
 
 ## 2. Red → Green tests
-- [ ] 2.1 Add pipeline tests that fail until hybrid mode uses gyro for fast motion and absolute orientation for drift correction (complementary filter)
+- [x] 2.1 Add pipeline tests that fail until hybrid mode uses gyro for fast motion and absolute orientation for drift correction (complementary filter)
 - [ ] 2.2 Add tuning panel/config tests that fail until `hybrid` is selectable and persists through storage round-trips
 - [ ] 2.3 Add regression tests for runtime switching between `gyro`, `absolute`, and `hybrid`, including the seed-on-entry behavior
 - [ ] 2.4 Add tests proving stale (`>300 ms`) absolute readings trigger the gyro fallback and emit `hybrid-fallback-gyro`
@@ -14,7 +14,7 @@
 
 ## 3. Implementation
 - [x] 3.1 Update `OrientationModel` and tuning config persistence to include `hybrid`
-- [ ] 3.2 Implement the hybrid complementary filter in `GhostMotionPipeline` using `stillGain` / `movingGain` as `α` and `shortestAngle` for the delta
+- [x] 3.2 Implement the hybrid complementary filter in `GhostMotionPipeline` using `stillGain` / `movingGain` as `α` and `shortestAngle` for the delta
 - [ ] 3.3 Time-gate absolute-orientation freshness at `300 ms` and route stale readings through the gyro fallback path
 - [ ] 3.4 Clamp the per-frame fusion correction to `±maxShiftRateRadS * dt` per axis
 - [ ] 3.5 Seed gyro yaw/pitch from the latest fresh absolute reading on entry to `hybrid` mode; preserve translation tracking behavior unchanged

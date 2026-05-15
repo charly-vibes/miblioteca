@@ -107,6 +107,31 @@ describe('GhostCalibrationPage — IDLE phase', () => {
     expect(newLeft).not.toBe(initialLeft)
     expect(page.getPhase()).toBe('idle')
   })
+
+  it('rectangle position follows translation from devicemotion in IDLE', () => {
+    let rafCb: FrameRequestCallback | null = null
+    const raf = vi.fn((cb: FrameRequestCallback) => { rafCb = cb; return 1 })
+    const now = vi.fn().mockReturnValue(100)
+    const w = { ...makeWin(800, 600), DeviceMotionEvent: class {} as unknown as typeof DeviceMotionEvent }
+    new GhostCalibrationPage(container, {
+      win: w,
+      requestAnimationFrame: raf,
+      cancelAnimationFrame: vi.fn(),
+      now,
+    })
+
+    w.dispatch('deviceorientation', { alpha: 0, beta: 90, gamma: 0 })
+    const rect = container.querySelector<HTMLElement>('[data-testid="calibration-rectangle"]')!
+    const initialLeft = parseInt(rect.style.left, 10)
+
+    w.dispatch('devicemotion', {
+      acceleration: { x: 1, y: 0, z: 0 },
+      interval: 100,
+    })
+    rafCb!(0)
+
+    expect(parseInt(rect.style.left, 10)).toBeLessThan(initialLeft)
+  })
 })
 
 describe('GhostCalibrationPage — camera', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { GyroLike } from './ghostOverlay'
+import type { GyroLike, MotionLike } from './ghostOverlay'
 import { createGhostPipelineDeps } from './createGhostPipelineDeps'
 import type { GhostPipelineOptions } from './createGhostPipelineDeps'
 import { defaultTuningConfig } from '../ghost/tuningConfig'
@@ -25,6 +25,17 @@ function makeGyro(): GyroLike {
     timestamp: 0,
     onreading: null,
     onerror: null,
+    start: vi.fn(),
+    stop: vi.fn(),
+  }
+}
+
+function makeMotion(): MotionLike {
+  return {
+    onreading: null,
+    x: 0,
+    y: 0,
+    interval: 16,
     start: vi.fn(),
     stop: vi.fn(),
   }
@@ -99,6 +110,48 @@ describe('createGhostPipelineDeps', () => {
 
     expect(Gyroscope).toHaveBeenCalledWith({ frequency: 60 })
     expect(deps.gyro).toBe(gyro)
+  })
+
+  it('constructs a DeviceMotion translation adapter when motion is omitted', () => {
+    const win = { ...makeWindow(), DeviceMotionEvent: class {} as unknown as typeof DeviceMotionEvent }
+
+    const deps = createGhostPipelineDeps({
+      win,
+      gyro: makeGyro(),
+      getDisplayWidth: () => 412,
+      getDisplayHeight: () => 915,
+    })
+
+    expect(deps.motion).not.toBeNull()
+  })
+
+  it('preserves an explicit null motion source', () => {
+    const win = { ...makeWindow(), DeviceMotionEvent: class {} as unknown as typeof DeviceMotionEvent }
+
+    const deps = createGhostPipelineDeps({
+      win,
+      gyro: makeGyro(),
+      motion: null,
+      getDisplayWidth: () => 412,
+      getDisplayHeight: () => 915,
+    })
+
+    expect(deps.motion).toBeNull()
+  })
+
+  it('preserves a provided motion source', () => {
+    const win = { ...makeWindow(), DeviceMotionEvent: class {} as unknown as typeof DeviceMotionEvent }
+    const motion = makeMotion()
+
+    const deps = createGhostPipelineDeps({
+      win,
+      gyro: makeGyro(),
+      motion,
+      getDisplayWidth: () => 412,
+      getDisplayHeight: () => 915,
+    })
+
+    expect(deps.motion).toBe(motion)
   })
 
   it('wires deviceorientation into getBeta and getOrientation callbacks', () => {

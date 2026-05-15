@@ -1,5 +1,5 @@
 import type { TuningConfig } from '../ghost/tuningConfig'
-import { DeviceMotionGyroAdapter } from './deviceMotionAdapter'
+import { DeviceMotionGyroAdapter, DeviceMotionLinearAccelAdapter } from './deviceMotionAdapter'
 import type { GhostMotionPipelineDeps } from './GhostMotionPipeline'
 import type { GhostFrame, GyroLike, MotionLike } from './ghostOverlay'
 
@@ -50,7 +50,7 @@ export function createGhostPipelineDeps(options: GhostPipelineOptions): CreatedG
 
   return {
     gyro: options.gyro === undefined ? createGyro(options.win) : options.gyro,
-    motion: options.motion ?? null,
+    motion: options.motion === undefined ? createMotion(options.win) : options.motion,
     getBeta: () => betaDeg,
     displayWidth: options.getDisplayWidth,
     displayHeight: options.getDisplayHeight,
@@ -81,6 +81,14 @@ function createGyro(win: GhostPipelineWindow): GyroLike | null {
 
   if (typeof win.DeviceMotionEvent !== 'undefined') {
     return new DeviceMotionGyroAdapter(win as unknown as Window)
+  }
+
+  return null
+}
+
+function createMotion(win: GhostPipelineWindow): MotionLike | null {
+  if (typeof win.DeviceMotionEvent !== 'undefined') {
+    return new DeviceMotionLinearAccelAdapter(win as unknown as Window)
   }
 
   return null

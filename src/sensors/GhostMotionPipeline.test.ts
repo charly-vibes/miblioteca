@@ -741,6 +741,66 @@ describe('GhostMotionPipeline — hybrid orientation', () => {
     pipeline.destroy()
   })
 
+  it('clamps the per-frame pitch correction to ±maxShiftRateRadS * dt', () => {
+    const gyro = makeGyro()
+    const tuning = hybridTuning()
+    let sample: { alpha: number; beta: number; gamma: number } | null = { alpha: 180, beta: 90, gamma: 0 }
+    const onFrame = vi.fn()
+    let nowMs = 1000
+    const deps = makeDeps({
+      gyro, onFrame, enableMotionGate: false,
+      getOrientation: () => sample,
+      now: () => nowMs,
+      tuning,
+    })
+    const pipeline = new GhostMotionPipeline(deps)
+
+    gyro.fire(0, 0, 0, 1000)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    // Sudden beta jump produces a large raw pitch delta.
+    sample = { alpha: 180, beta: 120, gamma: 0 }
+    nowMs = 1016
+    gyro.fire(0, 0, 0, 1016)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+
+    const frame = onFrame.mock.calls.at(-1)![0]
+    const cap = tuning.maxShiftRateRadS * 0.016
+    expect(Math.abs(frame.pitchRad)).toBeLessThanOrEqual(cap + 1e-9)
+    pipeline.destroy()
+  })
+
+  it('clamps the per-frame absolute correction to ±maxShiftRateRadS * dt', () => {
+    const gyro = makeGyro()
+    const tuning = hybridTuning()
+    let sample: { alpha: number; beta: number; gamma: number } | null = { alpha: 180, beta: 90, gamma: 0 }
+    const onFrame = vi.fn()
+    let nowMs = 1000
+    const deps = makeDeps({
+      gyro, onFrame, enableMotionGate: false,
+      getOrientation: () => sample,
+      now: () => nowMs,
+      tuning,
+    })
+    const pipeline = new GhostMotionPipeline(deps)
+
+    // Frame 1: seed qRef at alpha=180; yaw stays 0.
+    gyro.fire(0, 0, 0, 1000)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    // Frame 2: 16 ms later, absolute snaps to alpha=240. With α=movingGain=0.08
+    // the unclamped correction would be ≈ 0.083 rad in one tick. Clamp limits it
+    // to maxShiftRateRadS * dt = 0.4 * 0.016 = 0.0064 rad.
+    sample = { alpha: 240, beta: 90, gamma: 0 }
+    nowMs = 1016
+    gyro.fire(0, 0, 0, 1016)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+
+    const frame = onFrame.mock.calls.at(-1)![0]
+    const dt = 0.016
+    const cap = tuning.maxShiftRateRadS * dt
+    expect(Math.abs(frame.yawRad)).toBeLessThanOrEqual(cap + 1e-9)
+    pipeline.destroy()
+  })
+
   it('keeps applying the complementary filter when absolute samples stay fresh (<300 ms apart)', () => {
     const gyro = makeGyro()
     const tuning = hybridTuning()

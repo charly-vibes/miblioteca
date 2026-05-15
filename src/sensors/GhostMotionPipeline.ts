@@ -17,6 +17,7 @@ import {
   MOVING_GAIN,
   STILLNESS_GATE_THRESHOLD,
   ABSOLUTE_FRESHNESS_MS,
+  MAX_SHIFT_RATE_RAD_S,
 } from './ghostOverlay'
 import type {
   GhostOverlayState, GyroSample, GyroLike, MotionLike, OrientationLike,
@@ -230,8 +231,13 @@ export class GhostMotionPipeline {
           const isStill = this.state.omegaMag < st ? 1 : 0
           const stillness = ema * this.orientationState.stillness + (1 - ema) * isStill
           const alpha = stillness > sgt ? sg : mg
-          const yaw = this.state.yawIntegral + alpha * shortestAngle(yawAbs - this.state.yawIntegral)
-          const pitch = this.state.pitchIntegral + alpha * shortestAngle(pitchAbs - this.state.pitchIntegral)
+          const msr = this.tuning?.maxShiftRateRadS ?? MAX_SHIFT_RATE_RAD_S
+          const dt = Math.min(Math.max((now - this.orientationState.lastT) / 1000, 0), 0.1)
+          const maxStep = msr * dt
+          const yawDelta = alpha * shortestAngle(yawAbs - this.state.yawIntegral)
+          const pitchDelta = alpha * shortestAngle(pitchAbs - this.state.pitchIntegral)
+          const yaw = this.state.yawIntegral + Math.max(-maxStep, Math.min(maxStep, yawDelta))
+          const pitch = this.state.pitchIntegral + Math.max(-maxStep, Math.min(maxStep, pitchDelta))
           this.orientationState = { ...this.orientationState, stillness, prevYaw: yaw, prevPitch: pitch, lastT: now }
           this.state = { ...this.state, yawIntegral: yaw, pitchIntegral: pitch }
           this.lastAbsoluteFreshMs = now

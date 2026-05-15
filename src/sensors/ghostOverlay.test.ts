@@ -23,6 +23,8 @@ import {
   MOVING_GAIN,
   YAW_DEADBAND_RAD,
   MAX_SHIFT_RATE_RAD_S,
+  shortestAngle,
+  rawOrientationYawPitch,
 } from './ghostOverlay'
 
 describe('initialGhostState', () => {
@@ -870,5 +872,41 @@ describe('computeOrientationDelta', () => {
     const negResult = computeOrientationDelta(negState, { alphaDeg: 181, betaDeg: 90, gammaDeg: 0, gyroMag: 1.0, nowMs: 1000 })
     expect(negResult.yaw).toBeCloseTo(normal.yaw, 4)
     expect(negResult.pitch).toBeCloseTo(normal.pitch, 4)
+  })
+})
+
+describe('shortestAngle', () => {
+  it('returns small deltas unchanged', () => {
+    expect(shortestAngle(0)).toBeCloseTo(0, 10)
+    expect(shortestAngle(0.1)).toBeCloseTo(0.1, 10)
+    expect(shortestAngle(-0.5)).toBeCloseTo(-0.5, 10)
+  })
+
+  it('wraps deltas of magnitude > π into the (-π, π] range', () => {
+    expect(shortestAngle(2 * Math.PI)).toBeCloseTo(0, 10)
+    expect(shortestAngle(3 * Math.PI)).toBeCloseTo(Math.PI, 10) // 3π ≡ π in the principal range
+    expect(shortestAngle(Math.PI + 0.1)).toBeCloseTo(-Math.PI + 0.1, 10)
+    expect(shortestAngle(-Math.PI - 0.1)).toBeCloseTo(Math.PI - 0.1, 10)
+  })
+
+  it('keeps +π and flips -π to +π so the principal range is (-π, π]', () => {
+    expect(shortestAngle(Math.PI)).toBeCloseTo(Math.PI, 10)
+    expect(shortestAngle(-Math.PI)).toBeCloseTo(Math.PI, 10)
+  })
+})
+
+describe('rawOrientationYawPitch', () => {
+  it('returns zero yaw and pitch when current orientation matches reference', () => {
+    const qRef = eulerToQuat(180, 90, 0)
+    const { yaw, pitch } = rawOrientationYawPitch(qRef, 180, 90, 0)
+    expect(yaw).toBeCloseTo(0, 6)
+    expect(pitch).toBeCloseTo(0, 6)
+  })
+
+  it('returns non-zero yaw when alpha changes from the reference', () => {
+    const qRef = eulerToQuat(180, 90, 0)
+    const { yaw } = rawOrientationYawPitch(qRef, 185, 90, 0)
+    expect(yaw).not.toBe(0)
+    expect(Math.abs(yaw)).toBeLessThan(Math.PI / 4)
   })
 })

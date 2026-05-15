@@ -64,6 +64,32 @@ export function quatMultiply(a: Quat, b: Quat): Quat {
   }
 }
 
+/** Wraps a signed angle delta to the principal range (-π, π]. */
+export function shortestAngle(delta: number): number {
+  const wrapped = ((delta + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI
+  return wrapped === -Math.PI ? Math.PI : wrapped
+}
+
+/** Computes raw yaw/pitch (rad) of the current orientation relative to qRef, without smoothing. */
+export function rawOrientationYawPitch(
+  qRef: Quat,
+  alphaDeg: number,
+  betaDeg: number,
+  gammaDeg: number,
+): { yaw: number; pitch: number } {
+  const qNow = eulerToQuat(alphaDeg, betaDeg, gammaDeg)
+  let qDelta = quatMultiply(quatConjugate(qRef), qNow)
+  if (qDelta.w < 0) qDelta = { w: -qDelta.w, x: -qDelta.x, y: -qDelta.y, z: -qDelta.z }
+  const yaw = Math.atan2(
+    2 * (qDelta.w * qDelta.y + qDelta.x * qDelta.z),
+    1 - 2 * (qDelta.x * qDelta.x + qDelta.y * qDelta.y),
+  )
+  const pitch = Math.asin(
+    Math.max(-1, Math.min(1, 2 * (qDelta.w * qDelta.x - qDelta.y * qDelta.z))),
+  )
+  return { yaw, pitch }
+}
+
 export function initialOrientationState(alphaDeg: number, betaDeg: number, gammaDeg: number, nowMs: number): OrientationTrackingState {
   return {
     qRef: eulerToQuat(alphaDeg, betaDeg, gammaDeg),

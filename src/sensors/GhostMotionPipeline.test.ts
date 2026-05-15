@@ -627,3 +627,64 @@ describe('GhostMotionPipeline — absolute orientation', () => {
     pipeline.destroy()
   })
 })
+
+// ---------------------------------------------------------------------------
+// Hybrid orientation path (tuning.orientationModel = 'hybrid')
+// Tracer bullet: gyro integrates yaw/pitch; rafLoop pulls toward absolute target.
+// ---------------------------------------------------------------------------
+
+function hybridTuning(): TuningConfig {
+  return { ...defaultTuningConfig(), orientationModel: 'hybrid' }
+}
+
+describe('GhostMotionPipeline — hybrid orientation', () => {
+  it('blends gyro yaw toward absolute orientation target', () => {
+    const gyro = makeGyro()
+    const tuning = hybridTuning()
+    const sample = { alpha: 180, beta: 90, gamma: 0 }
+    const onFrame = vi.fn()
+    const deps = makeDeps({
+      gyro, onFrame, enableMotionGate: false,
+      getOrientation: () => sample, tuning,
+    })
+    const pipeline = new GhostMotionPipeline(deps)
+
+    // First sample establishes gyro lastT and absolute reference (qRef).
+    gyro.fire(0, 0.5, 0, 1000)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    // Second sample: gyro alone would integrate yaw to -0.05 over 100 ms.
+    gyro.fire(0, 0.5, 0, 1100)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+
+    const frame = onFrame.mock.calls.at(-1)![0]
+    // Absolute target is 0 (reference unchanged); gyro pulls negative.
+    // Hybrid output must sit strictly between the two extremes.
+    expect(frame.yawRad).toBeLessThan(0)
+    expect(frame.yawRad).toBeGreaterThan(-0.05)
+    pipeline.destroy()
+  })
+
+  it('blends gyro pitch toward absolute orientation target', () => {
+    const gyro = makeGyro()
+    const tuning = hybridTuning()
+    const sample = { alpha: 180, beta: 90, gamma: 0 }
+    const onFrame = vi.fn()
+    const deps = makeDeps({
+      gyro, onFrame, enableMotionGate: false,
+      getOrientation: () => sample, tuning,
+    })
+    const pipeline = new GhostMotionPipeline(deps)
+
+    // First sample seeds gyro lastT and absolute qRef.
+    gyro.fire(0.3, 0, 0, 1000)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    // Pure gyro pitch would integrate to +0.03 over 100 ms.
+    gyro.fire(0.3, 0, 0, 1100)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+
+    const frame = onFrame.mock.calls.at(-1)![0]
+    expect(frame.pitchRad).toBeGreaterThan(0)
+    expect(frame.pitchRad).toBeLessThan(0.03)
+    pipeline.destroy()
+  })
+})

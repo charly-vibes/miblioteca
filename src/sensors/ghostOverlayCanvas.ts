@@ -163,7 +163,7 @@ export class GhostOverlayCanvas {
       }
       // Keep lastYawRad/lastPitchRad — pipeline continues integrating while gate is closed,
       // so getDebugState() reflects actual accumulated state rather than a stale 0.
-      this.deps.onFrame?.({ t: this.deps.now(), yawRad: 0, pitchRad: 0, shiftPx: 0, pitchShiftPx: 0, dx_m: 0, dy_m: 0, gateOpen: false })
+      this.deps.onFrame?.({ t: this.deps.now(), yawRad: 0, pitchRad: 0, shiftPx: 0, pitchShiftPx: 0, dx_m: 0, dy_m: 0, gateOpen: false, orientationSource: frame.orientationSource })
       return
     }
 
@@ -228,6 +228,7 @@ export class GhostOverlayCanvas {
       dx_m,
       dy_m,
       gateOpen: true,
+      orientationSource: frame.orientationSource,
     })
   }
 

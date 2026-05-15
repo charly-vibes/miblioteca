@@ -518,6 +518,7 @@ export class GhostCalibrationPage {
           t: this.nowFn(), yawRad: pState.yawRad, pitchRad: pState.pitchRad,
           shiftPx: prev?.shiftPx ?? 0, pitchShiftPx: prev?.pitchShiftPx ?? 0,
           dx_m: 0, dy_m: 0, gateOpen: true,
+          orientationSource: prev?.orientationSource ?? 'gyro',
         }
         if (this.phase === 'recording' && this.currentCycle?.frames) {
           this.currentCycle.frames.push({
@@ -549,6 +550,7 @@ export class GhostCalibrationPage {
     this.latestFrame = {
       t: frame.t, yawRad: frame.yawRad, pitchRad: frame.pitchRad,
       shiftPx, pitchShiftPx: shiftPy, dx_m: frame.dx_m, dy_m: frame.dy_m, gateOpen: true,
+      orientationSource: frame.orientationSource,
     }
 
     // Live preview: rectangle tracks shift during IDLE so tuning-panel tweaks are immediately visible.
@@ -565,6 +567,7 @@ export class GhostCalibrationPage {
         this.currentCycle.ghostFrames.push({
           t: elapsed, yawRad: frame.yawRad, pitchRad: frame.pitchRad,
           shiftPx, pitchShiftPx: shiftPy, dx_m: frame.dx_m, dy_m: frame.dy_m, gateOpen: true,
+          orientationSource: frame.orientationSource,
         })
       }
     }

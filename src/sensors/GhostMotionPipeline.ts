@@ -21,7 +21,7 @@ import {
 } from './ghostOverlay'
 import type {
   GhostOverlayState, GyroSample, GyroLike, MotionLike, OrientationLike,
-  GhostFrame, OrientationTrackingState,
+  GhostFrame, OrientationTrackingState, OrientationSource,
 } from './ghostOverlay'
 import type { OrientationModel, TuningConfig } from '../ghost/tuningConfig'
 
@@ -197,7 +197,7 @@ export class GhostMotionPipeline {
         if (this.gateVisible) {
           this.gateVisible = false
           this.state = zeroVelocity(this.state)
-          this.deps.onFrame({ t: now, yawRad: 0, pitchRad: 0, shiftPx: 0, pitchShiftPx: 0, dx_m: 0, dy_m: 0, gateOpen: false })
+          this.deps.onFrame({ t: now, yawRad: 0, pitchRad: 0, shiftPx: 0, pitchShiftPx: 0, dx_m: 0, dy_m: 0, gateOpen: false, orientationSource: this.resolveOrientationSource() })
         }
         return
       }
@@ -271,7 +271,18 @@ export class GhostMotionPipeline {
       dx_m: this.state.dx_m,
       dy_m: this.state.dy_m,
       gateOpen: true,
+      orientationSource: this.resolveOrientationSource(),
     })
+  }
+
+  private resolveOrientationSource(): OrientationSource {
+    const model = this.tuning?.orientationModel ?? 'gyro'
+    if (model === 'gyro') return 'gyro'
+    if (model === 'absolute') return 'absolute'
+    // hybrid: classify by which input is currently available
+    if (!this.deps.gyro) return 'hybrid-fallback-absolute'
+    if (this.lastAbsoluteFreshMs < 0) return 'hybrid-fallback-gyro'
+    return 'hybrid'
   }
 
   getState(): { yawRad: number; pitchRad: number } {

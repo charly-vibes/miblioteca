@@ -741,6 +741,83 @@ describe('GhostMotionPipeline — hybrid orientation', () => {
     pipeline.destroy()
   })
 
+  it('emits orientationSource="hybrid" when both gyro and absolute are fresh', () => {
+    const gyro = makeGyro()
+    const tuning = hybridTuning()
+    const sample = { alpha: 180, beta: 90, gamma: 0 }
+    const onFrame = vi.fn()
+    const deps = makeDeps({
+      gyro, onFrame, enableMotionGate: false,
+      getOrientation: () => sample, tuning,
+    })
+    const pipeline = new GhostMotionPipeline(deps)
+    gyro.fire(0, 0.5, 0, 1000)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    gyro.fire(0, 0.5, 0, 1100)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    const frame = onFrame.mock.calls.at(-1)![0]
+    expect(frame.orientationSource).toBe('hybrid')
+    pipeline.destroy()
+  })
+
+  it('emits orientationSource="hybrid-fallback-gyro" when absolute is missing in hybrid mode', () => {
+    const gyro = makeGyro()
+    const tuning = hybridTuning()
+    const onFrame = vi.fn()
+    const deps = makeDeps({
+      gyro, onFrame, enableMotionGate: false,
+      getOrientation: () => null, tuning,
+    })
+    const pipeline = new GhostMotionPipeline(deps)
+    gyro.fire(0, 0.5, 0, 1000)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    const frame = onFrame.mock.calls.at(-1)![0]
+    expect(frame.orientationSource).toBe('hybrid-fallback-gyro')
+    pipeline.destroy()
+  })
+
+  it('emits orientationSource="hybrid-fallback-absolute" when gyro is missing in hybrid mode', () => {
+    const tuning = hybridTuning()
+    const onFrame = vi.fn()
+    const deps = makeDeps({
+      gyro: null, onFrame, enableMotionGate: false,
+      getOrientation: () => ({ alpha: 180, beta: 90, gamma: 0 }), tuning,
+    })
+    const pipeline = new GhostMotionPipeline(deps)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    const frame = onFrame.mock.calls.at(-1)![0]
+    expect(frame.orientationSource).toBe('hybrid-fallback-absolute')
+    pipeline.destroy()
+  })
+
+  it('emits orientationSource="gyro" in gyro mode', () => {
+    const gyro = makeGyro()
+    const onFrame = vi.fn()
+    const deps = makeDeps({ gyro, onFrame, enableMotionGate: false })
+    const pipeline = new GhostMotionPipeline(deps)
+    gyro.fire(0, 0.5, 0, 1000)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    const frame = onFrame.mock.calls.at(-1)![0]
+    expect(frame.orientationSource).toBe('gyro')
+    pipeline.destroy()
+  })
+
+  it('emits orientationSource="absolute" in absolute mode', () => {
+    const gyro = makeGyro()
+    const tuning = absoluteTuning()
+    const onFrame = vi.fn()
+    const deps = makeDeps({
+      gyro, onFrame, enableMotionGate: false,
+      getOrientation: () => ({ alpha: 180, beta: 90, gamma: 0 }), tuning,
+    })
+    const pipeline = new GhostMotionPipeline(deps)
+    gyro.fire(0, 0.5, 0, 1000)
+    ;(deps.raf as unknown as { flush(): void }).flush()
+    const frame = onFrame.mock.calls.at(-1)![0]
+    expect(frame.orientationSource).toBe('absolute')
+    pipeline.destroy()
+  })
+
   it('cold-start with gyro only (no absolute reading yet) emits a finite frame from gyro alone', () => {
     const gyro = makeGyro()
     const tuning = hybridTuning()

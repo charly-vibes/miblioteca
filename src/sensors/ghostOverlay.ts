@@ -506,6 +506,13 @@ export type OrientationLike = {
   stop(): void
 }
 
+export type OrientationSource =
+  | 'gyro'
+  | 'absolute'
+  | 'hybrid'
+  | 'hybrid-fallback-gyro'
+  | 'hybrid-fallback-absolute'
+
 export type GhostFrame = {
   t: DOMHighResTimeStamp
   yawRad: number
@@ -515,4 +522,5 @@ export type GhostFrame = {
   dx_m: number
   dy_m: number
   gateOpen: boolean
+  orientationSource: OrientationSource
 }

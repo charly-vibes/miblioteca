@@ -23,6 +23,6 @@
 - [x] 3.8 Update the tuning panel selector and related labels/tooling for the third model
 
 ## 4. Validation
-- [ ] 4.1 Run focused Vitest suites for the pipeline and tuning panel
-- [ ] 4.2 Run `npm run check`
+- [x] 4.1 Run focused Vitest suites for the pipeline and tuning panel
+- [x] 4.2 Run `npm run check`
 - [ ] 4.3 Record a manual ghost-page verification pass comparing `gyro`, `absolute`, and `hybrid`

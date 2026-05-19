@@ -1,4 +1,4 @@
-import type { TuningConfig } from '../ghost/tuningConfig'
+import type { TuningConfig } from '../shared/tuningConfig'
 import { DeviceMotionGyroAdapter, DeviceMotionLinearAccelAdapter } from './deviceMotionAdapter'
 import type { GhostMotionPipelineDeps } from './GhostMotionPipeline'
 import type { GhostFrame, GyroLike, MotionLike } from './ghostOverlay'

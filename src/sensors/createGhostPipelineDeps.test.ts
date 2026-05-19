@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { GyroLike, MotionLike } from './ghostOverlay'
 import { createGhostPipelineDeps } from './createGhostPipelineDeps'
 import type { GhostPipelineOptions } from './createGhostPipelineDeps'
-import { defaultTuningConfig } from '../ghost/tuningConfig'
+import { defaultTuningConfig } from '../shared/tuningConfig'
 
 function makeWindow(): GhostPipelineOptions['win'] {
   return {

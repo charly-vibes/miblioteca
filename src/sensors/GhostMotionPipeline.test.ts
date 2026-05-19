@@ -2,8 +2,8 @@ import { describe, it, expect, vi } from 'vitest'
 import { GhostMotionPipeline } from './GhostMotionPipeline'
 import type { GhostMotionPipelineDeps } from './GhostMotionPipeline'
 import type { GyroLike } from './ghostOverlay'
-import type { TuningConfig } from '../ghost/tuningConfig'
-import { defaultTuningConfig } from '../ghost/tuningConfig'
+import type { TuningConfig } from '../shared/tuningConfig'
+import { defaultTuningConfig } from '../shared/tuningConfig'
 
 function makeGyro(): GyroLike & { fire(gx: number, gy: number, gz: number, t: number): void } {
   const g: GyroLike & { fire(gx: number, gy: number, gz: number, t: number): void } = {

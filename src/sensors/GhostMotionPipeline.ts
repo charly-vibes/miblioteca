@@ -23,7 +23,7 @@ import type {
   GhostOverlayState, GyroSample, GyroLike, MotionLike, OrientationLike,
   GhostFrame, OrientationTrackingState, OrientationSource,
 } from './ghostOverlay'
-import type { OrientationModel, TuningConfig } from '../ghost/tuningConfig'
+import type { OrientationModel, TuningConfig } from '../shared/tuningConfig'
 
 type DeviceOrientationSample = { alpha: number; beta: number; gamma: number }
 import { debugLogger } from '../debug/logger'

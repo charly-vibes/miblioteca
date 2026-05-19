@@ -8,9 +8,7 @@ import {
   GYRO_SENSITIVITY, TRANSLATION_SENSITIVITY,
   TILT_MAX_DEG_SUBTRACTED, WORKING_DISTANCE_DEFAULT_CM,
 } from '../sensors/ghostOverlay'
-import {
-  GHOST_CAPTURE_MAX_SHIFT_X_PX, GHOST_CAPTURE_MAX_MAG_PX,
-} from '../tracer/ghostCaptureGate'
+import { GHOST_CAPTURE_MAX_SHIFT_X_PX, GHOST_CAPTURE_MAX_MAG_PX } from '../tracer'
 
 export type OrientationModel = 'gyro' | 'absolute' | 'hybrid'
 

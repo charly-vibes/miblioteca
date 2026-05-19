@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import 'fake-indexeddb/auto'
-import { openShelfwalkDb } from '../tracer/persistence'
+import { openShelfwalkDb } from '../tracer'
 import { joinScan } from './joinScan'
 
 function makeFetch(status: number, body: object) {

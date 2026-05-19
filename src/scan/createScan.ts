@@ -1,5 +1,10 @@
-import { type ShelfwalkDatabase, putScan, putSession } from '../tracer/persistence'
-import { type TracerBulletScan, type TracerBulletSession } from '../tracer/storage'
+import {
+  putScan,
+  putSession,
+  type ShelfwalkDatabase,
+  type TracerBulletScan,
+  type TracerBulletSession,
+} from '../tracer'
 import { clockOffsetMs } from './codes'
 
 export type ScanErrorCode = 'bad-request' | 'conflict' | 'server-error'

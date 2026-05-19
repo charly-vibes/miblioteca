@@ -1,18 +1,19 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import JSZip from 'jszip'
 import {
-  openShelfwalkDb,
-  saveCapture,
-  putScan,
-  putSession,
+  getSessionBundleDeliveryState,
   loadBlob,
   loadThumbnail,
-  getSessionBundleDeliveryState,
-} from '../tracer/persistence'
-import type { ShelfwalkDatabase } from '../tracer/persistence'
+  openShelfwalkDb,
+  putScan,
+  putSession,
+  saveCapture,
+  type CaptureRecord,
+  type ShelfwalkDatabase,
+  type TracerBulletScan,
+  type TracerBulletSession,
+} from '../tracer'
 import { assembleBundle } from './assemble'
-import type { CaptureRecord } from '../tracer/capture'
-import type { TracerBulletScan, TracerBulletSession } from '../tracer/storage'
 import type { BundleManifest } from './types'
 
 function makeScan(partial: Partial<TracerBulletScan> = {}): TracerBulletScan {

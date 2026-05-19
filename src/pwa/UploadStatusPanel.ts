@@ -1,7 +1,11 @@
-import { drainUploadQueue } from '../tracer/uploadQueue'
-import { loadUploadStatus, retryFailedUploads, UPLOAD_STATES } from '../tracer/uploadStatus'
-import { openShelfwalkDb } from '../tracer/persistence'
-import type { ShelfwalkDatabase } from '../tracer/persistence'
+import {
+  drainUploadQueue,
+  loadUploadStatus,
+  openShelfwalkDb,
+  retryFailedUploads,
+  type ShelfwalkDatabase,
+  UPLOAD_STATES,
+} from '../tracer'
 
 export type UploadStatusPanelDeps = {
   openDb?: () => Promise<ShelfwalkDatabase>

@@ -1,5 +1,4 @@
-import type { ShelfwalkDatabase } from '../tracer/persistence'
-import { getAllSessions, getSessionBundleDeliveryState } from '../tracer/persistence'
+import { getAllSessions, getSessionBundleDeliveryState, type ShelfwalkDatabase } from '../tracer'
 import type { BundleAssemblyInput, BundleAssemblyResult } from './assemble'
 import { assembleBundle } from './assemble'
 import type { BundleShareCapability, SessionBundleDeliveryState } from './types'

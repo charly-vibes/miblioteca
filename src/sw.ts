@@ -1,6 +1,5 @@
 import { precacheAndRoute } from 'workbox-precaching'
-import { openShelfwalkDb } from './tracer/persistence'
-import { drainUploadQueue } from './tracer/uploadQueue'
+import { drainUploadQueue, openShelfwalkDb } from './tracer'
 
 declare const self: ServiceWorkerGlobalScope
 

@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { getSession, openShelfwalkDb, putSession } from '../tracer/persistence'
-import type { ShelfwalkDatabase } from '../tracer/persistence'
-import type { TracerBulletSession } from '../tracer/storage'
+import {
+  getSession,
+  openShelfwalkDb,
+  putSession,
+  type ShelfwalkDatabase,
+  type TracerBulletSession,
+} from '../tracer'
 import { startClockSync, syncScanClock } from './clockSync'
 
 const SESSION: TracerBulletSession = {

@@ -3,12 +3,12 @@ import {
   getAllRecords,
   getAllSessions,
   getScan,
+  getTrace,
   loadBlob,
   loadThumbnail,
-  getTrace,
   putSessionBundleDeliveryState,
-} from '../tracer/persistence'
-import type { ShelfwalkDatabase } from '../tracer/persistence'
+  type ShelfwalkDatabase,
+} from '../tracer'
 import type { BundleFileEntry, BundleFileLogicalType, BundleManifest } from './types'
 import {
   recordImagePath,

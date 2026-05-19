@@ -1,9 +1,16 @@
 import { screen } from '@testing-library/dom'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { openShelfwalkDb, putScan, putSession, putRecord, putSessionBundleDeliveryState, type ShelfwalkDatabase } from '../tracer/persistence'
+import {
+  openShelfwalkDb,
+  putRecord,
+  putScan,
+  putSession,
+  putSessionBundleDeliveryState,
+  type CaptureRecord,
+  type ShelfwalkDatabase,
+} from '../tracer'
 import { mountSessionsListView } from './SessionsListView'
-import type { CaptureRecord } from '../tracer/capture'
 
 function makeRecord(overrides: Partial<CaptureRecord> = {}): CaptureRecord {
   return {

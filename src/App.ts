@@ -1,10 +1,15 @@
 import { mountAppHeader } from './pwa/AppHeader'
 import { mountScanManagementView } from './scan/ScanManagementView'
 import { mountSessionsListView } from './scan/SessionsListView'
-import { CaptureView } from './tracer/CaptureView'
-import { createMockScanFetch } from './tracer/mockScanApi'
-import { getSession, getScan, openShelfwalkDb, type ShelfwalkDatabase } from './tracer/persistence'
-import type { BootstrapResult } from './tracer/bootstrap'
+import {
+  CaptureView,
+  createMockScanFetch,
+  getSession,
+  getScan,
+  openShelfwalkDb,
+  type BootstrapResult,
+  type ShelfwalkDatabase,
+} from './tracer'
 import { parseRoute, navigateToSession, navigateHome, navigateToNewScan, type Route } from './router'
 import { detectSensorDeps } from './sensors/probe'
 import type { GyroLike } from './sensors/ghostOverlayCanvas'

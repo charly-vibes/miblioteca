@@ -1,11 +1,11 @@
 import {
-  getAllSessions,
   getAllRecords,
+  getAllSessions,
   getSessionBundleDeliveryState,
   type ShelfwalkDatabase,
-} from '../tracer/persistence'
+  type TracerBulletSession,
+} from '../tracer'
 import { navigateToSession } from '../router'
-import type { TracerBulletSession } from '../tracer/storage'
 import type { SessionBundleDeliveryState } from '../bundle/types'
 
 export type SessionsListViewDeps = {

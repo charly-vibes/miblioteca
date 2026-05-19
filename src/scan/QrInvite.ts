@@ -1,5 +1,5 @@
 import QRCode from 'qrcode-svg'
-import type { TracerBulletScan } from '../tracer/storage'
+import type { TracerBulletScan } from '../tracer'
 
 type QrInviteOptions = {
   scan: TracerBulletScan

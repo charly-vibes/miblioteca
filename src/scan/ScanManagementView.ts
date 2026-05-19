@@ -1,8 +1,7 @@
 import { createScan, ScanApiError } from './createScan'
 import { joinScan, JoinScanError } from './joinScan'
 import { createQrInvite } from './QrInvite'
-import { openShelfwalkDb, type ShelfwalkDatabase } from '../tracer/persistence'
-import type { BootstrapResult } from '../tracer/bootstrap'
+import { openShelfwalkDb, type BootstrapResult, type ShelfwalkDatabase } from '../tracer'
 
 export type ScanManagementViewDeps = {
   openDb?: () => Promise<ShelfwalkDatabase>

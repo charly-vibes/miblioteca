@@ -7,7 +7,7 @@ import type {
   BundleTransferGuidance,
   BundleShareCapability,
 } from './types'
-import type { CaptureRecord } from '../tracer/capture'
+import type { CaptureRecord } from '../tracer'
 
 describe('BundleFileEntry', () => {
   it('has required shape', () => {

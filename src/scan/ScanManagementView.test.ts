@@ -1,7 +1,7 @@
 import { screen, within } from '@testing-library/dom'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { openShelfwalkDb, type ShelfwalkDatabase } from '../tracer/persistence'
+import { openShelfwalkDb, type ShelfwalkDatabase } from '../tracer'
 import { mountScanManagementView } from './ScanManagementView'
 
 function makeFetch(status: number, body: object) {

@@ -9,8 +9,7 @@ import type { SensorProbeDeps } from '../sensors/probe'
 import { GhostOverlayCanvas } from '../sensors/ghostOverlayCanvas'
 import type { GyroLike } from '../sensors/ghostOverlayCanvas'
 import { shareBundle, downloadBundle } from '../bundle/share'
-import { CaptureView } from '../tracer/CaptureView'
-import type { BootstrapResult } from '../tracer/bootstrap'
+import { CaptureView, type BootstrapResult } from '../tracer'
 
 vi.mock('./logger', async (importActual) => {
   const actual = await importActual<typeof import('./logger')>()

@@ -1,7 +1,7 @@
 import { screen } from '@testing-library/dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mountMibliotecaApp } from './App'
-import { openShelfwalkDb, putScan, putSession, type ShelfwalkDatabase } from './tracer/persistence'
+import { openShelfwalkDb, putScan, putSession, type ShelfwalkDatabase } from './tracer'
 
 let container: HTMLDivElement
 let db: ShelfwalkDatabase

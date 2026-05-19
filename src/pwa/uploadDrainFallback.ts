@@ -1,6 +1,4 @@
-import { openShelfwalkDb } from '../tracer/persistence'
-import type { ShelfwalkDatabase } from '../tracer/persistence'
-import { drainUploadQueue } from '../tracer/uploadQueue'
+import { drainUploadQueue, openShelfwalkDb, type ShelfwalkDatabase } from '../tracer'
 import { debugLogger } from '../debug/logger'
 
 export type UploadDrainFallbackDeps = {

@@ -1,6 +1,4 @@
-import { getSession, putSession } from '../tracer/persistence'
-import type { ShelfwalkDatabase } from '../tracer/persistence'
-import type { TracerBulletSession } from '../tracer/storage'
+import { getSession, putSession, type ShelfwalkDatabase, type TracerBulletSession } from '../tracer'
 import { clockOffsetMs } from './codes'
 
 const DEFAULT_RESYNC_INTERVAL_MS = 30 * 60 * 1000

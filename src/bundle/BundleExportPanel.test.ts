@@ -11,14 +11,15 @@ vi.mock('./share', async (importOriginal) => {
 import { shareBundle, downloadBundle } from './share'
 import {
   openShelfwalkDb,
-  saveCapture,
   putScan,
   putSession,
   putSessionBundleDeliveryState,
-} from '../tracer/persistence'
-import type { ShelfwalkDatabase } from '../tracer/persistence'
-import type { CaptureRecord } from '../tracer/capture'
-import type { TracerBulletScan, TracerBulletSession } from '../tracer/storage'
+  saveCapture,
+  type CaptureRecord,
+  type ShelfwalkDatabase,
+  type TracerBulletScan,
+  type TracerBulletSession,
+} from '../tracer'
 import type { BundleAssemblyResult } from './assemble'
 import type { BundleManifest } from './types'
 

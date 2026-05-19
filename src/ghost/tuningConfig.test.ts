@@ -18,7 +18,7 @@ import {
   ZUPT_TAU_S,
   ZUPT_THRESHOLD_MS2,
 } from '../sensors/ghostOverlay'
-import { GHOST_CAPTURE_MAX_MAG_PX, GHOST_CAPTURE_MAX_SHIFT_X_PX } from '../tracer/ghostCaptureGate'
+import { GHOST_CAPTURE_MAX_MAG_PX, GHOST_CAPTURE_MAX_SHIFT_X_PX } from '../tracer'
 import type { CalibrationExport } from './types'
 import type { OrientationModel, TuningConfig } from './tuningConfig'
 import { defaultTuningConfig, loadTuningConfig, saveTuningConfig } from './tuningConfig'

@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { openShelfwalkDb, saveCapture, loadCaptureRecord } from '../tracer/persistence'
-import type { ShelfwalkDatabase } from '../tracer/persistence'
-import { createCaptureRecord } from '../tracer/capture'
+import {
+  createCaptureRecord,
+  loadCaptureRecord,
+  openShelfwalkDb,
+  saveCapture,
+  type ShelfwalkDatabase,
+} from '../tracer'
 import { mountUploadDrainFallback } from './uploadDrainFallback'
 
 const IMAGE_INPUT = {

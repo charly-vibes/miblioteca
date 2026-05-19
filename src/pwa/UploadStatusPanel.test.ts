@@ -1,10 +1,14 @@
 import { screen, within } from '@testing-library/dom'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createCaptureRecord } from '../tracer/capture'
-import type { CaptureRecord } from '../tracer/capture'
-import { loadCaptureRecord, openShelfwalkDb, saveCapture } from '../tracer/persistence'
-import type { ShelfwalkDatabase } from '../tracer/persistence'
+import {
+  createCaptureRecord,
+  loadCaptureRecord,
+  openShelfwalkDb,
+  saveCapture,
+  type CaptureRecord,
+  type ShelfwalkDatabase,
+} from '../tracer'
 import { mountUploadStatusPanel } from './UploadStatusPanel'
 
 const IMAGE_INPUT = {

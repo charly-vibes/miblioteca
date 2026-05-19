@@ -833,7 +833,7 @@ describe('CaptureView — working distance persistence', () => {
     })
     window.dispatchEvent(ev)
 
-    expect((view as any).latestDeviceOrientation).toEqual({ alpha: 181, beta: 89, gamma: 2 })
+    expect((view as any).imuMonitor.latestOrientation).toEqual({ alpha: 181, beta: 89, gamma: 2 })
     expect((view as any).ghostOverlay.pipeline.deps.getOrientation()).toEqual({ alpha: 181, beta: 89, gamma: 2 })
     expect((view as any).ghostOverlay.pipeline.deps.getBeta()).toBe(89)
   })

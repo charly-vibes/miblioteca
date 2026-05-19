@@ -8,11 +8,8 @@ import type { StorageBudgetManager, StorageBudgetStatus } from '../pwa/storageBu
 import { requestUploadSync } from '../pwa/syncRegistration'
 import { GhostOverlayCanvas } from '../sensors/ghostOverlayCanvas'
 import type { GyroLike } from '../sensors/ghostOverlayCanvas'
-import { estimateDisplacement } from '../sensors/imuMath.js'
-import type { ImuSample } from '../sensors/imuTrace.js'
-import type { AccelerometerLike } from '../sensors/imuRecorder'
-import { feedAccel, initialSteadinessState } from '../sensors/steadiness'
-import type { SteadinessState } from '../sensors/steadiness'
+import { IMUSteadinessMonitor } from '../sensors/IMUSteadinessMonitor'
+import type { AccelerometerLike, ImuSample } from '../sensors/IMUSteadinessMonitor'
 import { bootstrapTracerBullet, type BootstrapResult } from './bootstrap'
 import { createCaptureRecord } from './capture'
 import { makeThumbnail, laplacianVariance, THUMBNAIL_MAX_EDGE_PX } from './imageProcessing'
@@ -87,14 +84,10 @@ export class CaptureView {
   private readonly opts: CaptureViewOptions
   private readonly logger: DebugLogger
   private ghostOverlay: GhostOverlayCanvas | null = null
-  private steadinessState: SteadinessState = initialSteadinessState()
+  private imuMonitor!: IMUSteadinessMonitor
   private activeWarnings: QualityWarning[] = []
   private lastPollQuality: ReturnType<typeof qualityChecksFromMetrics> | undefined = undefined
   private pollId: ReturnType<typeof setInterval> | null = null
-  private tiltWarnTimer: ReturnType<typeof setTimeout> | null = null
-  private tiltWarnEl: HTMLDivElement | null = null
-  private latestDeviceOrientation: { alpha: number; beta: number; gamma: number } | null = null
-  private onDeviceOrientation: ((ev: Event) => void) | null = null
 
   private readonly root: HTMLDivElement
   private readonly viewfinder: HTMLDivElement
@@ -128,6 +121,13 @@ export class CaptureView {
     this.mockFetch = createMockScanFetch(() => Date.now())
 
     this.root = this.mk('div', 'camera-app')
+    this.imuMonitor = new IMUSteadinessMonitor({
+      accel: opts.accel,
+      container: this.root,
+      getImuSlice: opts.getImuSlice,
+      onUpdate: () => this.render(),
+      shouldSuppressTiltWarning: () => this.captureIndex === 0,
+    })
     this.viewfinder = this.mk('div', 'camera-viewfinder')
     this.galleryEl = this.mk('div', 'camera-gallery')
     this.galleryEl.hidden = true
@@ -296,8 +296,7 @@ export class CaptureView {
     this.ghostOverlay?.destroy()
     this.ghostOverlay = null
     this.stopQualityPoll()
-    this.stopAccel()
-    this.stopTiltWarning()
+    this.imuMonitor.stop()
 
     this.cameraState = s
     if (s.kind !== 'granted') {
@@ -306,9 +305,8 @@ export class CaptureView {
     }
     if (s.kind === 'granted') {
       this.video.srcObject = s.stream
-      this.startAccel()
+      this.imuMonitor.start()
       this.startQualityPoll()
-      this.startTiltWarning()
     }
     // render() must run before GhostOverlayCanvas is created: the first render with
     // cameraReady=true calls replaceChildren on the viewfinder, which would discard
@@ -329,8 +327,8 @@ export class CaptureView {
       this.ghostOverlay = new GhostOverlayCanvas(this.viewfinder, {
         gyro: this.opts.gyro,
         distanceCm,
-        getBeta: () => this.latestDeviceOrientation?.beta ?? null,
-        getOrientation: () => this.latestDeviceOrientation,
+        getBeta: () => this.imuMonitor.latestOrientation?.beta ?? null,
+        getOrientation: () => this.imuMonitor.latestOrientation,
       })
     }
 
@@ -364,84 +362,6 @@ export class CaptureView {
     await this.takePhoto({ imageBlob, thumbnailBlob, width, height })
   }
 
-  private startAccel() {
-    const accel = this.opts.accel
-    if (!accel) return
-    this.steadinessState = initialSteadinessState()
-    accel.onreading = () => {
-      this.steadinessState = feedAccel(this.steadinessState, {
-        t: accel.timestamp ?? performance.now(),
-        ax: accel.x ?? 0,
-        ay: accel.y ?? 0,
-        az: accel.z ?? 0,
-      })
-      this.render()
-    }
-    accel.onerror = null
-    accel.start()
-  }
-
-  private stopAccel() {
-    const accel = this.opts.accel
-    if (!accel) return
-    accel.onreading = null
-    accel.stop()
-    this.steadinessState = initialSteadinessState()
-  }
-
-  private startTiltWarning() {
-    this.onDeviceOrientation = (ev: Event) => {
-      const alpha = (ev as DeviceOrientationEvent).alpha
-      const beta = (ev as DeviceOrientationEvent).beta
-      const gamma = (ev as DeviceOrientationEvent).gamma
-      this.latestDeviceOrientation = alpha !== null && beta !== null && gamma !== null
-        ? { alpha, beta, gamma }
-        : null
-      const tiltedOff = beta !== null && Math.abs(beta - 90) > 30
-      if (tiltedOff) {
-        if (!this.tiltWarnTimer) {
-          this.tiltWarnTimer = setTimeout(() => {
-            // Suppress before first capture
-            if (this.captureIndex === 0) return
-            if (!this.tiltWarnEl) {
-              this.tiltWarnEl = document.createElement('div')
-              this.tiltWarnEl.className = 'camera-tilt-warning'
-              this.tiltWarnEl.dataset.tiltWarning = 'true'
-              this.tiltWarnEl.textContent = 'Hold phone upright for best alignment'
-              this.root.append(this.tiltWarnEl)
-            }
-          }, 1000)
-        }
-      } else {
-        if (this.tiltWarnTimer) { clearTimeout(this.tiltWarnTimer); this.tiltWarnTimer = null }
-        this.tiltWarnEl?.remove()
-        this.tiltWarnEl = null
-      }
-    }
-    window.addEventListener('deviceorientation', this.onDeviceOrientation)
-  }
-
-  private stopTiltWarning() {
-    if (this.onDeviceOrientation) {
-      window.removeEventListener('deviceorientation', this.onDeviceOrientation)
-      this.onDeviceOrientation = null
-    }
-    this.latestDeviceOrientation = null
-    if (this.tiltWarnTimer) { clearTimeout(this.tiltWarnTimer); this.tiltWarnTimer = null }
-    this.tiltWarnEl?.remove()
-    this.tiltWarnEl = null
-  }
-
-  private computeTiltDeg(): number {
-    const { window } = this.steadinessState
-    if (window.length === 0) return 0
-    const n = window.length
-    const meanAx = window.reduce((s, p) => s + p.ax, 0) / n
-    const meanAy = window.reduce((s, p) => s + p.ay, 0) / n
-    const meanAz = window.reduce((s, p) => s + p.az, 0) / n
-    return Math.abs(Math.atan2(meanAx, Math.sqrt(meanAy ** 2 + meanAz ** 2)) * (180 / Math.PI))
-  }
-
   private startQualityPoll() {
     const { getQualityFrame, pollIntervalMs = 100 } = this.opts
     if (!getQualityFrame) return
@@ -450,8 +370,8 @@ export class CaptureView {
       if (frame) {
         const lv = laplacianVariance(frame)
         const { overexposed: over, underexposed: under, meanLuma } = exposureFractions(frame)
-        const tiltDeg = this.opts.accel ? this.computeTiltDeg() : 0
-        const checks = qualityChecksFromMetrics(lv, over, under, this.steadinessState.steady, tiltDeg, meanLuma)
+        const tiltDeg = this.imuMonitor.tiltDeg
+        const checks = qualityChecksFromMetrics(lv, over, under, this.imuMonitor.steady, tiltDeg, meanLuma)
         this.lastPollQuality = checks
         this.activeWarnings = qualityWarnings(checks)
       } else {
@@ -605,9 +525,9 @@ export class CaptureView {
         },
         { now: () => Date.now(), monotonic: () => performance.now(), generateId: () => crypto.randomUUID() }
       )
-      if (this.opts.getImuSlice != null && this.prevCapturedAtMonotonic != null) {
-        const samples = this.opts.getImuSlice(this.prevCapturedAtMonotonic, record.capturedAtMonotonic)
-        record.qualityChecks.displacementMeters = estimateDisplacement(samples)
+      if (this.prevCapturedAtMonotonic != null) {
+        const displacement = this.imuMonitor.estimateDisplacementBetween(this.prevCapturedAtMonotonic, record.capturedAtMonotonic)
+        if (displacement != null) record.qualityChecks.displacementMeters = displacement
       }
       this.prevCapturedAtMonotonic = record.capturedAtMonotonic
       await saveCapture(db, { record, imageBlob: snapshot.imageBlob, thumbnailBlob: snapshot.thumbnailBlob })
@@ -738,10 +658,10 @@ export class CaptureView {
     this.shutterBtn.disabled =
       this.captureState.kind === 'capturing' ||
       this.storageBudget.kind === 'blocking' ||
-      (this.opts.accel !== undefined && !this.steadinessState.steady)
+      (this.opts.accel !== undefined && !this.imuMonitor.steady)
 
     this.steadinessEl.hidden = !cameraReady || this.opts.accel === undefined
-    this.steadinessEl.dataset.steady = String(this.steadinessState.steady)
+    this.steadinessEl.dataset.steady = String(this.imuMonitor.steady)
 
     this.openCameraBtn.hidden = cameraReady || !bootstrapActive
     this.openCameraBtn.disabled = this.cameraState.kind === 'requesting' || this.bootstrapState.kind === 'loading'
@@ -760,8 +680,7 @@ export class CaptureView {
     }
     this.ghostOverlay?.destroy()
     this.stopQualityPoll()
-    this.stopAccel()
-    this.stopTiltWarning()
+    this.imuMonitor.stop()
     this.bundleExportPanel?.destroy()
     if (this.onVisibilityChange) document.removeEventListener('visibilitychange', this.onVisibilityChange)
     if (this.onUnhandledRejection) window.removeEventListener('unhandledrejection', this.onUnhandledRejection)

@@ -118,16 +118,18 @@ export function mountMibliotecaApp(root: HTMLElement, deps: MibliotecaAppDeps = 
       if (gen !== generation || disposed) return
       if (!bootstrap) { navigateHome(); return }
       const sensors = detectSensorDeps()
-      const gyro = sensors.hasGyroscope
-        ? (new Gyroscope({ frequency: 60 }) as unknown as GyroLike)
-        : sensors.hasDeviceMotionEvent
-          ? new DeviceMotionGyroAdapter(window)
-          : null
-      const accel = sensors.hasAccelerometer
-        ? (new Accelerometer({ frequency: 60 }) as unknown as AccelerometerLike)
-        : sensors.hasDeviceMotionEvent
-          ? new DeviceMotionAccelAdapter(window)
-          : null
+      let gyro: GyroLike | null = null
+      if (sensors.hasGyroscope) {
+        try { gyro = new Gyroscope({ frequency: 60 }) as unknown as GyroLike } catch { gyro = null }
+      } else if (sensors.hasDeviceMotionEvent) {
+        gyro = new DeviceMotionGyroAdapter(window)
+      }
+      let accel: AccelerometerLike | null = null
+      if (sensors.hasAccelerometer) {
+        try { accel = new Accelerometer({ frequency: 60 }) as unknown as AccelerometerLike } catch { accel = null }
+      } else if (sensors.hasDeviceMotionEvent) {
+        accel = new DeviceMotionAccelAdapter(window)
+      }
       const testQualityFrame = (window as unknown as { __miblioteca_test_quality_frame?: () => ImageData | null }).__miblioteca_test_quality_frame
       const autoRequestCamera = autoOpenCameraSessionId === route.sessionId
       autoOpenCameraSessionId = autoRequestCamera ? null : autoOpenCameraSessionId

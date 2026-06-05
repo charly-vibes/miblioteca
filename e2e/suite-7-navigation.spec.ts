@@ -15,7 +15,7 @@ test.describe('Suite 7: Navigation and routing', () => {
 
   test('7.3 browser back after navigating forward shows correct view', async ({ page }) => {
     await page.goto('/')
-    await page.locator('.sessions-new-btn').click()
+    await page.locator('.sessions-more-options-btn').click()
     await expect(page.locator('.scan-management')).toBeVisible()
     await page.goBack()
     await expect(page.locator('.sessions-list')).toBeVisible({ timeout: 3000 })

@@ -12,10 +12,10 @@ test.describe('Suite 1: Sessions list', () => {
     await expect(page.locator('.sessions-new-btn')).toBeVisible()
   })
 
-  test('1.3 clicking New scan navigates to /#/new', async ({ page }) => {
+  test('1.3 clicking Start scanning triggers quick scan and navigates to session', async ({ page }) => {
     await page.goto('/')
     await page.locator('.sessions-new-btn').click()
-    await expect(page).toHaveURL(/#\/new/)
+    await expect(page).toHaveURL(/#\/session\//, { timeout: 10000 })
   })
 
   test('1.4 session row appears after creating a scan and returning home', async ({ page }) => {
@@ -36,9 +36,10 @@ test.describe('Suite 1: Sessions list', () => {
     await page.getByRole('button', { name: 'Create scan' }).click()
     await expect(page.getByRole('button', { name: 'Continue to camera' })).toBeVisible()
 
-    // Capture the session id from the URL before navigating away
-    const sessionUrl = page.url()
-    const sessionId = sessionUrl.split('/session/')[1]
+    // Navigate to session to capture its id from the URL
+    await page.getByRole('button', { name: 'Continue to camera' }).click()
+    await expect(page).toHaveURL(/#\/session\//)
+    const sessionId = page.url().match(/#\/session\/(.+)$/)?.[1] ?? ''
 
     await page.goto('/')
     await expect(page.locator('.session-row')).toHaveCount(1)
@@ -46,9 +47,7 @@ test.describe('Suite 1: Sessions list', () => {
     await page.locator('.session-row').click()
     await expect(page).toHaveURL(new RegExp(`#/session/${sessionId}`))
 
-    // Capture view must render — either Open camera button (onboarding) or camera-onboarding element
-    const openCameraBtn = page.getByRole('button', { name: 'Open camera' })
-    const onboarding = page.locator('.camera-onboarding')
-    await expect(openCameraBtn.or(onboarding)).toBeVisible({ timeout: 5000 })
+    // Capture view must render — camera-onboarding is present before camera is opened
+    await expect(page.locator('.camera-onboarding')).toBeVisible({ timeout: 5000 })
   })
 })

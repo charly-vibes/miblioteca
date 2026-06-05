@@ -2,6 +2,14 @@ import type { Page } from '@playwright/test'
 
 export async function mockGyro(page: Page): Promise<void> {
   await page.addInitScript(() => {
+    // Force portrait orientation so gy maps to yaw (X) as designed for phone use.
+    // Headless Chromium reports landscape by default, which would swap axes.
+    Object.defineProperty(screen, 'orientation', {
+      value: { type: 'portrait-primary', angle: 0 },
+      writable: true,
+      configurable: true,
+    })
+
     let active: {
       x: number | null
       y: number | null

@@ -33,7 +33,7 @@ test.describe('Suite 3: Capture screen', () => {
     await mockCameraPermissionDenied(page)
     await navigateToCaptureScreen(page)
     await page.getByRole('button', { name: 'Open camera' }).click()
-    await expect(page.locator('.camera-status')).toContainText('Camera denied', { timeout: 3000 })
+    await expect(page.locator('.camera-status')).toContainText('Camera access is required', { timeout: 3000 })
   })
 
   test('3.4 taking a photo shows thumbnail in gallery', async ({ page }) => {

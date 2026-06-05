@@ -7,6 +7,8 @@ import { mockGyro, triggerGyroReading, triggerGyroReadingAxes } from './helpers/
 // create a Gyroscope instance. Registering the mock mid-test would miss this check.
 
 async function navigateToCaptureWithCamera(page: Parameters<typeof mockCamera>[0]) {
+  // Portrait viewport so gy maps to yaw (X axis) as designed for phone use
+  await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/#/new')
   await page.getByLabel('Scan name').fill('Gyro test')
   await page.getByRole('button', { name: 'Create scan' }).click()
@@ -156,10 +158,11 @@ test.describe('Suite 8: Ghost overlay', () => {
   })
 
   test('8.9 ghost overlay canvas hidden permanently when gyro unavailable', async ({ page }) => {
-    // Explicitly delete Gyroscope (Chromium ships it natively; remove it so the app
-    // sees hasGyroscope=false, which is the "no sensor" branch we want to test).
+    // Remove both Gyroscope and DeviceMotionEvent so the app sees no sensor at all
+    // (Chromium ships DeviceMotionEvent as a fallback; removing both forces gyro=null).
     await page.addInitScript(() => {
       delete (window as Record<string, unknown>)['Gyroscope']
+      delete (window as Record<string, unknown>)['DeviceMotionEvent']
     })
     await mockCamera(page)
     await navigateToCaptureWithCamera(page)

@@ -34,12 +34,31 @@ describe('TuningPanel Pixel 7a layout and controls', () => {
     const toggle = panel.el.querySelector('[data-testid="tuning-toggle"]') as HTMLElement
     const body = panel.el.querySelector('[data-testid="tuning-panel"]') as HTMLElement
     const sliderRow = panel.el.querySelector('[data-testid="tuning-slider-stillThreshold"]') as HTMLElement
+    const modelBtns = Array.from(panel.el.querySelectorAll('button[data-model]')) as HTMLButtonElement[]
+    const sectionResets = Array.from(panel.el.querySelectorAll('[data-testid^="tuning-section-reset-"]')) as HTMLButtonElement[]
+    const globalReset = panel.el.querySelector('[data-testid="tuning-reset"]') as HTMLButtonElement
 
     expect(toggle.style.width).toBe('48px')
     expect(toggle.style.height).toBe('48px')
     expect(body.style.maxHeight).toBe('40vh')
     expect(body.style.background).toBe('rgba(0, 0, 0, 0.88)')
     expect(sliderRow.style.gridTemplateColumns).toBe('80px 1fr 60px')
+
+    // All interactive elements ≥ 44px tall (WCAG 2.5.5)
+    for (const btn of modelBtns) {
+      expect(Number.parseInt(btn.style.minHeight)).toBeGreaterThanOrEqual(44)
+    }
+    for (const btn of sectionResets) {
+      expect(Number.parseInt(btn.style.minHeight)).toBeGreaterThanOrEqual(44)
+    }
+    expect(Number.parseInt(globalReset.style.minHeight)).toBeGreaterThanOrEqual(44)
+
+    // Horizontal padding ≥ 12px on model buttons and resets for ≥ 44px width
+    for (const btn of modelBtns) {
+      const [, px] = btn.style.padding.split(' ')
+      expect(Number.parseInt(px)).toBeGreaterThanOrEqual(16)
+    }
+    expect(Number.parseInt(globalReset.style.padding.split(' ')[1])).toBeGreaterThanOrEqual(16)
   })
 
   it('renders motion gate physics sliders', () => {

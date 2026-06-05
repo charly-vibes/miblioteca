@@ -121,7 +121,7 @@ export class TuningPanel {
       btn.textContent = model
       btn.setAttribute('data-model', model)
       Object.assign(btn.style, {
-        padding: '4px 10px', border: '1px solid #666', borderRadius: '4px',
+        padding: '0 16px', minHeight: '44px', border: '1px solid #666', borderRadius: '4px',
         background: this.config.orientationModel === model ? '#06f' : '#333',
         color: '#fff', cursor: 'pointer', fontSize: '12px',
       })
@@ -163,7 +163,7 @@ export class TuningPanel {
     reset.textContent = 'Reset'
     reset.setAttribute('data-testid', `tuning-section-reset-${title}`)
     Object.assign(reset.style, {
-      padding: '3px 8px', border: '1px solid #666', borderRadius: '4px',
+      padding: '0 12px', minHeight: '44px', border: '1px solid #666', borderRadius: '4px',
       background: '#333', color: '#fff', cursor: 'pointer', fontSize: '10px',
     })
     reset.addEventListener('click', () => {
@@ -266,7 +266,7 @@ export class TuningPanel {
     btn.textContent = 'Reset defaults'
     btn.setAttribute('data-testid', 'tuning-reset')
     Object.assign(btn.style, {
-      marginTop: '6px', padding: '4px 12px',
+      marginTop: '6px', padding: '0 16px', minHeight: '44px',
       border: '1px solid #666', borderRadius: '4px',
       background: '#333', color: '#fff', cursor: 'pointer', fontSize: '11px',
     })

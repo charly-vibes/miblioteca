@@ -122,7 +122,7 @@ describe('CaptureView — camera permission', () => {
     await user.click(screen.getByRole('button', { name: /open camera/i }))
 
     await vi.waitFor(() => {
-      expect(screen.getByText(/camera denied/i)).toBeInTheDocument()
+      expect(screen.getByText('Camera access is required to photograph shelf spines.')).toBeInTheDocument()
     })
     expect(screen.queryByRole('button', { name: /take photo/i })).not.toBeInTheDocument()
   })
@@ -135,8 +135,25 @@ describe('CaptureView — camera permission', () => {
     await vi.waitFor(() => screen.getByRole('button', { name: /open camera/i }))
     await user.click(screen.getByRole('button', { name: /open camera/i }))
 
-    await vi.waitFor(() => screen.getByText(/camera denied/i))
+    await vi.waitFor(() => screen.getByText('Camera access is required to photograph shelf spines.'))
     expect(screen.getByRole('button', { name: /open camera/i })).toBeInTheDocument()
+  })
+
+  it('shows the permission prep message while auto-requesting camera', async () => {
+    mockGetUserMedia.mockImplementation(() => new Promise(() => {}))
+
+    new CaptureView(container, {
+      captureSnapshot: mockCaptureSnapshot,
+      uploadFetch: mockUploadFetch(200),
+      bootstrapResult: {
+        resumed: true,
+        scan: { id: 'scan-1', shortCode: 'SCAN-1', joinToken: 'token-1', createdAt: '2026-05-07T10:00:00.000Z' },
+        session: { id: 'sess-1', scanId: 'scan-1', userId: 'user-1', startedAt: '2026-05-07T10:01:00.000Z', clockOffsetMs: 0, status: 'active' },
+      },
+      autoRequestCamera: true,
+    })
+
+    expect(await screen.findByText('Allow camera access to photograph shelf spines.')).toBeInTheDocument()
   })
 })
 

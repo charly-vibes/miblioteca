@@ -12,11 +12,12 @@ import { IMUSteadinessMonitor } from '../sensors/IMUSteadinessMonitor'
 import type { AccelerometerLike, ImuSample } from '../sensors/IMUSteadinessMonitor'
 import { bootstrapTracerBullet, type BootstrapResult } from './bootstrap'
 import { createCaptureRecord } from './capture'
-import { makeThumbnail, laplacianVariance, THUMBNAIL_MAX_EDGE_PX } from './imageProcessing'
+import { makeThumbnail, THUMBNAIL_MAX_EDGE_PX } from './imageProcessing'
 import { createMockScanFetch } from './mockScanApi'
 import { getAllRecords, loadThumbnail, openShelfwalkDb, saveCapture } from './persistence'
-import { qualityWarnings, qualityChecksFromMetrics, exposureFractions } from './qualityChecks'
 import type { QualityWarning } from './qualityChecks'
+import { CaptureQualityGate } from './CaptureQualityGate'
+import type { QualityResult } from './CaptureQualityGate'
 import { createLocalStorageTracerBulletStore } from './storage'
 import { uploadCapture } from './upload'
 import { DistanceCalibrationOverlay } from './DistanceCalibrationOverlay'
@@ -49,6 +50,8 @@ export type CaptureViewOptions = {
   useInputFileCapture?: boolean
   /** Called when user taps the back button to return to sessions list. */
   onBack?: () => void
+  /** Auto-request camera as part of the route entry flow. */
+  autoRequestCamera?: boolean
   logger?: DebugLogger
 }
 
@@ -85,8 +88,9 @@ export class CaptureView {
   private readonly logger: DebugLogger
   private ghostOverlay: GhostOverlayCanvas | null = null
   private imuMonitor!: IMUSteadinessMonitor
+  private qualityGate!: CaptureQualityGate
   private activeWarnings: QualityWarning[] = []
-  private lastPollQuality: ReturnType<typeof qualityChecksFromMetrics> | undefined = undefined
+  private lastPollQuality: QualityResult | undefined = undefined
   private pollId: ReturnType<typeof setInterval> | null = null
 
   private readonly root: HTMLDivElement
@@ -128,6 +132,10 @@ export class CaptureView {
       onUpdate: () => this.render(),
       shouldSuppressTiltWarning: () => this.captureIndex === 0,
     })
+    this.qualityGate = new CaptureQualityGate(() => ({
+      steady: this.imuMonitor.steady,
+      tiltDegrees: this.imuMonitor.tiltDeg,
+    }))
     this.viewfinder = this.mk('div', 'camera-viewfinder')
     this.galleryEl = this.mk('div', 'camera-gallery')
     this.galleryEl.hidden = true
@@ -263,6 +271,7 @@ export class CaptureView {
     if (this.opts.bootstrapResult) {
       await this.refreshStorageBudget({ requestPersist: true })
       this.setBootstrapState({ kind: 'ready', result: this.opts.bootstrapResult })
+      if (this.opts.autoRequestCamera) void this.requestCamera()
       return
     }
     await this.startBootstrap()
@@ -368,12 +377,9 @@ export class CaptureView {
     const poll = () => {
       const frame = getQualityFrame()
       if (frame) {
-        const lv = laplacianVariance(frame)
-        const { overexposed: over, underexposed: under, meanLuma } = exposureFractions(frame)
-        const tiltDeg = this.imuMonitor.tiltDeg
-        const checks = qualityChecksFromMetrics(lv, over, under, this.imuMonitor.steady, tiltDeg, meanLuma)
-        this.lastPollQuality = checks
-        this.activeWarnings = qualityWarnings(checks)
+        const result = this.qualityGate.assess(frame)
+        this.lastPollQuality = result
+        this.activeWarnings = result.warnings
       } else {
         this.lastPollQuality = undefined
         this.activeWarnings = []
@@ -500,7 +506,7 @@ export class CaptureView {
       }
       this.logger.log('capture:shutter', {
         index: captureIndex,
-        qualityChecks: shutterQuality ? qualityWarnings(shutterQuality) : [],
+        qualityChecks: shutterQuality ? shutterQuality.warnings : [],
         ghost,
       })
 
@@ -511,7 +517,7 @@ export class CaptureView {
           scanId: scan.id,
           userId: session.userId,
           index: this.captureIndex++,
-          qualityChecks: shutterQuality,
+          qualityChecks: shutterQuality?.checks,
           image: {
             size: snapshot.imageBlob.size,
             thumbnailSize: snapshot.thumbnailBlob.size,
@@ -610,13 +616,13 @@ export class CaptureView {
   private get statusText(): string {
     if (this.bootstrapState.kind === 'error') return this.bootstrapState.message
     if (this.bootstrapState.kind === 'loading') return 'Starting…'
-    if (this.cameraState.kind === 'denied') return 'Camera denied — check browser settings'
+    if (this.cameraState.kind === 'denied') return 'Camera access is required to photograph shelf spines.'
     if (this.captureState.kind === 'capturing') return 'Capturing…'
     if (this.captureState.kind === 'done')
       return this.captureState.uploadState === 'uploaded' ? 'Saved ✓' : 'Saved locally'
     if (this.captureState.kind === 'error') return this.captureState.message
     if (this.cameraState.kind === 'granted') return 'Ready'
-    if (this.cameraState.kind === 'requesting') return 'Opening camera…'
+    if (this.cameraState.kind === 'requesting') return 'Allow camera access to photograph shelf spines.'
     return 'Tap to open camera'
   }
 

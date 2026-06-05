@@ -59,23 +59,47 @@ describe('mountSessionsListView', () => {
     window.location.hash = ''
   })
 
-  it('shows empty state when no sessions exist', async () => {
-    mountSessionsListView(container, { openDb: async () => db, onNewScan: vi.fn() })
+  it('shows quick-start actions before Previous scans on home', async () => {
+    mountSessionsListView(container, {
+      openDb: async () => db,
+      onStartScan: vi.fn(),
+      onMoreOptions: vi.fn(),
+    })
+
+    expect(screen.getByRole('button', { name: 'Start scanning' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'More options' })).toBeInTheDocument()
+
+    const startButton = screen.getByRole('button', { name: 'Start scanning' })
+    const previousScansHeading = screen.getByRole('heading', { name: 'Previous scans' })
+    expect(startButton.compareDocumentPosition(previousScansHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
     expect(await screen.findByText(/no sessions yet/i)).toBeInTheDocument()
   })
 
-  it('shows "New scan" button', () => {
-    const onNewScan = vi.fn()
-    mountSessionsListView(container, { openDb: async () => db, onNewScan })
-    expect(screen.getByRole('button', { name: /new scan/i })).toBeInTheDocument()
+  it('calls onMoreOptions when More options button is clicked', async () => {
+    const onMoreOptions = vi.fn()
+    mountSessionsListView(container, {
+      openDb: async () => db,
+      onStartScan: vi.fn(),
+      onMoreOptions,
+    })
+
+    await userEvent.click(screen.getByRole('button', { name: 'More options' }))
+
+    expect(onMoreOptions).toHaveBeenCalledOnce()
   })
 
-  it('calls onNewScan when New scan button is clicked', async () => {
-    const onNewScan = vi.fn()
-    mountSessionsListView(container, { openDb: async () => db, onNewScan })
-    await userEvent.click(screen.getByRole('button', { name: /new scan/i }))
-    expect(onNewScan).toHaveBeenCalledOnce()
+  it('calls onStartScan when Start scanning button is clicked', async () => {
+    const onStartScan = vi.fn()
+    mountSessionsListView(container, {
+      openDb: async () => db,
+      onStartScan,
+      onMoreOptions: vi.fn(),
+    })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Start scanning' }))
+
+    expect(onStartScan).toHaveBeenCalledOnce()
   })
 
   it('lists sessions sorted newest first', async () => {
@@ -89,11 +113,16 @@ describe('mountSessionsListView', () => {
       clockOffsetMs: 0, status: 'completed',
     })
 
-    mountSessionsListView(container, { openDb: async () => db, onNewScan: vi.fn() })
+    mountSessionsListView(container, {
+      openDb: async () => db,
+      onStartScan: vi.fn(),
+      onMoreOptions: vi.fn(),
+    })
 
     await screen.findByText(/may 7/i)
     const rows = container.querySelectorAll('.session-row')
     expect(rows).toHaveLength(2)
+    expect(screen.getByRole('heading', { name: 'Previous scans' })).toBeInTheDocument()
     // newest first — May 7 before May 1
     expect(rows[0].textContent).toMatch(/may 7/i)
     expect(rows[1].textContent).toMatch(/may 1/i)
@@ -108,7 +137,11 @@ describe('mountSessionsListView', () => {
     await putRecord(db, makeRecord({ recordId: 'rec-1', sessionId: 'sess-1', index: 0 }))
     await putRecord(db, makeRecord({ recordId: 'rec-2', sessionId: 'sess-1', index: 1 }))
 
-    mountSessionsListView(container, { openDb: async () => db, onNewScan: vi.fn() })
+    mountSessionsListView(container, {
+      openDb: async () => db,
+      onStartScan: vi.fn(),
+      onMoreOptions: vi.fn(),
+    })
 
     expect(await screen.findByText(/2 captures/i)).toBeInTheDocument()
   })
@@ -121,7 +154,11 @@ describe('mountSessionsListView', () => {
     })
     await putRecord(db, makeRecord({ recordId: 'rec-1', sessionId: 'sess-1', index: 0 }))
 
-    mountSessionsListView(container, { openDb: async () => db, onNewScan: vi.fn() })
+    mountSessionsListView(container, {
+      openDb: async () => db,
+      onStartScan: vi.fn(),
+      onMoreOptions: vi.fn(),
+    })
 
     expect(await screen.findByText(/1 capture$/i)).toBeInTheDocument()
   })
@@ -133,7 +170,11 @@ describe('mountSessionsListView', () => {
       clockOffsetMs: 0, status: 'active',
     })
 
-    mountSessionsListView(container, { openDb: async () => db, onNewScan: vi.fn() })
+    mountSessionsListView(container, {
+      openDb: async () => db,
+      onStartScan: vi.fn(),
+      onMoreOptions: vi.fn(),
+    })
 
     expect(await screen.findByText('Pending')).toBeInTheDocument()
   })
@@ -152,7 +193,11 @@ describe('mountSessionsListView', () => {
       sha256: 'abc',
     })
 
-    mountSessionsListView(container, { openDb: async () => db, onNewScan: vi.fn() })
+    mountSessionsListView(container, {
+      openDb: async () => db,
+      onStartScan: vi.fn(),
+      onMoreOptions: vi.fn(),
+    })
 
     expect(await screen.findByText('Exported')).toBeInTheDocument()
   })
@@ -164,7 +209,11 @@ describe('mountSessionsListView', () => {
       clockOffsetMs: 0, status: 'active',
     })
 
-    mountSessionsListView(container, { openDb: async () => db, onNewScan: vi.fn() })
+    mountSessionsListView(container, {
+      openDb: async () => db,
+      onStartScan: vi.fn(),
+      onMoreOptions: vi.fn(),
+    })
 
     await screen.findByText(/pending/i)
     const row = container.querySelector('.session-row')!
@@ -174,7 +223,11 @@ describe('mountSessionsListView', () => {
   })
 
   it('removes from DOM on unmount', () => {
-    const unmount = mountSessionsListView(container, { openDb: async () => db, onNewScan: vi.fn() })
+    const unmount = mountSessionsListView(container, {
+      openDb: async () => db,
+      onStartScan: vi.fn(),
+      onMoreOptions: vi.fn(),
+    })
     unmount()
     expect(container.querySelector('.sessions-list')).toBeNull()
   })

@@ -10,6 +10,8 @@ import {
   type BootstrapResult,
   type ShelfwalkDatabase,
 } from './tracer'
+import type { CreateScanResult } from './scan/createScan'
+import { createScan } from './scan/createScan'
 import { parseRoute, navigateToSession, navigateHome, navigateToNewScan, type Route } from './router'
 import { detectSensorDeps } from './sensors/probe'
 import type { GyroLike } from './sensors/ghostOverlayCanvas'
@@ -22,6 +24,9 @@ export type MibliotecaAppDeps = {
   now?: () => number
 }
 
+const QUICK_START_ERROR = 'Couldn’t start scan. Check connection/storage and try again.'
+const QUICK_START_SESSION_KEY = 'miblioteca.quick-start-session-id'
+
 export function mountMibliotecaApp(root: HTMLElement, deps: MibliotecaAppDeps = {}): () => void {
   const openDb = deps.openDb ?? (() => openShelfwalkDb())
   const fetch = deps.fetch ?? (createMockScanFetch(() => (deps.now ?? Date.now)()) as typeof globalThis.fetch)
@@ -32,6 +37,10 @@ export function mountMibliotecaApp(root: HTMLElement, deps: MibliotecaAppDeps = 
   let unmountScanManagement: (() => void) | null = null
   let disposed = false
   let generation = 0
+  let quickStartPending = false
+  let quickStartError = ''
+  let quickStartResult: CreateScanResult | null = null
+  let autoOpenCameraSessionId: string | null = null
 
   const getDb = () => {
     dbPromise ??= openDb()
@@ -43,6 +52,58 @@ export function mountMibliotecaApp(root: HTMLElement, deps: MibliotecaAppDeps = 
     captureView = null
     unmountScanManagement?.()
     unmountScanManagement = null
+  }
+
+  function rerenderHomeIfVisible() {
+    if (disposed || parseRoute().kind !== 'home') return
+    void handleRoute({ kind: 'home' })
+  }
+
+  async function resumeExistingQuickStartSession(): Promise<boolean> {
+    const resultSessionId = quickStartResult?.session.id
+    if (resultSessionId) {
+      navigateToSession(resultSessionId)
+      return true
+    }
+
+    const persistedSessionId = sessionStorage.getItem(QUICK_START_SESSION_KEY)
+    if (!persistedSessionId) return false
+
+    const db = await getDb()
+    const session = await getSession(db, persistedSessionId)
+    if (!session) {
+      sessionStorage.removeItem(QUICK_START_SESSION_KEY)
+      return false
+    }
+
+    navigateToSession(session.id)
+    return true
+  }
+
+  async function startQuickScan() {
+    if (quickStartPending) return
+    if (quickStartError && await resumeExistingQuickStartSession()) return
+
+    quickStartPending = true
+    quickStartError = ''
+    rerenderHomeIfVisible()
+
+    try {
+      const result = await createScan({
+        fetch,
+        db: await getDb(),
+        now,
+      })
+      quickStartPending = false
+      quickStartResult = result
+      autoOpenCameraSessionId = result.session.id
+      sessionStorage.setItem(QUICK_START_SESSION_KEY, result.session.id)
+      navigateToSession(result.session.id)
+    } catch {
+      quickStartPending = false
+      quickStartError = QUICK_START_ERROR
+      rerenderHomeIfVisible()
+    }
   }
 
   async function handleRoute(route: Route) {
@@ -68,12 +129,15 @@ export function mountMibliotecaApp(root: HTMLElement, deps: MibliotecaAppDeps = 
           ? new DeviceMotionAccelAdapter(window)
           : null
       const testQualityFrame = (window as unknown as { __miblioteca_test_quality_frame?: () => ImageData | null }).__miblioteca_test_quality_frame
+      const autoRequestCamera = autoOpenCameraSessionId === route.sessionId
+      autoOpenCameraSessionId = autoRequestCamera ? null : autoOpenCameraSessionId
       captureView = new CaptureView(root, {
         bootstrapResult: bootstrap,
         onBack: navigateHome,
         gyro,
         accel,
         getQualityFrame: testQualityFrame,
+        autoRequestCamera,
       })
     } else if (route.kind === 'new-scan') {
       unmountScanManagement = mountScanManagementView(root, {
@@ -88,7 +152,12 @@ export function mountMibliotecaApp(root: HTMLElement, deps: MibliotecaAppDeps = 
     } else {
       unmountScanManagement = mountSessionsListView(root, {
         openDb: getDb,
-        onNewScan: navigateToNewScan,
+        onStartScan: () => {
+          void startQuickScan()
+        },
+        onMoreOptions: navigateToNewScan,
+        quickStartPending,
+        quickStartError,
       })
     }
   }

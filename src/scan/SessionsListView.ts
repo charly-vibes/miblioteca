@@ -10,7 +10,10 @@ import type { SessionBundleDeliveryState } from '../bundle/types'
 
 export type SessionsListViewDeps = {
   openDb: () => Promise<ShelfwalkDatabase>
-  onNewScan: () => void
+  onStartScan: () => void
+  onMoreOptions: () => void
+  quickStartPending?: boolean
+  quickStartError?: string
 }
 
 export function mountSessionsListView(
@@ -26,12 +29,29 @@ export function mountSessionsListView(
   const title = document.createElement('h1')
   title.textContent = 'Sessions'
 
-  const newScanBtn = document.createElement('button')
-  newScanBtn.textContent = 'New scan'
-  newScanBtn.className = 'sessions-new-btn'
-  newScanBtn.addEventListener('click', deps.onNewScan)
+  const startScanBtn = document.createElement('button')
+  startScanBtn.type = 'button'
+  startScanBtn.textContent = deps.quickStartPending ? 'Starting camera…' : 'Start scanning'
+  startScanBtn.className = 'sessions-new-btn'
+  startScanBtn.disabled = deps.quickStartPending ?? false
+  startScanBtn.addEventListener('click', deps.onStartScan)
 
-  header.append(title, newScanBtn)
+  const moreOptionsBtn = document.createElement('button')
+  moreOptionsBtn.type = 'button'
+  moreOptionsBtn.textContent = 'More options'
+  moreOptionsBtn.className = 'sessions-more-options-btn'
+  moreOptionsBtn.addEventListener('click', deps.onMoreOptions)
+
+  header.append(title, startScanBtn, moreOptionsBtn)
+
+  const quickStartErrorEl = document.createElement('p')
+  quickStartErrorEl.className = 'sessions-start-error'
+  quickStartErrorEl.setAttribute('role', 'alert')
+  quickStartErrorEl.hidden = !deps.quickStartError
+  quickStartErrorEl.textContent = deps.quickStartError ?? ''
+
+  const listHeading = document.createElement('h2')
+  listHeading.textContent = 'Previous scans'
 
   const listEl = document.createElement('ul')
   listEl.className = 'sessions-items'
@@ -42,7 +62,7 @@ export function mountSessionsListView(
   emptyEl.hidden = true
   emptyEl.textContent = 'No sessions yet. Start a new scan to begin.'
 
-  root.append(header, listEl, emptyEl)
+  root.append(header, quickStartErrorEl, listHeading, listEl, emptyEl)
   container.append(root)
 
   void load()

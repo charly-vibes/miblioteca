@@ -4,6 +4,11 @@
 *.db
 .beads-credential-key
 
+# Beads internal state (track only issues.jsonl for backup)
+.beads/*
+!.beads/issues.jsonl
+!.beads/config.yaml
+
 # Dependencies and local tooling
 node_modules/
 *.tsbuildinfo

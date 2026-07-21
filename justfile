@@ -20,6 +20,10 @@ preview:
 test:
     npm run test
 
+# Validate spec-test correspondence (requires ah)
+validate:
+    ah check
+
 # Type-check without emitting
 check:
     npm run check
